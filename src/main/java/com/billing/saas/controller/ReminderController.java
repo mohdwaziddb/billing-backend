@@ -23,7 +23,7 @@ public class ReminderController {
     private final ReminderService reminderService;
 
     @GetMapping("/overdue-customers")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'USER')")
     public ResponseEntity<ApiResponse<List<OverdueCustomerResponse>>> overdueCustomers(
             Authentication authentication,
             @RequestParam(required = false) String search,
@@ -37,7 +37,7 @@ public class ReminderController {
     }
 
     @PostMapping("/send")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'USER')")
     public ResponseEntity<ApiResponse<ReminderHistoryResponse>> sendReminder(
             Authentication authentication,
             @Valid @RequestBody ReminderSendRequest request
@@ -49,7 +49,7 @@ public class ReminderController {
     }
 
     @GetMapping("/customer/{customerId}/history")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'USER')")
     public ResponseEntity<ApiResponse<List<ReminderHistoryResponse>>> history(
             Authentication authentication,
             @PathVariable Long customerId

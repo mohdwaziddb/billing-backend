@@ -24,7 +24,7 @@ public class CustomerController {
     private final CustomerService customerService;
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'USER')")
     public ResponseEntity<ApiResponse<List<CustomerResponse>>> list(Authentication authentication,
                                                                     @RequestParam(required = false) String search,
                                                                     @RequestParam(required = false) Boolean active) {
@@ -32,27 +32,27 @@ public class CustomerController {
     }
 
     @GetMapping("/{customerId}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'USER')")
     public ResponseEntity<ApiResponse<CustomerResponse>> get(Authentication authentication, @PathVariable Long customerId) {
         return ResponseEntity.ok(ApiResponse.success("Customer fetched successfully", customerService.get(authentication.getName(), customerId)));
     }
 
     @GetMapping("/by-mobile")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'USER')")
     public ResponseEntity<ApiResponse<CustomerResponse>> getByMobile(Authentication authentication,
                                                                      @RequestParam String mobile) {
         return ResponseEntity.ok(ApiResponse.success("Customer fetched successfully", customerService.getByMobile(authentication.getName(), mobile)));
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN')")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
     public ResponseEntity<ApiResponse<CustomerResponse>> create(Authentication authentication,
                                                                 @Valid @RequestBody CustomerRequest request) {
         return ResponseEntity.ok(ApiResponse.success("Customer created successfully", customerService.create(authentication.getName(), request)));
     }
 
     @PutMapping("/{customerId}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN')")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
     public ResponseEntity<ApiResponse<CustomerResponse>> update(Authentication authentication,
                                                                 @PathVariable Long customerId,
                                                                 @Valid @RequestBody CustomerRequest request) {
@@ -60,20 +60,20 @@ public class CustomerController {
     }
 
     @DeleteMapping("/{customerId}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN')")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
     public ResponseEntity<ApiResponse<Map<String, String>>> delete(Authentication authentication, @PathVariable Long customerId) {
         customerService.delete(authentication.getName(), customerId);
         return ResponseEntity.ok(ApiResponse.success("Customer deleted successfully", Map.of("status", "ok")));
     }
 
     @GetMapping("/{customerId}/ledger")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'USER')")
     public ResponseEntity<ApiResponse<CustomerLedgerResponse>> ledger(Authentication authentication, @PathVariable Long customerId) {
         return ResponseEntity.ok(ApiResponse.success("Customer ledger fetched successfully", customerService.ledger(authentication.getName(), customerId)));
     }
 
     @GetMapping("/{customerId}/purchase-history")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'USER')")
     public ResponseEntity<ApiResponse<CustomerPurchaseHistoryResponse>> purchaseHistory(Authentication authentication,
                                                                                         @PathVariable Long customerId) {
         return ResponseEntity.ok(ApiResponse.success("Customer purchase history fetched successfully",
@@ -81,7 +81,7 @@ public class CustomerController {
     }
 
     @GetMapping("/outstanding")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'USER')")
     public ResponseEntity<ApiResponse<List<CustomerResponse>>> outstanding(Authentication authentication) {
         return ResponseEntity.ok(ApiResponse.success("Outstanding customers fetched successfully", customerService.outstanding(authentication.getName())));
     }

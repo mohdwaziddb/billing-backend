@@ -17,6 +17,7 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.Filter;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -28,6 +29,7 @@ import java.time.LocalDate;
 @AllArgsConstructor
 @Entity
 @Table(name = "payments")
+@Filter(name = "tenantFilter", condition = "company_id = :companyId")
 public class Payment extends BaseEntity {
 
     @Id

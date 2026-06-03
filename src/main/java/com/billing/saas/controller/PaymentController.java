@@ -22,26 +22,26 @@ public class PaymentController {
     private final PaymentService paymentService;
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
     public ResponseEntity<ApiResponse<List<PaymentResponse>>> list(Authentication authentication) {
         return ResponseEntity.ok(ApiResponse.success("Payments fetched successfully", paymentService.list(authentication.getName())));
     }
 
     @GetMapping("/{paymentId}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
     public ResponseEntity<ApiResponse<PaymentResponse>> get(Authentication authentication, @PathVariable Long paymentId) {
         return ResponseEntity.ok(ApiResponse.success("Payment fetched successfully", paymentService.get(authentication.getName(), paymentId)));
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
     public ResponseEntity<ApiResponse<PaymentResponse>> create(Authentication authentication,
                                                                @Valid @RequestBody PaymentRequest request) {
         return ResponseEntity.ok(ApiResponse.success("Payment added successfully", paymentService.create(authentication.getName(), request)));
     }
 
     @PutMapping("/{paymentId}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN')")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
     public ResponseEntity<ApiResponse<PaymentResponse>> update(Authentication authentication,
                                                                @PathVariable Long paymentId,
                                                                @Valid @RequestBody PaymentRequest request) {
@@ -49,7 +49,7 @@ public class PaymentController {
     }
 
     @DeleteMapping("/{paymentId}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN')")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
     public ResponseEntity<ApiResponse<Map<String, String>>> delete(Authentication authentication, @PathVariable Long paymentId) {
         paymentService.delete(authentication.getName(), paymentId);
         return ResponseEntity.ok(ApiResponse.success("Payment deleted successfully", Map.of("status", "ok")));

@@ -13,6 +13,10 @@ public class RegisterCompanyRequest {
     @NotBlank
     private String companyName;
 
+    private String companyCode;
+
+    private String databaseName;
+
     @NotBlank
     @Email
     private String companyEmail;

@@ -50,12 +50,18 @@ public class AuthService {
         if (companyRepository.existsByTaxIdIgnoreCase(request.getTaxId())) {
             throw new BadRequestException("Tax ID already exists");
         }
+        String companyCode = normalizeCompanyCode(request.getCompanyCode(), request.getCompanyName());
+        if (companyRepository.existsByCodeIgnoreCase(companyCode)) {
+            throw new BadRequestException("Company code already exists");
+        }
         if (userRepository.existsByEmailIgnoreCase(request.getAdminEmail())) {
             throw new BadRequestException("Admin email already exists");
         }
 
         Company company = Company.builder()
                 .name(request.getCompanyName())
+                .code(companyCode)
+                .databaseName(blankToNull(request.getDatabaseName()))
                 .email(request.getCompanyEmail())
                 .phone(request.getCompanyPhone())
                 .address(request.getCompanyAddress())
@@ -67,7 +73,7 @@ public class AuthService {
                 .fullName(request.getAdminFullName())
                 .email(request.getAdminEmail())
                 .password(passwordEncoder.encode(request.getAdminPassword()))
-                .role(RoleName.COMPANY_ADMIN)
+                .role(RoleName.OWNER)
                 .active(true)
                 .company(company)
                 .build();
@@ -128,5 +134,18 @@ public class AuthService {
                 .expiresIn(jwtService.getAccessTokenExpiration())
                 .user(profileResponse)
                 .build();
+    }
+
+    private String normalizeCompanyCode(String requestedCode, String companyName) {
+        String source = requestedCode == null || requestedCode.isBlank() ? companyName : requestedCode;
+        String normalized = source.replaceAll("[^A-Za-z0-9]", "").toUpperCase();
+        if (normalized.isBlank()) {
+            throw new BadRequestException("Company code is required");
+        }
+        return normalized.length() > 20 ? normalized.substring(0, 20) : normalized;
+    }
+
+    private String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 }

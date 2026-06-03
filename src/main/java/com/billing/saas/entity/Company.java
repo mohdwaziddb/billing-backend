@@ -29,6 +29,12 @@ public class Company extends BaseEntity {
     private String name;
 
     @Column(nullable = false, unique = true)
+    private String code;
+
+    @Column(name = "database_name")
+    private String databaseName;
+
+    @Column(nullable = false, unique = true)
     private String email;
 
     private String phone;

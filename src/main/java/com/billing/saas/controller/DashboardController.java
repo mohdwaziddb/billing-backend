@@ -19,7 +19,7 @@ public class DashboardController {
     private final DashboardService dashboardService;
 
     @GetMapping("/summary")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'USER')")
     public ResponseEntity<ApiResponse<DashboardSummaryResponse>> summary(Authentication authentication,
                                                                          @RequestParam(required = false) LocalDate startDate,
                                                                          @RequestParam(required = false) LocalDate endDate) {

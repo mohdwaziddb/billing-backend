@@ -21,27 +21,27 @@ public class InvoiceController {
     private final InvoiceService invoiceService;
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'USER')")
     public ResponseEntity<ApiResponse<List<InvoiceResponse>>> list(Authentication authentication,
                                                                    @RequestParam(required = false) Long customerId) {
         return ResponseEntity.ok(ApiResponse.success("Invoices fetched successfully", invoiceService.list(authentication.getName(), customerId)));
     }
 
     @GetMapping("/{invoiceId}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'USER')")
     public ResponseEntity<ApiResponse<InvoiceResponse>> get(Authentication authentication, @PathVariable Long invoiceId) {
         return ResponseEntity.ok(ApiResponse.success("Invoice fetched successfully", invoiceService.get(authentication.getName(), invoiceId)));
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'USER')")
     public ResponseEntity<ApiResponse<InvoiceResponse>> create(Authentication authentication,
                                                                @Valid @RequestBody InvoiceRequest request) {
         return ResponseEntity.ok(ApiResponse.success("Invoice created successfully", invoiceService.create(authentication.getName(), request)));
     }
 
     @PutMapping("/{invoiceId}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN')")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
     public ResponseEntity<ApiResponse<InvoiceResponse>> update(Authentication authentication,
                                                                @PathVariable Long invoiceId,
                                                                @Valid @RequestBody InvoiceRequest request) {
@@ -49,7 +49,7 @@ public class InvoiceController {
     }
 
     @DeleteMapping("/{invoiceId}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN')")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
     public ResponseEntity<ApiResponse<java.util.Map<String, String>>> delete(Authentication authentication, @PathVariable Long invoiceId) {
         invoiceService.delete(authentication.getName(), invoiceId);
         return ResponseEntity.ok(ApiResponse.success("Invoice deleted successfully", java.util.Map.of("status", "ok")));

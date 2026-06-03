@@ -161,6 +161,7 @@ public class InvoiceService {
             productRepository.save(product);
 
             items.add(InvoiceItem.builder()
+                    .company(invoice.getCompany())
                     .invoice(invoice)
                     .product(product)
                     .qty(itemRequest.getQty())

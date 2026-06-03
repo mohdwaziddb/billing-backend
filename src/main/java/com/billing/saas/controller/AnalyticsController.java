@@ -28,7 +28,7 @@ public class AnalyticsController {
     private final AnalyticsService analyticsService;
 
     @GetMapping("/summary")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'USER')")
     public ResponseEntity<ApiResponse<AnalyticsSummaryResponse>> summary(Authentication authentication,
                                                                          @RequestParam(required = false) LocalDate startDate,
                                                                          @RequestParam(required = false) LocalDate endDate) {
@@ -37,7 +37,7 @@ public class AnalyticsController {
     }
 
     @GetMapping("/owner-overview")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'USER')")
     public ResponseEntity<ApiResponse<OwnerAnalyticsResponse>> ownerOverview(Authentication authentication,
                                                                              @RequestParam(required = false) LocalDate startDate,
                                                                              @RequestParam(required = false) LocalDate endDate) {
@@ -46,7 +46,7 @@ public class AnalyticsController {
     }
 
     @GetMapping("/day-wise-sales")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'USER')")
     public ResponseEntity<ApiResponse<List<SalesChartPointResponse>>> dayWiseSales(
             Authentication authentication,
             @RequestParam(required = false) Integer year,
@@ -60,7 +60,7 @@ public class AnalyticsController {
     }
 
     @GetMapping("/month-wise-sales")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'USER')")
     public ResponseEntity<ApiResponse<List<SalesChartPointResponse>>> monthWiseSales(
             Authentication authentication,
             @RequestParam(required = false) Integer year
@@ -71,7 +71,7 @@ public class AnalyticsController {
     }
 
     @GetMapping("/top-products")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'USER')")
     public ResponseEntity<ApiResponse<List<TopSellingProductResponse>>> topProducts(
             Authentication authentication,
             @RequestParam(defaultValue = "5") int limit
@@ -81,7 +81,7 @@ public class AnalyticsController {
     }
 
     @GetMapping("/low-stock-products")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'USER')")
     public ResponseEntity<ApiResponse<List<LowStockProductResponse>>> lowStockProducts(
             Authentication authentication,
             @RequestParam(defaultValue = "5") int limit
@@ -91,7 +91,7 @@ public class AnalyticsController {
     }
 
     @GetMapping("/customer-due-list")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'STAFF')")
+    @PreAuthorize("hasAnyRole('OWNER', 'ADMIN', 'USER')")
     public ResponseEntity<ApiResponse<List<CustomerDueResponse>>> customerDueList(
             Authentication authentication,
             @RequestParam(defaultValue = "10") int limit

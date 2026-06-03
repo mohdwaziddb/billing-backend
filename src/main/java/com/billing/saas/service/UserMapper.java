@@ -15,6 +15,7 @@ public class UserMapper {
                 .fullName(user.getFullName())
                 .email(user.getEmail())
                 .role(user.getRole().name())
+                .active(user.isActive())
                 .company(toCompanySummary(user.getCompany()))
                 .build();
     }
@@ -27,6 +28,8 @@ public class UserMapper {
         return CompanySummary.builder()
                 .id(company.getId())
                 .name(company.getName())
+                .code(company.getCode())
+                .databaseName(company.getDatabaseName())
                 .email(company.getEmail())
                 .phone(company.getPhone())
                 .address(company.getAddress())
