@@ -4,6 +4,7 @@ import lombok.Builder;
 import lombok.Getter;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Getter
@@ -18,6 +19,12 @@ public class CustomerResponse {
     private BigDecimal openingBalance;
     private BigDecimal currentBalance;
     private BigDecimal creditLimit;
+    private BigDecimal totalPurchaseAmount;
+    private BigDecimal totalPaidAmount;
+    private BigDecimal totalDiscountGiven;
+    private BigDecimal outstandingBalance;
+    private LocalDate lastPurchaseDate;
+    private boolean hasPurchaseHistory;
     private boolean active;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

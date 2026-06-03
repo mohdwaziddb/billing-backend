@@ -45,7 +45,7 @@ public class InvoiceService {
         Invoice invoice = Invoice.builder()
                 .company(company)
                 .customer(customer)
-                .invoiceNo(generateInvoiceNumber(company))
+                .invoiceNo(generateInvoiceNumber(company, customer, request.getInvoiceDate()))
                 .invoiceDate(request.getInvoiceDate())
                 .paidAmount(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP))
                 .build();
@@ -231,10 +231,12 @@ public class InvoiceService {
         return InvoiceStatus.UNPAID;
     }
 
-    private String generateInvoiceNumber(Company company) {
-        Invoice lastInvoice = invoiceRepository.findTopByCompanyOrderByIdDesc(company).orElse(null);
-        long nextSequence = lastInvoice == null ? 1L : lastInvoice.getId() + 1L;
-        return "INV-" + company.getId() + "-" + String.format("%05d", nextSequence);
+    private String generateInvoiceNumber(Company company, Customer customer, java.time.LocalDate invoiceDate) {
+        long nextSequence = invoiceRepository.countByCompanyAndInvoiceDate(company, invoiceDate) + 1L;
+        String customerRef = buildCustomerReference(customer.getName());
+        String mobileSuffix = buildMobileSuffix(customer.getMobile());
+        String dateSegment = invoiceDate.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE);
+        return String.format("INV-%s-%s-%s-%03d", customerRef, mobileSuffix, dateSegment, nextSequence);
     }
 
     private InvoiceResponse toResponse(Invoice invoice) {
@@ -243,6 +245,8 @@ public class InvoiceService {
                 .invoiceNo(invoice.getInvoiceNo())
                 .customerId(invoice.getCustomer().getId())
                 .customerName(invoice.getCustomer().getName())
+                .customerMobile(invoice.getCustomer().getMobile())
+                .customerAddress(invoice.getCustomer().getAddress())
                 .subtotal(scale(invoice.getSubtotal()))
                 .taxAmount(scale(invoice.getTaxAmount()))
                 .discountAmount(scale(invoice.getDiscountAmount()))
@@ -264,6 +268,22 @@ public class InvoiceService {
                         .lineTotal(scale(item.getLineTotal()))
                         .build()).toList())
                 .build();
+    }
+
+    private String buildCustomerReference(String customerName) {
+        String sanitized = customerName == null ? "" : customerName.replaceAll("[^A-Za-z0-9]", "").toUpperCase();
+        if (sanitized.isEmpty()) {
+            return "CUST";
+        }
+        return sanitized.length() > 6 ? sanitized.substring(0, 6) : sanitized;
+    }
+
+    private String buildMobileSuffix(String mobile) {
+        String digits = mobile == null ? "" : mobile.replaceAll("\\D", "");
+        if (digits.length() >= 4) {
+            return digits.substring(digits.length() - 4);
+        }
+        return String.format("%04d", digits.isEmpty() ? 0 : Integer.parseInt(digits));
     }
 
     private BigDecimal percentageAmount(BigDecimal base, BigDecimal percent) {

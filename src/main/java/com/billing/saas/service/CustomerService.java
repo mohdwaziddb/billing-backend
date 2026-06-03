@@ -2,8 +2,12 @@ package com.billing.saas.service;
 
 import com.billing.saas.dto.customer.CustomerLedgerEntryResponse;
 import com.billing.saas.dto.customer.CustomerLedgerResponse;
+import com.billing.saas.dto.customer.CustomerPurchaseHistoryResponse;
 import com.billing.saas.dto.customer.CustomerRequest;
 import com.billing.saas.dto.customer.CustomerResponse;
+import com.billing.saas.dto.customer.CustomerSummaryMetrics;
+import com.billing.saas.dto.invoice.InvoiceItemResponse;
+import com.billing.saas.dto.invoice.InvoiceResponse;
 import com.billing.saas.entity.Company;
 import com.billing.saas.entity.Customer;
 import com.billing.saas.entity.Invoice;
@@ -18,10 +22,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -50,29 +57,30 @@ public class CustomerService {
                 .active(Boolean.TRUE.equals(request.getActive()))
                 .build();
 
-        return toResponse(customerRepository.save(customer));
+        Customer saved = customerRepository.save(customer);
+        return toResponse(saved, emptyMetrics(saved));
     }
 
     @Transactional(readOnly = true)
     public List<CustomerResponse> list(String email, String search, Boolean active) {
         Company company = accessControlService.getCurrentCompany(email);
-        return customerRepository.findAllByCompanyWithFilters(company, active, normalizeSearch(search)).stream()
-                .map(this::toResponse)
-                .toList();
+        List<Customer> customers = customerRepository.findAllByCompanyWithFilters(company, active, normalizeSearch(search));
+        return toResponses(company, customers);
     }
 
     @Transactional(readOnly = true)
     public CustomerResponse get(String email, Long customerId) {
         Company company = accessControlService.getCurrentCompany(email);
-        return toResponse(getCustomerOrThrow(company, customerId));
+        Customer customer = getCustomerOrThrow(company, customerId);
+        return toResponse(customer, loadMetrics(company, List.of(customer)).get(customer.getId()));
     }
 
     @Transactional(readOnly = true)
     public CustomerResponse getByMobile(String email, String mobile) {
         Company company = accessControlService.getCurrentCompany(email);
-        return customerRepository.findByCompanyAndMobileIgnoreCase(company, mobile == null ? null : mobile.trim())
-                .map(this::toResponse)
+        Customer customer = customerRepository.findByCompanyAndMobileIgnoreCase(company, mobile == null ? null : mobile.trim())
                 .orElseThrow(() -> new ResourceNotFoundException("Customer not found with this mobile number"));
+        return toResponse(customer, loadMetrics(company, List.of(customer)).get(customer.getId()));
     }
 
     @Transactional
@@ -98,7 +106,8 @@ public class CustomerService {
         customer.setCreditLimit(scale(request.getCreditLimit()));
         customer.setActive(Boolean.TRUE.equals(request.getActive()));
 
-        return toResponse(customerRepository.save(customer));
+        Customer saved = customerRepository.save(customer);
+        return toResponse(saved, loadMetrics(company, List.of(saved)).get(saved.getId()));
     }
 
     @Transactional
@@ -128,7 +137,7 @@ public class CustomerService {
                 .referenceNo("OPENING")
                 .entryDate(customer.getCreatedAt() != null ? customer.getCreatedAt().toLocalDate() : LocalDate.now())
                 .debit(scale(customer.getOpeningBalance()))
-                .credit(BigDecimal.ZERO)
+                .credit(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP))
                 .runningBalance(runningBalance)
                 .remarks("Opening balance")
                 .build());
@@ -155,7 +164,7 @@ public class CustomerService {
                         .referenceNo(invoice.getInvoiceNo())
                         .entryDate(invoice.getInvoiceDate())
                         .debit(scale(invoice.getTotalAmount()))
-                        .credit(BigDecimal.ZERO)
+                        .credit(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP))
                         .remarks("Invoice billed")
                         .build()
         )));
@@ -168,7 +177,7 @@ public class CustomerService {
                         .referenceId(payment.getId())
                         .referenceNo(payment.getInvoice() != null ? payment.getInvoice().getInvoiceNo() : "ADVANCE")
                         .entryDate(payment.getPaymentDate())
-                        .debit(BigDecimal.ZERO)
+                        .debit(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP))
                         .credit(scale(payment.getAmount()))
                         .remarks(payment.getRemarks())
                         .build()
@@ -202,11 +211,27 @@ public class CustomerService {
     }
 
     @Transactional(readOnly = true)
+    public CustomerPurchaseHistoryResponse purchaseHistory(String email, Long customerId) {
+        Company company = accessControlService.getCurrentCompany(email);
+        Customer customer = getCustomerOrThrow(company, customerId);
+        List<Invoice> invoices = invoiceRepository.findByCompanyAndCustomerOrderByInvoiceDateDescIdDesc(company, customer);
+        CustomerSummaryMetrics summary = loadMetrics(company, List.of(customer)).get(customer.getId());
+
+        return CustomerPurchaseHistoryResponse.builder()
+                .customerId(customer.getId())
+                .customerName(customer.getName())
+                .mobile(customer.getMobile())
+                .address(customer.getAddress())
+                .summary(summary)
+                .invoices(invoices.stream().map(this::toInvoiceResponse).toList())
+                .build();
+    }
+
+    @Transactional(readOnly = true)
     public List<CustomerResponse> outstanding(String email) {
         Company company = accessControlService.getCurrentCompany(email);
-        return customerRepository.findByCompanyAndActiveTrueAndCurrentBalanceGreaterThanOrderByCurrentBalanceDesc(company, BigDecimal.ZERO).stream()
-                .map(this::toResponse)
-                .toList();
+        List<Customer> customers = customerRepository.findByCompanyAndActiveTrueAndCurrentBalanceGreaterThanOrderByCurrentBalanceDesc(company, BigDecimal.ZERO);
+        return toResponses(company, customers);
     }
 
     public Customer getCustomerOrThrow(Company company, Long customerId) {
@@ -232,6 +257,71 @@ public class CustomerService {
         customerRepository.save(customer);
     }
 
+    private List<CustomerResponse> toResponses(Company company, List<Customer> customers) {
+        Map<Long, CustomerSummaryMetrics> metricsByCustomer = loadMetrics(company, customers);
+        return customers.stream()
+                .map(customer -> toResponse(customer, metricsByCustomer.get(customer.getId())))
+                .toList();
+    }
+
+    private Map<Long, CustomerSummaryMetrics> loadMetrics(Company company, List<Customer> customers) {
+        Map<Long, CustomerSummaryMetricsBuilderState> states = new HashMap<>();
+        for (Customer customer : customers) {
+          states.put(customer.getId(), new CustomerSummaryMetricsBuilderState(customer));
+        }
+        if (states.isEmpty()) {
+            return Map.of();
+        }
+
+        List<Invoice> invoices = invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company);
+        for (Invoice invoice : invoices) {
+            CustomerSummaryMetricsBuilderState state = states.get(invoice.getCustomer().getId());
+            if (state == null) {
+                continue;
+            }
+            state.totalPurchaseAmount = state.totalPurchaseAmount.add(scale(invoice.getTotalAmount()));
+            state.totalDiscountGiven = state.totalDiscountGiven.add(scale(invoice.getDiscountAmount()));
+            state.hasPurchaseHistory = true;
+            if (state.lastPurchaseDate == null || invoice.getInvoiceDate().isAfter(state.lastPurchaseDate)) {
+                state.lastPurchaseDate = invoice.getInvoiceDate();
+            }
+        }
+
+        List<Payment> payments = paymentRepository.findByCompanyOrderByPaymentDateDescIdDesc(company);
+        for (Payment payment : payments) {
+            CustomerSummaryMetricsBuilderState state = states.get(payment.getCustomer().getId());
+            if (state == null) {
+                continue;
+            }
+            state.totalPaidAmount = state.totalPaidAmount.add(scale(payment.getAmount()));
+        }
+
+        Map<Long, CustomerSummaryMetrics> metricsByCustomer = new HashMap<>();
+        for (Map.Entry<Long, CustomerSummaryMetricsBuilderState> entry : states.entrySet()) {
+            CustomerSummaryMetricsBuilderState state = entry.getValue();
+            metricsByCustomer.put(entry.getKey(), CustomerSummaryMetrics.builder()
+                    .totalPurchaseAmount(scale(state.totalPurchaseAmount))
+                    .totalPaidAmount(scale(state.totalPaidAmount))
+                    .totalDiscountGiven(scale(state.totalDiscountGiven))
+                    .outstandingBalance(scale(state.outstandingBalance))
+                    .lastPurchaseDate(state.lastPurchaseDate)
+                    .hasPurchaseHistory(state.hasPurchaseHistory)
+                    .build());
+        }
+        return metricsByCustomer;
+    }
+
+    private CustomerSummaryMetrics emptyMetrics(Customer customer) {
+        return CustomerSummaryMetrics.builder()
+                .totalPurchaseAmount(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP))
+                .totalPaidAmount(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP))
+                .totalDiscountGiven(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP))
+                .outstandingBalance(scale(customer.getCurrentBalance()))
+                .lastPurchaseDate(null)
+                .hasPurchaseHistory(false)
+                .build();
+    }
+
     private void validateUnique(Company company, CustomerRequest request, Long customerId) {
         if (customerId == null) {
             if (customerRepository.existsByCompanyAndMobileIgnoreCase(company, request.getMobile())) {
@@ -253,7 +343,8 @@ public class CustomerService {
         }
     }
 
-    private CustomerResponse toResponse(Customer customer) {
+    private CustomerResponse toResponse(Customer customer, CustomerSummaryMetrics metrics) {
+        CustomerSummaryMetrics safeMetrics = metrics == null ? emptyMetrics(customer) : metrics;
         return CustomerResponse.builder()
                 .id(customer.getId())
                 .name(customer.getName())
@@ -264,6 +355,12 @@ public class CustomerService {
                 .openingBalance(scale(customer.getOpeningBalance()))
                 .currentBalance(scale(customer.getCurrentBalance()))
                 .creditLimit(scale(customer.getCreditLimit()))
+                .totalPurchaseAmount(scale(safeMetrics.getTotalPurchaseAmount()))
+                .totalPaidAmount(scale(safeMetrics.getTotalPaidAmount()))
+                .totalDiscountGiven(scale(safeMetrics.getTotalDiscountGiven()))
+                .outstandingBalance(scale(safeMetrics.getOutstandingBalance()))
+                .lastPurchaseDate(safeMetrics.getLastPurchaseDate())
+                .hasPurchaseHistory(safeMetrics.isHasPurchaseHistory())
                 .active(customer.isActive())
                 .createdAt(customer.getCreatedAt())
                 .updatedAt(customer.getUpdatedAt())
@@ -272,8 +369,39 @@ public class CustomerService {
                 .build();
     }
 
+    private InvoiceResponse toInvoiceResponse(Invoice invoice) {
+        return InvoiceResponse.builder()
+                .id(invoice.getId())
+                .invoiceNo(invoice.getInvoiceNo())
+                .customerId(invoice.getCustomer().getId())
+                .customerName(invoice.getCustomer().getName())
+                .customerMobile(invoice.getCustomer().getMobile())
+                .customerAddress(invoice.getCustomer().getAddress())
+                .subtotal(scale(invoice.getSubtotal()))
+                .taxAmount(scale(invoice.getTaxAmount()))
+                .discountAmount(scale(invoice.getDiscountAmount()))
+                .totalAmount(scale(invoice.getTotalAmount()))
+                .paidAmount(scale(invoice.getPaidAmount()))
+                .balanceAmount(scale(invoice.getBalanceAmount()))
+                .paymentStatus(invoice.getPaymentStatus().name())
+                .invoiceDate(invoice.getInvoiceDate())
+                .createdAt(invoice.getCreatedAt())
+                .createdBy(invoice.getCreatedBy())
+                .items(invoice.getItems().stream().map(item -> InvoiceItemResponse.builder()
+                        .id(item.getId())
+                        .productId(item.getProduct().getId())
+                        .productName(item.getProduct().getName())
+                        .qty(item.getQty())
+                        .price(scale(item.getPrice()))
+                        .discountPercent(scale(item.getDiscountPercent()))
+                        .taxPercent(scale(item.getTaxPercent()))
+                        .lineTotal(scale(item.getLineTotal()))
+                        .build()).toList())
+                .build();
+    }
+
     private BigDecimal scale(BigDecimal value) {
-        return value == null ? BigDecimal.ZERO.setScale(2, java.math.RoundingMode.HALF_UP) : value.setScale(2, java.math.RoundingMode.HALF_UP);
+        return value == null ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP) : value.setScale(2, RoundingMode.HALF_UP);
     }
 
     private String blankToNull(String value) {
@@ -282,5 +410,20 @@ public class CustomerService {
 
     private String normalizeSearch(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private static final class CustomerSummaryMetricsBuilderState {
+        private BigDecimal totalPurchaseAmount = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        private BigDecimal totalPaidAmount = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        private BigDecimal totalDiscountGiven = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        private final BigDecimal outstandingBalance;
+        private LocalDate lastPurchaseDate;
+        private boolean hasPurchaseHistory;
+
+        private CustomerSummaryMetricsBuilderState(Customer customer) {
+            this.outstandingBalance = customer.getCurrentBalance() == null
+                    ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP)
+                    : customer.getCurrentBalance().setScale(2, RoundingMode.HALF_UP);
+        }
     }
 }

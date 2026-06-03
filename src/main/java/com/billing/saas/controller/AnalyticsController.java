@@ -4,6 +4,7 @@ import com.billing.saas.dto.ApiResponse;
 import com.billing.saas.dto.analytics.AnalyticsSummaryResponse;
 import com.billing.saas.dto.analytics.CustomerDueResponse;
 import com.billing.saas.dto.analytics.LowStockProductResponse;
+import com.billing.saas.dto.analytics.OwnerAnalyticsResponse;
 import com.billing.saas.dto.analytics.SalesChartPointResponse;
 import com.billing.saas.dto.analytics.TopSellingProductResponse;
 import com.billing.saas.service.AnalyticsService;
@@ -28,9 +29,20 @@ public class AnalyticsController {
 
     @GetMapping("/summary")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'STAFF')")
-    public ResponseEntity<ApiResponse<AnalyticsSummaryResponse>> summary(Authentication authentication) {
+    public ResponseEntity<ApiResponse<AnalyticsSummaryResponse>> summary(Authentication authentication,
+                                                                         @RequestParam(required = false) LocalDate startDate,
+                                                                         @RequestParam(required = false) LocalDate endDate) {
         return ResponseEntity.ok(ApiResponse.success("Analytics summary fetched successfully",
-                analyticsService.summary(authentication.getName())));
+                analyticsService.summary(authentication.getName(), startDate, endDate)));
+    }
+
+    @GetMapping("/owner-overview")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'STAFF')")
+    public ResponseEntity<ApiResponse<OwnerAnalyticsResponse>> ownerOverview(Authentication authentication,
+                                                                             @RequestParam(required = false) LocalDate startDate,
+                                                                             @RequestParam(required = false) LocalDate endDate) {
+        return ResponseEntity.ok(ApiResponse.success("Owner analytics fetched successfully",
+                analyticsService.ownerOverview(authentication.getName(), startDate, endDate)));
     }
 
     @GetMapping("/day-wise-sales")

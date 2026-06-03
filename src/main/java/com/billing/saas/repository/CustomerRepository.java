@@ -13,6 +13,7 @@ import java.util.Optional;
 public interface CustomerRepository extends JpaRepository<Customer, Long> {
     List<Customer> findByCompanyOrderByCreatedAtDesc(Company company);
     List<Customer> findByCompanyAndActiveTrueOrderByCreatedAtDesc(Company company);
+    long countByCompany(Company company);
     @Query("""
             SELECT c
             FROM Customer c

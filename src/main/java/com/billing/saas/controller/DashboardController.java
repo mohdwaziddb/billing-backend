@@ -7,9 +7,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+
+import java.time.LocalDate;
 
 @RestController
 @RequestMapping("/api/v1/dashboard")
@@ -20,8 +20,10 @@ public class DashboardController {
 
     @GetMapping("/summary")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'STAFF')")
-    public ResponseEntity<ApiResponse<DashboardSummaryResponse>> summary(Authentication authentication) {
+    public ResponseEntity<ApiResponse<DashboardSummaryResponse>> summary(Authentication authentication,
+                                                                         @RequestParam(required = false) LocalDate startDate,
+                                                                         @RequestParam(required = false) LocalDate endDate) {
         return ResponseEntity.ok(ApiResponse.success("Dashboard summary fetched successfully",
-                dashboardService.summary(authentication.getName())));
+                dashboardService.summary(authentication.getName(), startDate, endDate)));
     }
 }

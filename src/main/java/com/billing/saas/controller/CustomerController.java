@@ -2,6 +2,7 @@ package com.billing.saas.controller;
 
 import com.billing.saas.dto.ApiResponse;
 import com.billing.saas.dto.customer.CustomerLedgerResponse;
+import com.billing.saas.dto.customer.CustomerPurchaseHistoryResponse;
 import com.billing.saas.dto.customer.CustomerRequest;
 import com.billing.saas.dto.customer.CustomerResponse;
 import com.billing.saas.service.CustomerService;
@@ -69,6 +70,14 @@ public class CustomerController {
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'STAFF')")
     public ResponseEntity<ApiResponse<CustomerLedgerResponse>> ledger(Authentication authentication, @PathVariable Long customerId) {
         return ResponseEntity.ok(ApiResponse.success("Customer ledger fetched successfully", customerService.ledger(authentication.getName(), customerId)));
+    }
+
+    @GetMapping("/{customerId}/purchase-history")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'COMPANY_ADMIN', 'STAFF')")
+    public ResponseEntity<ApiResponse<CustomerPurchaseHistoryResponse>> purchaseHistory(Authentication authentication,
+                                                                                        @PathVariable Long customerId) {
+        return ResponseEntity.ok(ApiResponse.success("Customer purchase history fetched successfully",
+                customerService.purchaseHistory(authentication.getName(), customerId)));
     }
 
     @GetMapping("/outstanding")

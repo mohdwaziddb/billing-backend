@@ -15,6 +15,8 @@ public class InvoiceResponse {
     private String invoiceNo;
     private Long customerId;
     private String customerName;
+    private String customerMobile;
+    private String customerAddress;
     private BigDecimal subtotal;
     private BigDecimal taxAmount;
     private BigDecimal discountAmount;

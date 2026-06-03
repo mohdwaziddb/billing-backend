@@ -3,6 +3,8 @@ package com.billing.saas.service;
 import com.billing.saas.dto.analytics.AnalyticsSummaryResponse;
 import com.billing.saas.dto.analytics.CustomerDueResponse;
 import com.billing.saas.dto.analytics.LowStockProductResponse;
+import com.billing.saas.dto.analytics.MetricPointResponse;
+import com.billing.saas.dto.analytics.OwnerAnalyticsResponse;
 import com.billing.saas.dto.analytics.SalesChartPointResponse;
 import com.billing.saas.dto.analytics.SalesTrendStatus;
 import com.billing.saas.dto.analytics.TopSellingProductResponse;
@@ -10,9 +12,11 @@ import com.billing.saas.entity.Company;
 import com.billing.saas.entity.Customer;
 import com.billing.saas.entity.Invoice;
 import com.billing.saas.entity.InvoiceItem;
+import com.billing.saas.entity.Payment;
 import com.billing.saas.entity.Product;
 import com.billing.saas.repository.CustomerRepository;
 import com.billing.saas.repository.InvoiceRepository;
+import com.billing.saas.repository.PaymentRepository;
 import com.billing.saas.repository.ProductRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -38,22 +42,32 @@ public class AnalyticsService {
     private final InvoiceRepository invoiceRepository;
     private final ProductRepository productRepository;
     private final CustomerRepository customerRepository;
+    private final PaymentRepository paymentRepository;
 
     @Transactional(readOnly = true)
-    public AnalyticsSummaryResponse summary(String email) {
+    public AnalyticsSummaryResponse summary(String email, LocalDate startDate, LocalDate endDate) {
         Company company = accessControlService.getCurrentCompany(email);
         List<Invoice> invoices = invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company);
+        List<Payment> payments = paymentRepository.findByCompanyOrderByPaymentDateDescIdDesc(company);
+        List<Customer> customers = customerRepository.findByCompanyOrderByCreatedAtDesc(company);
+
         LocalDate today = LocalDate.now();
         LocalDate yesterday = today.minusDays(1);
         YearMonth thisMonth = YearMonth.from(today);
         YearMonth lastMonth = thisMonth.minusMonths(1);
 
+        List<Invoice> filteredInvoices = invoices.stream()
+                .filter(invoice -> isWithinRange(invoice.getInvoiceDate(), startDate, endDate))
+                .toList();
+        List<Payment> filteredPayments = payments.stream()
+                .filter(payment -> isWithinRange(payment.getPaymentDate(), startDate, endDate))
+                .toList();
+
         BigDecimal todaySales = sumInvoiceSalesForDate(invoices, today);
         BigDecimal yesterdaySales = sumInvoiceSalesForDate(invoices, yesterday);
         BigDecimal thisMonthSales = sumInvoiceSalesForMonth(invoices, thisMonth);
         BigDecimal lastMonthSales = sumInvoiceSalesForMonth(invoices, lastMonth);
-        BigDecimal outstanding = customerRepository.findByCompanyAndCurrentBalanceGreaterThanOrderByCurrentBalanceDesc(company, BigDecimal.ZERO)
-                .stream()
+        BigDecimal outstanding = customers.stream()
                 .map(Customer::getCurrentBalance)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         long lowStockCount = productRepository.findByCompanyOrderByCreatedAtDesc(company).stream()
@@ -61,13 +75,29 @@ public class AnalyticsService {
                 .filter(product -> product.getStockQty() <= product.getMinStockQty())
                 .count();
         long dueCustomers = customerRepository.findByCompanyAndCurrentBalanceGreaterThanOrderByCurrentBalanceDesc(company, BigDecimal.ZERO).size();
+        long newCustomers = customers.stream()
+                .filter(customer -> customer.getCreatedAt() != null && isWithinRange(customer.getCreatedAt().toLocalDate(), startDate, endDate))
+                .count();
+
+        BigDecimal totalSales = filteredInvoices.stream()
+                .map(Invoice::getTotalAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalCollection = filteredPayments.stream()
+                .map(Payment::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         return AnalyticsSummaryResponse.builder()
+                .startDate(startDate)
+                .endDate(endDate)
                 .todaySales(scale(todaySales))
                 .yesterdaySales(scale(yesterdaySales))
                 .thisMonthSales(scale(thisMonthSales))
                 .lastMonthSales(scale(lastMonthSales))
+                .totalSales(scale(totalSales))
+                .totalCollection(scale(totalCollection))
                 .totalOutstandingBalance(scale(outstanding))
+                .newCustomers(newCustomers)
+                .totalInvoices(filteredInvoices.size())
                 .lowStockProducts(lowStockCount)
                 .dueCustomers(dueCustomers)
                 .salesTrendPercentage(calculateTrendPercentage(thisMonthSales, lastMonthSales))
@@ -187,6 +217,162 @@ public class AnalyticsService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public OwnerAnalyticsResponse ownerOverview(String email, LocalDate startDate, LocalDate endDate) {
+        Company company = accessControlService.getCurrentCompany(email);
+        List<Invoice> invoices = invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company);
+        List<Payment> payments = paymentRepository.findByCompanyOrderByPaymentDateDescIdDesc(company);
+        List<Customer> customers = customerRepository.findByCompanyOrderByCreatedAtDesc(company);
+
+        LocalDate safeEnd = endDate != null ? endDate : LocalDate.now();
+        LocalDate safeStart = startDate != null ? startDate : safeEnd.minusDays(29);
+
+        List<Invoice> filteredInvoices = invoices.stream()
+                .filter(invoice -> isWithinRange(invoice.getInvoiceDate(), safeStart, safeEnd))
+                .toList();
+        List<Payment> filteredPayments = payments.stream()
+                .filter(payment -> isWithinRange(payment.getPaymentDate(), safeStart, safeEnd))
+                .toList();
+
+        BigDecimal totalSales = filteredInvoices.stream()
+                .map(Invoice::getTotalAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalCollection = filteredPayments.stream()
+                .map(Payment::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal outstandingAmount = customers.stream()
+                .map(Customer::getCurrentBalance)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        long newCustomers = customers.stream()
+                .filter(customer -> customer.getCreatedAt() != null && isWithinRange(customer.getCreatedAt().toLocalDate(), safeStart, safeEnd))
+                .count();
+
+        List<LocalDate> periodStarts = buildPeriodStarts(safeStart, safeEnd);
+        boolean useDailyBuckets = java.time.temporal.ChronoUnit.DAYS.between(safeStart, safeEnd) <= 45;
+        List<MetricPointResponse> salesTrend = new ArrayList<>();
+        List<MetricPointResponse> collectionTrend = new ArrayList<>();
+        List<MetricPointResponse> outstandingTrend = new ArrayList<>();
+        List<MetricPointResponse> customerGrowthTrend = new ArrayList<>();
+
+        BigDecimal openingOutstanding = calculateOutstandingBefore(customers, invoices, payments, safeStart);
+        BigDecimal runningOutstanding = openingOutstanding;
+        long runningCustomers = 0L;
+        int index = 1;
+
+        for (LocalDate periodStart : periodStarts) {
+            LocalDate periodEnd = resolvePeriodEnd(periodStart, safeEnd, useDailyBuckets);
+            BigDecimal periodSales = filteredInvoices.stream()
+                    .filter(invoice -> isWithinRange(invoice.getInvoiceDate(), periodStart, periodEnd))
+                    .map(Invoice::getTotalAmount)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal periodCollection = filteredPayments.stream()
+                    .filter(payment -> isWithinRange(payment.getPaymentDate(), periodStart, periodEnd))
+                    .map(Payment::getAmount)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            long periodNewCustomers = customers.stream()
+                    .filter(customer -> customer.getCreatedAt() != null && isWithinRange(customer.getCreatedAt().toLocalDate(), periodStart, periodEnd))
+                    .count();
+
+            runningOutstanding = scale(runningOutstanding.add(periodSales).subtract(periodCollection));
+            runningCustomers += periodNewCustomers;
+
+            String label = buildLabel(periodStart, useDailyBuckets);
+            salesTrend.add(point(label, index, periodSales));
+            collectionTrend.add(point(label, index, periodCollection));
+            outstandingTrend.add(point(label, index, runningOutstanding));
+            customerGrowthTrend.add(point(label, index, BigDecimal.valueOf(runningCustomers)));
+            index++;
+        }
+
+        List<MetricPointResponse> monthlyRevenue = buildMonthlyRevenueTrend(invoices, safeEnd);
+
+        return OwnerAnalyticsResponse.builder()
+                .startDate(safeStart)
+                .endDate(safeEnd)
+                .totalSales(scale(totalSales))
+                .totalCollection(scale(totalCollection))
+                .outstandingAmount(scale(outstandingAmount))
+                .newCustomers(newCustomers)
+                .totalInvoices(filteredInvoices.size())
+                .salesTrend(salesTrend)
+                .collectionTrend(collectionTrend)
+                .outstandingTrend(outstandingTrend)
+                .customerGrowthTrend(customerGrowthTrend)
+                .monthlyRevenue(monthlyRevenue)
+                .build();
+    }
+
+    private List<MetricPointResponse> buildMonthlyRevenueTrend(List<Invoice> invoices, LocalDate endDate) {
+        List<MetricPointResponse> points = new ArrayList<>();
+        YearMonth endMonth = YearMonth.from(endDate);
+        for (int i = 11; i >= 0; i--) {
+            YearMonth month = endMonth.minusMonths(i);
+            BigDecimal amount = sumInvoiceSalesForMonth(invoices, month);
+            points.add(point(month.getMonth().getDisplayName(TextStyle.SHORT, Locale.ENGLISH) + " " + month.getYear(), 12 - i, amount));
+        }
+        return points;
+    }
+
+    private BigDecimal calculateOutstandingBefore(List<Customer> customers, List<Invoice> invoices, List<Payment> payments, LocalDate startDate) {
+        BigDecimal openingBalances = customers.stream()
+                .map(Customer::getOpeningBalance)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal historicalSales = invoices.stream()
+                .filter(invoice -> invoice.getInvoiceDate().isBefore(startDate))
+                .map(Invoice::getTotalAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal historicalCollections = payments.stream()
+                .filter(payment -> payment.getPaymentDate().isBefore(startDate))
+                .map(Payment::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return scale(openingBalances.add(historicalSales).subtract(historicalCollections));
+    }
+
+    private List<LocalDate> buildPeriodStarts(LocalDate startDate, LocalDate endDate) {
+        long daySpan = java.time.temporal.ChronoUnit.DAYS.between(startDate, endDate);
+        List<LocalDate> periods = new ArrayList<>();
+        if (daySpan <= 45) {
+            LocalDate current = startDate;
+            while (!current.isAfter(endDate)) {
+                periods.add(current);
+                current = current.plusDays(1);
+            }
+            return periods;
+        }
+
+        YearMonth current = YearMonth.from(startDate);
+        YearMonth end = YearMonth.from(endDate);
+        while (!current.isAfter(end)) {
+            periods.add(current.atDay(1));
+            current = current.plusMonths(1);
+        }
+        return periods;
+    }
+
+    private LocalDate resolvePeriodEnd(LocalDate periodStart, LocalDate finalEndDate, boolean useDailyBuckets) {
+        if (useDailyBuckets) {
+            return periodStart;
+        }
+        LocalDate monthEnd = YearMonth.from(periodStart).atEndOfMonth();
+        return monthEnd.isAfter(finalEndDate) ? finalEndDate : monthEnd;
+    }
+
+    private String buildLabel(LocalDate periodStart, boolean useDailyBuckets) {
+        if (useDailyBuckets) {
+            return String.valueOf(periodStart.getDayOfMonth());
+        }
+        YearMonth month = YearMonth.from(periodStart);
+        return month.getMonth().getDisplayName(TextStyle.SHORT, Locale.ENGLISH);
+    }
+
+    private MetricPointResponse point(String label, int index, BigDecimal value) {
+        return MetricPointResponse.builder()
+                .label(label)
+                .index(index)
+                .value(scale(value))
+                .build();
+    }
+
     private BigDecimal sumInvoiceSalesForDate(List<Invoice> invoices, LocalDate date) {
         return invoices.stream()
                 .filter(invoice -> invoice.getInvoiceDate().equals(date))
@@ -199,6 +385,16 @@ public class AnalyticsService {
                 .filter(invoice -> YearMonth.from(invoice.getInvoiceDate()).equals(yearMonth))
                 .map(Invoice::getTotalAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private boolean isWithinRange(LocalDate value, LocalDate startDate, LocalDate endDate) {
+        if (value == null) {
+            return false;
+        }
+        if (startDate != null && value.isBefore(startDate)) {
+            return false;
+        }
+        return endDate == null || !value.isAfter(endDate);
     }
 
     private BigDecimal calculateTrendPercentage(BigDecimal current, BigDecimal previous) {
