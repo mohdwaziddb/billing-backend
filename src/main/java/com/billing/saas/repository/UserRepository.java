@@ -12,5 +12,4 @@ public interface UserRepository extends JpaRepository<User, Long> {
     boolean existsByEmailIgnoreCase(String email);
     List<User> findByCompanyOrderByCreatedAtDesc(Company company);
     Optional<User> findByIdAndCompany(Long id, Company company);
-    boolean existsByCompanyAndRole(Company company, com.billing.saas.entity.enums.RoleName role);
 }
