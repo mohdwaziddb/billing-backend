@@ -26,6 +26,8 @@ public class InvoiceResponse {
     private String paymentStatus;
     private LocalDate invoiceDate;
     private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
     private String createdBy;
+    private String updatedBy;
     private List<InvoiceItemResponse> items;
 }

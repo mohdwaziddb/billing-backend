@@ -60,9 +60,7 @@ public class DashboardService {
                 .map(Payment::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        BigDecimal outstanding = allCustomers.stream()
-                .map(Customer::getCurrentBalance)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal outstanding = calculateOutstandingAsOf(allCustomers, allInvoices, allPayments, safeEnd);
 
         Map<Long, DashboardCustomerAggregate> customerAggregates = new HashMap<>();
         for (Invoice invoice : filteredInvoices) {
@@ -115,6 +113,29 @@ public class DashboardService {
             return false;
         }
         return endDate == null || !value.isAfter(endDate);
+    }
+
+    private BigDecimal calculateOutstandingAsOf(List<Customer> customers, List<Invoice> invoices, List<Payment> payments, LocalDate endDate) {
+        if (endDate == null || !endDate.isBefore(LocalDate.now())) {
+            return customers.stream()
+                    .map(Customer::getCurrentBalance)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+        }
+
+        BigDecimal openingBalances = customers.stream()
+                .filter(customer -> customer.getCreatedAt() == null || !customer.getCreatedAt().toLocalDate().isAfter(endDate))
+                .map(Customer::getOpeningBalance)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal salesUntilEnd = invoices.stream()
+                .filter(invoice -> invoice.getInvoiceDate() != null && !invoice.getInvoiceDate().isAfter(endDate))
+                .map(Invoice::getTotalAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal collectionsUntilEnd = payments.stream()
+                .filter(payment -> payment.getPaymentDate() != null && !payment.getPaymentDate().isAfter(endDate))
+                .map(Payment::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        return scale(openingBalances.add(salesUntilEnd).subtract(collectionsUntilEnd));
     }
 
     private BigDecimal scale(BigDecimal value) {

@@ -33,6 +33,7 @@ public class InvoiceService {
     private final PaymentRepository paymentRepository;
     private final AccessControlService accessControlService;
     private final CustomerService customerService;
+    private final AuditNameResolver auditNameResolver;
 
     @Transactional
     public InvoiceResponse create(String email, InvoiceRequest request) {
@@ -257,7 +258,9 @@ public class InvoiceService {
                 .paymentStatus(invoice.getPaymentStatus().name())
                 .invoiceDate(invoice.getInvoiceDate())
                 .createdAt(invoice.getCreatedAt())
-                .createdBy(invoice.getCreatedBy())
+                .updatedAt(invoice.getUpdatedAt())
+                .createdBy(auditNameResolver.displayName(invoice.getCreatedBy()))
+                .updatedBy(auditNameResolver.displayName(invoice.getUpdatedBy()))
                 .items(invoice.getItems().stream().map(item -> InvoiceItemResponse.builder()
                         .id(item.getId())
                         .productId(item.getProduct().getId())

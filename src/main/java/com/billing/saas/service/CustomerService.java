@@ -38,6 +38,7 @@ public class CustomerService {
     private final InvoiceRepository invoiceRepository;
     private final PaymentRepository paymentRepository;
     private final AccessControlService accessControlService;
+    private final AuditNameResolver auditNameResolver;
 
     @Transactional
     public CustomerResponse create(String email, CustomerRequest request) {
@@ -325,21 +326,21 @@ public class CustomerService {
     private void validateUnique(Company company, CustomerRequest request, Long customerId) {
         if (customerId == null) {
             if (customerRepository.existsByCompanyAndMobileIgnoreCase(company, request.getMobile())) {
-                throw new BadRequestException("Customer mobile already exists");
+                throw new BadRequestException("This phone number is already registered.");
             }
             if (request.getEmail() != null && !request.getEmail().isBlank()
                     && customerRepository.existsByCompanyAndEmailIgnoreCase(company, request.getEmail())) {
-                throw new BadRequestException("Customer email already exists");
+                throw new BadRequestException("This email address is already registered.");
             }
             return;
         }
 
         if (customerRepository.existsByCompanyAndMobileIgnoreCaseAndIdNot(company, request.getMobile(), customerId)) {
-            throw new BadRequestException("Customer mobile already exists");
+            throw new BadRequestException("This phone number is already registered.");
         }
         if (request.getEmail() != null && !request.getEmail().isBlank()
                 && customerRepository.existsByCompanyAndEmailIgnoreCaseAndIdNot(company, request.getEmail(), customerId)) {
-            throw new BadRequestException("Customer email already exists");
+            throw new BadRequestException("This email address is already registered.");
         }
     }
 
@@ -386,7 +387,9 @@ public class CustomerService {
                 .paymentStatus(invoice.getPaymentStatus().name())
                 .invoiceDate(invoice.getInvoiceDate())
                 .createdAt(invoice.getCreatedAt())
-                .createdBy(invoice.getCreatedBy())
+                .updatedAt(invoice.getUpdatedAt())
+                .createdBy(auditNameResolver.displayName(invoice.getCreatedBy()))
+                .updatedBy(auditNameResolver.displayName(invoice.getUpdatedBy()))
                 .items(invoice.getItems().stream().map(item -> InvoiceItemResponse.builder()
                         .id(item.getId())
                         .productId(item.getProduct().getId())

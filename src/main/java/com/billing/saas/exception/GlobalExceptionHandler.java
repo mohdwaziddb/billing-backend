@@ -101,6 +101,12 @@ public class GlobalExceptionHandler {
         }
 
         if (normalized.contains("duplicate entry")) {
+            if (normalized.contains("uk_customer_company_email") || normalized.contains("email")) {
+                return "This email address is already registered.";
+            }
+            if (normalized.contains("uk_customer_company_mobile") || normalized.contains("mobile")) {
+                return "This phone number is already registered.";
+            }
             return "This record already exists with the same unique value.";
         }
 

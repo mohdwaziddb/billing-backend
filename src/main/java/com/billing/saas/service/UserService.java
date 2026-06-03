@@ -46,7 +46,7 @@ public class UserService {
             throw new BadRequestException("Password is required");
         }
         if (userRepository.existsByEmailIgnoreCase(request.getEmail())) {
-            throw new BadRequestException("User email already exists");
+            throw new BadRequestException("This email address is already registered.");
         }
 
         User user = User.builder()
@@ -69,7 +69,7 @@ public class UserService {
 
         if (!user.getEmail().equalsIgnoreCase(request.getEmail())
                 && userRepository.existsByEmailIgnoreCase(request.getEmail())) {
-            throw new BadRequestException("User email already exists");
+            throw new BadRequestException("This email address is already registered.");
         }
         if (user.getRole() == RoleName.OWNER && request.getRole() != RoleName.OWNER) {
             ensureAnotherOwnerExists(company, user.getId());

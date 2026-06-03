@@ -9,6 +9,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -24,7 +25,13 @@ import java.math.BigDecimal;
 @NoArgsConstructor
 @AllArgsConstructor
 @Entity
-@Table(name = "customers")
+@Table(
+        name = "customers",
+        uniqueConstraints = {
+                @UniqueConstraint(name = "uk_customer_company_mobile", columnNames = {"company_id", "mobile"}),
+                @UniqueConstraint(name = "uk_customer_company_email", columnNames = {"company_id", "email"})
+        }
+)
 @Filter(name = "tenantFilter", condition = "company_id = :companyId")
 public class Customer extends BaseEntity {
 

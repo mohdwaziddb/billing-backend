@@ -67,9 +67,7 @@ public class AnalyticsService {
         BigDecimal yesterdaySales = sumInvoiceSalesForDate(invoices, yesterday);
         BigDecimal thisMonthSales = sumInvoiceSalesForMonth(invoices, thisMonth);
         BigDecimal lastMonthSales = sumInvoiceSalesForMonth(invoices, lastMonth);
-        BigDecimal outstanding = customers.stream()
-                .map(Customer::getCurrentBalance)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal outstanding = calculateOutstandingAsOf(customers, invoices, payments, endDate);
         long lowStockCount = productRepository.findByCompanyOrderByCreatedAtDesc(company).stream()
                 .filter(Product::isActive)
                 .filter(product -> product.getStockQty() <= product.getMinStockQty())
@@ -240,9 +238,7 @@ public class AnalyticsService {
         BigDecimal totalCollection = filteredPayments.stream()
                 .map(Payment::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal outstandingAmount = customers.stream()
-                .map(Customer::getCurrentBalance)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal outstandingAmount = calculateOutstandingAsOf(customers, invoices, payments, safeEnd);
         long newCustomers = customers.stream()
                 .filter(customer -> customer.getCreatedAt() != null && isWithinRange(customer.getCreatedAt().toLocalDate(), safeStart, safeEnd))
                 .count();
@@ -326,6 +322,29 @@ public class AnalyticsService {
                 .map(Payment::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         return scale(openingBalances.add(historicalSales).subtract(historicalCollections));
+    }
+
+    private BigDecimal calculateOutstandingAsOf(List<Customer> customers, List<Invoice> invoices, List<Payment> payments, LocalDate endDate) {
+        if (endDate == null || !endDate.isBefore(LocalDate.now())) {
+            return customers.stream()
+                    .map(Customer::getCurrentBalance)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+        }
+
+        BigDecimal openingBalances = customers.stream()
+                .filter(customer -> customer.getCreatedAt() == null || !customer.getCreatedAt().toLocalDate().isAfter(endDate))
+                .map(Customer::getOpeningBalance)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal salesUntilEnd = invoices.stream()
+                .filter(invoice -> invoice.getInvoiceDate() != null && !invoice.getInvoiceDate().isAfter(endDate))
+                .map(Invoice::getTotalAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal collectionsUntilEnd = payments.stream()
+                .filter(payment -> payment.getPaymentDate() != null && !payment.getPaymentDate().isAfter(endDate))
+                .map(Payment::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        return scale(openingBalances.add(salesUntilEnd).subtract(collectionsUntilEnd));
     }
 
     private List<LocalDate> buildPeriodStarts(LocalDate startDate, LocalDate endDate) {
