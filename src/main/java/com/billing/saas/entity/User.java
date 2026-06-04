@@ -12,6 +12,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -25,7 +26,10 @@ import org.hibernate.annotations.Filter;
 @NoArgsConstructor
 @AllArgsConstructor
 @Entity
-@Table(name = "users")
+@Table(name = "users", uniqueConstraints = {
+        @UniqueConstraint(name = "uk_users_mobile_number", columnNames = "mobile_number"),
+        @UniqueConstraint(name = "uk_users_email_id", columnNames = "email_id")
+})
 @Filter(name = "tenantFilter", condition = "company_id = :companyId")
 public class User extends BaseEntity {
 
@@ -36,7 +40,10 @@ public class User extends BaseEntity {
     @Column(nullable = false)
     private String fullName;
 
-    @Column(nullable = false, unique = true)
+    @Column(name = "mobile_number", nullable = false, unique = true)
+    private String mobileNumber;
+
+    @Column(name = "email_id", nullable = false, unique = true)
     private String email;
 
     @Column(nullable = false)

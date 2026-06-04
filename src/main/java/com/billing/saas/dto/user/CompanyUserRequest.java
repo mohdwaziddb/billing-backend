@@ -15,7 +15,10 @@ public class CompanyUserRequest {
     @NotBlank
     private String fullName;
 
-    @NotBlank
+    @NotBlank(message = "Mobile Number is required")
+    private String mobileNumber;
+
+    @NotBlank(message = "Email ID is required")
     @Email
     private String email;
 

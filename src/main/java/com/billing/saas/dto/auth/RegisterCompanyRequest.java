@@ -33,7 +33,10 @@ public class RegisterCompanyRequest {
     @NotBlank
     private String adminFullName;
 
-    @NotBlank
+    @NotBlank(message = "Mobile Number is required")
+    private String adminMobileNumber;
+
+    @NotBlank(message = "Email ID is required")
     @Email
     private String adminEmail;
 

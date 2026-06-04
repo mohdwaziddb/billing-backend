@@ -13,6 +13,7 @@ public class UserMapper {
         return UserProfileResponse.builder()
                 .id(user.getId())
                 .fullName(user.getFullName())
+                .mobileNumber(user.getMobileNumber())
                 .email(user.getEmail())
                 .role(user.getRole().name())
                 .active(user.isActive())

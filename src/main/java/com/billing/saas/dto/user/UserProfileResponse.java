@@ -8,6 +8,7 @@ import lombok.Getter;
 public class UserProfileResponse {
     private Long id;
     private String fullName;
+    private String mobileNumber;
     private String email;
     private String role;
     private boolean active;

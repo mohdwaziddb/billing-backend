@@ -50,12 +50,12 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(BadCredentialsException.class)
     public ResponseEntity<ApiResponse<Void>> handleBadCredentials(BadCredentialsException ex) {
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(ApiResponse.error("Invalid email or password"));
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(ApiResponse.error("Invalid Mobile Number/Email ID or Password."));
     }
 
     @ExceptionHandler(AuthenticationException.class)
     public ResponseEntity<ApiResponse<Void>> handleAuthentication(AuthenticationException ex) {
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(ApiResponse.error("Authentication failed"));
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(ApiResponse.error("Invalid Mobile Number/Email ID or Password."));
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
@@ -101,6 +101,12 @@ public class GlobalExceptionHandler {
         }
 
         if (normalized.contains("duplicate entry")) {
+            if (normalized.contains("uk_users_mobile_number") || normalized.contains("mobile_number")) {
+                return "Mobile Number already exists.";
+            }
+            if (normalized.contains("uk_users_email_id") || normalized.contains("email_id")) {
+                return "Email ID already exists.";
+            }
             if (normalized.contains("uk_customer_company_email") || normalized.contains("email")) {
                 return "This email address is already registered.";
             }

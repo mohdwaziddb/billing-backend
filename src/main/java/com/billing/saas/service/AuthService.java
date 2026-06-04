@@ -25,6 +25,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -54,8 +56,17 @@ public class AuthService {
         if (companyRepository.existsByCodeIgnoreCase(companyCode)) {
             throw new BadRequestException("Company code already exists");
         }
-        if (userRepository.existsByEmailIgnoreCase(request.getAdminEmail())) {
-            throw new BadRequestException("Admin email already exists");
+        String adminMobileNumber = normalizeMobile(request.getAdminMobileNumber());
+        String adminEmail = normalizeEmail(request.getAdminEmail());
+        List<String> validationMessages = new ArrayList<>();
+        if (userRepository.existsByMobileNumber(adminMobileNumber)) {
+            validationMessages.add("Mobile Number already exists.");
+        }
+        if (userRepository.existsByEmailIgnoreCase(adminEmail)) {
+            validationMessages.add("Email ID already exists.");
+        }
+        if (!validationMessages.isEmpty()) {
+            throw new BadRequestException(String.join(" ", validationMessages));
         }
 
         Company company = Company.builder()
@@ -71,7 +82,8 @@ public class AuthService {
 
         User user = User.builder()
                 .fullName(request.getAdminFullName())
-                .email(request.getAdminEmail())
+                .mobileNumber(adminMobileNumber)
+                .email(adminEmail)
                 .password(passwordEncoder.encode(request.getAdminPassword()))
                 .role(RoleName.OWNER)
                 .active(true)
@@ -84,12 +96,13 @@ public class AuthService {
 
     @Transactional
     public AuthResponse login(LoginRequest request) {
+        String loginIdentifier = request.getLoginIdentifier();
         authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword())
+                new UsernamePasswordAuthenticationToken(loginIdentifier, request.getPassword())
         );
 
-        User user = userRepository.findByEmailIgnoreCase(request.getEmail())
-                .orElseThrow(() -> new UnauthorizedException("Invalid email or password"));
+        User user = findByLoginIdentifier(loginIdentifier)
+                .orElseThrow(() -> new UnauthorizedException("Invalid Mobile Number/Email ID or Password."));
         return buildAuthResponse(user);
     }
 
@@ -147,5 +160,20 @@ public class AuthService {
 
     private String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private java.util.Optional<User> findByLoginIdentifier(String loginIdentifier) {
+        if (loginIdentifier != null && loginIdentifier.contains("@")) {
+            return userRepository.findByEmailIgnoreCase(normalizeEmail(loginIdentifier));
+        }
+        return userRepository.findByMobileNumber(normalizeMobile(loginIdentifier));
+    }
+
+    private String normalizeEmail(String value) {
+        return value == null ? null : value.trim();
+    }
+
+    private String normalizeMobile(String value) {
+        return value == null ? null : value.trim();
     }
 }

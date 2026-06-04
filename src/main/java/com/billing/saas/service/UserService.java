@@ -13,6 +13,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -45,14 +46,13 @@ public class UserService {
         if (request.getPassword() == null || request.getPassword().isBlank()) {
             throw new BadRequestException("Password is required");
         }
-        if (userRepository.existsByEmailIgnoreCase(request.getEmail())) {
-            throw new BadRequestException("This email address is already registered.");
-        }
+        validateUniqueUser(request.getMobileNumber(), request.getEmail(), null);
 
         User user = User.builder()
                 .company(company)
                 .fullName(request.getFullName())
-                .email(request.getEmail())
+                .mobileNumber(normalizeMobile(request.getMobileNumber()))
+                .email(normalizeEmail(request.getEmail()))
                 .password(passwordEncoder.encode(request.getPassword()))
                 .role(request.getRole())
                 .active(Boolean.TRUE.equals(request.getActive()))
@@ -67,10 +67,7 @@ public class UserService {
         User user = userRepository.findByIdAndCompany(userId, company)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
-        if (!user.getEmail().equalsIgnoreCase(request.getEmail())
-                && userRepository.existsByEmailIgnoreCase(request.getEmail())) {
-            throw new BadRequestException("This email address is already registered.");
-        }
+        validateUniqueUser(request.getMobileNumber(), request.getEmail(), user.getId());
         if (user.getRole() == RoleName.OWNER && request.getRole() != RoleName.OWNER) {
             ensureAnotherOwnerExists(company, user.getId());
         }
@@ -79,7 +76,8 @@ public class UserService {
         }
 
         user.setFullName(request.getFullName());
-        user.setEmail(request.getEmail());
+        user.setMobileNumber(normalizeMobile(request.getMobileNumber()));
+        user.setEmail(normalizeEmail(request.getEmail()));
         if (request.getPassword() != null && !request.getPassword().isBlank()) {
             user.setPassword(passwordEncoder.encode(request.getPassword()));
         }
@@ -109,5 +107,31 @@ public class UserService {
         if (!hasAnotherOwner) {
             throw new BadRequestException("Company must have at least one active owner");
         }
+    }
+
+    private void validateUniqueUser(String mobileNumber, String email, Long currentUserId) {
+        String normalizedMobile = normalizeMobile(mobileNumber);
+        String normalizedEmail = normalizeEmail(email);
+        List<String> messages = new ArrayList<>();
+
+        userRepository.findByMobileNumber(normalizedMobile)
+                .filter(existing -> currentUserId == null || !existing.getId().equals(currentUserId))
+                .ifPresent(existing -> messages.add("Mobile Number already exists."));
+
+        userRepository.findByEmailIgnoreCase(normalizedEmail)
+                .filter(existing -> currentUserId == null || !existing.getId().equals(currentUserId))
+                .ifPresent(existing -> messages.add("Email ID already exists."));
+
+        if (!messages.isEmpty()) {
+            throw new BadRequestException(String.join(" ", messages));
+        }
+    }
+
+    private String normalizeEmail(String value) {
+        return value == null ? null : value.trim();
+    }
+
+    private String normalizeMobile(String value) {
+        return value == null ? null : value.trim();
     }
 }
