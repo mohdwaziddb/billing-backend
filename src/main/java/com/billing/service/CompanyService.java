@@ -1,20 +1,14 @@
 package com.billing.service;
 
 import com.billing.entity.Company;
-import com.billing.entity.CompanyOwner;
 import com.billing.entity.CompanyThemeSetting;
-import com.billing.entity.User;
-import com.billing.dto.company.CompanyOwnerResponse;
-import com.billing.dto.company.CompanyOwnersRequest;
 import com.billing.dto.company.CompanySettingsRequest;
 import com.billing.dto.company.CompanyThemeRequest;
 import com.billing.dto.company.CompanyThemeResponse;
 import com.billing.dto.user.CompanySummary;
 import com.billing.exception.BadRequestException;
-import com.billing.repository.CompanyOwnerRepository;
 import com.billing.repository.CompanyRepository;
 import com.billing.repository.CompanyThemeSettingRepository;
-import com.billing.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -27,8 +21,6 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.Locale;
-import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -38,9 +30,7 @@ public class CompanyService {
 
     private final AccessControlService accessControlService;
     private final CompanyRepository companyRepository;
-    private final CompanyOwnerRepository companyOwnerRepository;
     private final CompanyThemeSettingRepository companyThemeSettingRepository;
-    private final UserRepository userRepository;
     private static final Set<String> LOGO_CONTENT_TYPES = Set.of("image/jpeg", "image/png", "image/webp");
 
     @Value("${app.upload-dir:uploads}")
@@ -119,45 +109,6 @@ public class CompanyService {
     }
 
     @Transactional(readOnly = true)
-    public List<CompanyOwnerResponse> owners(String email) {
-        Company company = accessControlService.getCurrentCompany(email);
-        return companyOwnerRepository.findByCompanyOrderByCreatedAtAsc(company).stream()
-                .map(CompanyOwner::getUser)
-                .map(this::toOwnerResponse)
-                .toList();
-    }
-
-    @Transactional
-    public List<CompanyOwnerResponse> updateOwners(String email, CompanyOwnersRequest request) {
-        Company company = accessControlService.requireOwnerCompany(email);
-        Set<Long> ownerIds = new HashSet<>(request.getOwnerUserIds());
-        if (ownerIds.isEmpty()) {
-            throw new BadRequestException("Company must have at least one active owner");
-        }
-        List<User> selectedUsers = ownerIds.stream()
-                .map(userId -> userRepository.findByIdAndCompany(userId, company)
-                        .orElseThrow(() -> new BadRequestException("Selected owner user not found in this company")))
-                .toList();
-        if (selectedUsers.stream().noneMatch(User::isActive)) {
-            throw new BadRequestException("Company must have at least one active owner");
-        }
-
-        for (CompanyOwner existing : companyOwnerRepository.findByCompanyOrderByCreatedAtAsc(company)) {
-            if (!ownerIds.contains(existing.getUser().getId())) {
-                companyOwnerRepository.delete(existing);
-            }
-        }
-        for (User user : selectedUsers) {
-            companyOwnerRepository.findByCompanyAndUser(company, user)
-                    .orElseGet(() -> companyOwnerRepository.save(CompanyOwner.builder()
-                            .company(company)
-                            .user(user)
-                            .build()));
-        }
-        return owners(email);
-    }
-
-    @Transactional(readOnly = true)
     public CompanyThemeResponse theme(String email) {
         Company company = accessControlService.getCurrentCompany(email);
         CompanyThemeSetting setting = companyThemeSettingRepository.findByCompany(company)
@@ -215,17 +166,6 @@ public class CompanyService {
     private String firstNonBlank(String preferred, String fallback) {
         String normalized = blankToNull(preferred);
         return normalized == null ? blankToNull(fallback) : normalized;
-    }
-
-    private CompanyOwnerResponse toOwnerResponse(User user) {
-        return CompanyOwnerResponse.builder()
-                .userId(user.getId())
-                .fullName(user.getFullName())
-                .email(user.getEmail())
-                .mobileNumber(user.getMobileNumber())
-                .role(user.getRole().name())
-                .active(user.isActive())
-                .build();
     }
 
     private CompanyThemeResponse toThemeResponse(CompanyThemeSetting setting) {

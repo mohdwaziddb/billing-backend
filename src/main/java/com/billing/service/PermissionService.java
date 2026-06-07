@@ -86,7 +86,7 @@ public class PermissionService {
         if (accessControlService.isCompanyOwner(user)) {
             return true;
         }
-        RoleMaster role = roleMasterRepository.findByRoleCode(user.getRole().name()).orElse(null);
+        RoleMaster role = roleMasterRepository.findByRoleCode(roleCode(user)).orElse(null);
         if (role == null) {
             return false;
         }
@@ -114,15 +114,15 @@ public class PermissionService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         if (accessControlService.isCompanyOwner(user)) {
             return PermissionMatrixResponse.builder()
-                    .roleCode(user.getRole().name())
+                    .roleCode(roleCode(user))
                     .userId(user.getId())
                     .menus(toHierarchy(allMenus(true, user, null, user.getCompany(), true)))
                     .build();
         }
-        RoleMaster role = roleMasterRepository.findByRoleCode(user.getRole().name())
+        RoleMaster role = roleMasterRepository.findByRoleCode(roleCode(user))
                 .orElseThrow(() -> new ResourceNotFoundException("Role not found"));
         return PermissionMatrixResponse.builder()
-                .roleCode(user.getRole().name())
+                .roleCode(roleCode(user))
                 .userId(user.getId())
                 .menus(toHierarchy(allMenus(false, user, role, user.getCompany(), true)))
                 .build();
@@ -145,7 +145,7 @@ public class PermissionService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         requireSameCompany(company, user);
-        RoleMaster role = roleMasterRepository.findByRoleCode(user.getRole().name())
+        RoleMaster role = roleMasterRepository.findByRoleCode(roleCode(user))
                 .orElseThrow(() -> new ResourceNotFoundException("Role not found"));
         return PermissionMatrixResponse.builder()
                 .roleCode(role.getRoleCode())
@@ -336,6 +336,10 @@ public class PermissionService {
         if (targetUser.getCompany() == null || !targetUser.getCompany().getId().equals(company.getId())) {
             throw new ResourceNotFoundException("User not found");
         }
+    }
+
+    private String roleCode(User user) {
+        return (user.getRole() == null ? RoleName.USER : user.getRole()).name();
     }
 
     private AppMenu requireMenu(Map<Long, AppMenu> menus, Long menuId) {

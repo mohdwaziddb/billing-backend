@@ -1,7 +1,6 @@
 package com.billing.service;
 
 import com.billing.entity.Company;
-import com.billing.entity.CompanyOwner;
 import com.billing.entity.RefreshToken;
 import com.billing.entity.User;
 import com.billing.entity.enums.RoleName;
@@ -13,7 +12,6 @@ import com.billing.dto.user.UserProfileResponse;
 import com.billing.exception.BadRequestException;
 import com.billing.exception.UnauthorizedException;
 import com.billing.repository.CompanyRepository;
-import com.billing.repository.CompanyOwnerRepository;
 import com.billing.repository.RefreshTokenRepository;
 import com.billing.repository.UserRepository;
 import com.billing.security.CustomUserDetails;
@@ -37,7 +35,6 @@ import java.util.UUID;
 public class AuthService {
 
     private final CompanyRepository companyRepository;
-    private final CompanyOwnerRepository companyOwnerRepository;
     private final UserRepository userRepository;
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordEncoder passwordEncoder;
@@ -96,10 +93,6 @@ public class AuthService {
                 .company(company)
                 .build();
         userRepository.save(user);
-        companyOwnerRepository.save(CompanyOwner.builder()
-                .company(company)
-                .user(user)
-                .build());
 
         return buildAuthResponse(user);
     }

@@ -3,6 +3,8 @@ package com.billing.service;
 import com.billing.entity.Company;
 import com.billing.dto.PageResponse;
 import com.billing.entity.Payment;
+import com.billing.entity.enums.PaymentMode;
+import com.billing.entity.enums.RoleName;
 import com.billing.exception.ResourceNotFoundException;
 import com.billing.dto.payment.PaymentRequest;
 import com.billing.dto.payment.PaymentResponse;
@@ -18,6 +20,7 @@ import org.springframework.data.domain.Sort;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.util.List;
 
 @Service
@@ -64,9 +67,46 @@ public class PaymentService {
 
     @Transactional(readOnly = true)
     public PageResponse<PaymentResponse> page(String email, int page, int size) {
+        return page(email, null, null, null, null, null, null, null, null, null, page, size);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<PaymentResponse> page(String email,
+                                              String search,
+                                              String paymentStatus,
+                                              LocalDate startDate,
+                                              LocalDate endDate,
+                                              BigDecimal minAmount,
+                                              BigDecimal maxAmount,
+                                              PaymentMode mode,
+                                              Boolean invoiceLinked,
+                                              RoleName createdByRole,
+                                              int page,
+                                              int size) {
         Company company = accessControlService.getCurrentCompany(email);
-        PageRequest pageable = PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 100)), Sort.by(Sort.Direction.DESC, "paymentDate").and(Sort.by(Sort.Direction.DESC, "id")));
-        return PageResponse.from(paymentRepository.findByCompany(company, pageable).map(this::toResponse));
+        int safeSize = Math.max(1, Math.min(size, 1000));
+        PageRequest pageable = PageRequest.of(Math.max(0, page), safeSize, Sort.by(Sort.Direction.DESC, "paymentDate").and(Sort.by(Sort.Direction.DESC, "id")));
+        if (isUnsupportedPaymentStatus(paymentStatus)) {
+            return PageResponse.<PaymentResponse>builder()
+                    .records(List.of())
+                    .page(Math.max(0, page))
+                    .size(safeSize)
+                    .totalRecords(0)
+                    .totalPages(0)
+                    .build();
+        }
+        return PageResponse.from(paymentRepository.searchPayments(
+                company,
+                blankToNull(search),
+                startDate,
+                endDate,
+                minAmount,
+                maxAmount,
+                mode,
+                invoiceLinked,
+                createdByRole,
+                pageable
+        ).map(this::toResponse));
     }
 
     @Transactional(readOnly = true)
@@ -141,6 +181,7 @@ public class PaymentService {
                 .id(payment.getId())
                 .customerId(payment.getCustomer().getId())
                 .customerName(payment.getCustomer().getName())
+                .customerMobile(payment.getCustomer().getMobile())
                 .invoiceId(payment.getInvoice() != null ? payment.getInvoice().getId() : null)
                 .invoiceNo(payment.getInvoice() != null ? payment.getInvoice().getInvoiceNo() : null)
                 .amount(scale(payment.getAmount()))
@@ -150,6 +191,21 @@ public class PaymentService {
                 .createdAt(payment.getCreatedAt())
                 .createdBy(payment.getCreatedBy())
                 .build();
+    }
+
+    private boolean isUnsupportedPaymentStatus(String status) {
+        String value = blankToNull(status);
+        if (value == null || "SUCCESS".equalsIgnoreCase(value)) {
+            return false;
+        }
+        return true;
+    }
+
+    private String blankToNull(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
     }
 
     private BigDecimal scale(BigDecimal value) {

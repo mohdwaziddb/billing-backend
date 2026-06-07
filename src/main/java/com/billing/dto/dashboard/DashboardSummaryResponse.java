@@ -15,11 +15,16 @@ public class DashboardSummaryResponse {
     private BigDecimal totalSales;
     private BigDecimal totalCollection;
     private BigDecimal outstandingAmount;
+    private long totalCustomers;
     private long newCustomers;
     private long existingCustomers;
     private long totalInvoices;
     private long totalProducts;
     private BigDecimal totalRevenue;
     private BigDecimal outstandingBalance;
+    private BigDecimal totalSalesTrendPercentage;
+    private BigDecimal collectionTrendPercentage;
+    private BigDecimal outstandingTrendPercentage;
+    private BigDecimal totalCustomersTrendPercentage;
     private List<DashboardTopCustomerResponse> topCustomers;
 }

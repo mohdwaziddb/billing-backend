@@ -2,7 +2,6 @@ package com.billing.service;
 
 import com.billing.entity.Company;
 import com.billing.dto.PageResponse;
-import com.billing.entity.CompanyOwner;
 import com.billing.entity.User;
 import com.billing.entity.enums.RoleName;
 import com.billing.exception.ResourceNotFoundException;
@@ -10,7 +9,6 @@ import com.billing.dto.user.CompanyUserRequest;
 import com.billing.dto.user.UserProfileResponse;
 import com.billing.exception.BadRequestException;
 import com.billing.repository.UserRepository;
-import com.billing.repository.CompanyOwnerRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -28,7 +26,6 @@ public class UserService {
     private final UserMapper userMapper;
     private final AccessControlService accessControlService;
     private final PasswordEncoder passwordEncoder;
-    private final CompanyOwnerRepository companyOwnerRepository;
 
     @Transactional(readOnly = true)
     public UserProfileResponse getProfile(String email) {
@@ -46,10 +43,29 @@ public class UserService {
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<UserProfileResponse> pageCompanyUsers(String email, int page, int size) {
+    public PageResponse<UserProfileResponse> pageCompanyUsers(String email, int page, int size,
+                                                              String name, String mobileNumber,
+                                                              String userEmail, RoleName role, Boolean active) {
+        return pageCompanyUsers(email, page, size, name, mobileNumber, userEmail, null, role, active);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<UserProfileResponse> pageCompanyUsers(String email, int page, int size,
+                                                              String name, String mobileNumber,
+                                                              String userEmail, String search,
+                                                              RoleName role, Boolean active) {
         Company company = accessControlService.getCurrentCompany(email);
         PageRequest pageable = PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 100)));
-        return PageResponse.from(userRepository.findByCompanyOrderByCreatedAtDesc(company, pageable).map(userMapper::toProfile));
+        return PageResponse.from(userRepository.searchCompanyUsers(
+                company,
+                blankToNull(name),
+                blankToNull(mobileNumber),
+                blankToNull(userEmail),
+                blankToNull(search),
+                role,
+                active,
+                pageable
+        ).map(userMapper::toProfile));
     }
 
     @Transactional
@@ -59,6 +75,7 @@ public class UserService {
             throw new BadRequestException("Password is required");
         }
         validateUniqueUser(request.getMobileNumber(), request.getEmail(), null);
+        RoleName role = resolveRole(request.getRole());
 
         User user = User.builder()
                 .company(company)
@@ -66,16 +83,11 @@ public class UserService {
                 .mobileNumber(normalizeMobile(request.getMobileNumber()))
                 .email(normalizeEmail(request.getEmail()))
                 .password(passwordEncoder.encode(request.getPassword()))
-                .role(request.getRole())
+                .role(role)
                 .active(Boolean.TRUE.equals(request.getActive()))
                 .build();
 
-        User savedUser = userRepository.save(user);
-        if (savedUser.getRole() == RoleName.OWNER) {
-            companyOwnerRepository.findByCompanyAndUser(company, savedUser)
-                    .orElseGet(() -> companyOwnerRepository.save(CompanyOwner.builder().company(company).user(savedUser).build()));
-        }
-        return userMapper.toProfile(savedUser);
+        return userMapper.toProfile(userRepository.save(user));
     }
 
     @Transactional
@@ -85,10 +97,11 @@ public class UserService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         validateUniqueUser(request.getMobileNumber(), request.getEmail(), user.getId());
-        if (companyOwnerRepository.existsByCompanyAndUserAndUserActiveTrue(company, user) && request.getRole() != RoleName.OWNER) {
+        RoleName role = resolveRole(request.getRole());
+        if (user.getRole() == RoleName.OWNER && user.isActive() && role != RoleName.OWNER) {
             ensureAnotherOwnerExists(company, user.getId());
         }
-        if (companyOwnerRepository.existsByCompanyAndUserAndUserActiveTrue(company, user) && Boolean.FALSE.equals(request.getActive())) {
+        if (user.getRole() == RoleName.OWNER && user.isActive() && Boolean.FALSE.equals(request.getActive())) {
             ensureAnotherOwnerExists(company, user.getId());
         }
 
@@ -98,15 +111,10 @@ public class UserService {
         if (request.getPassword() != null && !request.getPassword().isBlank()) {
             user.setPassword(passwordEncoder.encode(request.getPassword()));
         }
-        user.setRole(request.getRole());
+        user.setRole(role);
         user.setActive(Boolean.TRUE.equals(request.getActive()));
 
-        User savedUser = userRepository.save(user);
-        if (savedUser.getRole() == RoleName.OWNER) {
-            companyOwnerRepository.findByCompanyAndUser(company, savedUser)
-                    .orElseGet(() -> companyOwnerRepository.save(CompanyOwner.builder().company(company).user(savedUser).build()));
-        }
-        return userMapper.toProfile(savedUser);
+        return userMapper.toProfile(userRepository.save(user));
     }
 
     @Transactional
@@ -114,7 +122,7 @@ public class UserService {
         Company company = accessControlService.requireOwnerCompany(email);
         User user = userRepository.findByIdAndCompany(userId, company)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-        if (companyOwnerRepository.existsByCompanyAndUserAndUserActiveTrue(company, user)) {
+        if (user.getRole() == RoleName.OWNER && user.isActive()) {
             ensureAnotherOwnerExists(company, user.getId());
         }
         user.setActive(false);
@@ -122,9 +130,8 @@ public class UserService {
     }
 
     private void ensureAnotherOwnerExists(Company company, Long excludedUserId) {
-        boolean hasAnotherOwner = companyOwnerRepository.findByCompanyOrderByCreatedAtAsc(company).stream()
-                .map(CompanyOwner::getUser)
-                .anyMatch(user -> user.isActive() && !user.getId().equals(excludedUserId));
+        boolean hasAnotherOwner = userRepository.findByCompanyOrderByCreatedAtDesc(company).stream()
+                .anyMatch(user -> user.getRole() == RoleName.OWNER && user.isActive() && !user.getId().equals(excludedUserId));
         if (!hasAnotherOwner) {
             throw new BadRequestException("Company must have at least one active owner");
         }
@@ -154,5 +161,16 @@ public class UserService {
 
     private String normalizeMobile(String value) {
         return value == null ? null : value.trim();
+    }
+
+    private String blankToNull(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
+    }
+
+    private RoleName resolveRole(RoleName role) {
+        return role == null ? RoleName.USER : role;
     }
 }

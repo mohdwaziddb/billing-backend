@@ -1,8 +1,6 @@
 package com.billing.controller;
 
 import com.billing.dto.ApiResponse;
-import com.billing.dto.company.CompanyOwnerResponse;
-import com.billing.dto.company.CompanyOwnersRequest;
 import com.billing.dto.company.CompanySettingsRequest;
 import com.billing.dto.company.CompanyThemeRequest;
 import com.billing.dto.company.CompanyThemeResponse;
@@ -21,8 +19,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
-
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1/company")
@@ -52,21 +48,6 @@ public class CompanyController {
                                                                   @RequestParam("logo") MultipartFile logo) {
         return ResponseEntity.ok(ApiResponse.success("Company logo uploaded successfully",
                 companyService.uploadLogo(authentication.getName(), logo)));
-    }
-
-    @GetMapping("/owners")
-    @RequirePermission(menu = "ABOUT_COMPANY", action = "VIEW")
-    public ResponseEntity<ApiResponse<List<CompanyOwnerResponse>>> owners(Authentication authentication) {
-        return ResponseEntity.ok(ApiResponse.success("Company owners fetched successfully",
-                companyService.owners(authentication.getName())));
-    }
-
-    @PutMapping("/owners")
-    @RequirePermission(menu = "ABOUT_COMPANY", action = "EDIT")
-    public ResponseEntity<ApiResponse<List<CompanyOwnerResponse>>> updateOwners(Authentication authentication,
-                                                                               @Valid @RequestBody CompanyOwnersRequest request) {
-        return ResponseEntity.ok(ApiResponse.success("Company owners updated successfully",
-                companyService.updateOwners(authentication.getName(), request)));
     }
 
     @GetMapping("/theme")

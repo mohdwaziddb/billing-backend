@@ -4,6 +4,7 @@ import com.billing.dto.ApiResponse;
 import com.billing.dto.PageResponse;
 import com.billing.dto.user.CompanyUserRequest;
 import com.billing.dto.user.UserProfileResponse;
+import com.billing.entity.enums.RoleName;
 import com.billing.security.RequirePermission;
 import com.billing.service.UserService;
 import jakarta.validation.Valid;
@@ -39,9 +40,15 @@ public class UserController {
     @RequirePermission(menu = "USERS", action = "VIEW")
     public ResponseEntity<ApiResponse<PageResponse<UserProfileResponse>>> listCompanyUsers(Authentication authentication,
                                                                                           @RequestParam(defaultValue = "0") int page,
-                                                                                          @RequestParam(defaultValue = "20") int size) {
+                                                                                          @RequestParam(defaultValue = "20") int size,
+                                                                                          @RequestParam(required = false) String name,
+                                                                                          @RequestParam(required = false) String mobileNumber,
+                                                                                          @RequestParam(required = false) String email,
+                                                                                          @RequestParam(required = false) String search,
+                                                                                          @RequestParam(required = false) RoleName role,
+                                                                                          @RequestParam(required = false) Boolean active) {
         return ResponseEntity.ok(ApiResponse.success("Users fetched successfully",
-                userService.pageCompanyUsers(authentication.getName(), page, size)));
+                userService.pageCompanyUsers(authentication.getName(), page, size, name, mobileNumber, email, search, role, active)));
     }
 
     @PostMapping

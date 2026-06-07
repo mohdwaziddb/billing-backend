@@ -4,6 +4,7 @@ import com.billing.entity.Company;
 import com.billing.entity.User;
 import com.billing.dto.user.CompanySummary;
 import com.billing.dto.user.UserProfileResponse;
+import com.billing.entity.enums.RoleName;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -15,8 +16,9 @@ public class UserMapper {
                 .fullName(user.getFullName())
                 .mobileNumber(user.getMobileNumber())
                 .email(user.getEmail())
-                .role(user.getRole().name())
+                .role((user.getRole() == null ? RoleName.USER : user.getRole()).name())
                 .active(user.isActive())
+                .createdAt(user.getCreatedAt())
                 .company(toCompanySummary(user.getCompany()))
                 .build();
     }

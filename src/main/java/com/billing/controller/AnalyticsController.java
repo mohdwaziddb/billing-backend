@@ -6,6 +6,7 @@ import com.billing.dto.analytics.AnalyticsSummaryResponse;
 import com.billing.dto.analytics.CustomerDueResponse;
 import com.billing.dto.analytics.LowStockProductResponse;
 import com.billing.dto.analytics.OwnerAnalyticsResponse;
+import com.billing.dto.analytics.SalesByCategoryResponse;
 import com.billing.dto.analytics.SalesChartPointResponse;
 import com.billing.dto.analytics.TopSellingProductResponse;
 import com.billing.security.RequirePermission;
@@ -80,6 +81,18 @@ public class AnalyticsController {
     ) {
         return ResponseEntity.ok(ApiResponse.success("Top selling products fetched successfully",
                 analyticsService.topSellingProducts(authentication.getName(), page, size)));
+    }
+
+    @GetMapping("/sales-by-category")
+    @RequirePermission(menu = "ANALYTICS", action = "VIEW")
+    public ResponseEntity<ApiResponse<List<SalesByCategoryResponse>>> salesByCategory(
+            Authentication authentication,
+            @RequestParam(required = false) LocalDate startDate,
+            @RequestParam(required = false) LocalDate endDate,
+            @RequestParam(defaultValue = "5") int limit
+    ) {
+        return ResponseEntity.ok(ApiResponse.success("Sales by category fetched successfully",
+                analyticsService.salesByCategory(authentication.getName(), startDate, endDate, limit)));
     }
 
     @GetMapping("/low-stock-products")

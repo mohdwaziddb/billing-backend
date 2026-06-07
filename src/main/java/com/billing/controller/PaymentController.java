@@ -4,6 +4,8 @@ import com.billing.dto.ApiResponse;
 import com.billing.dto.PageResponse;
 import com.billing.dto.payment.PaymentRequest;
 import com.billing.dto.payment.PaymentResponse;
+import com.billing.entity.enums.PaymentMode;
+import com.billing.entity.enums.RoleName;
 import com.billing.security.RequirePermission;
 import com.billing.service.PaymentService;
 import jakarta.validation.Valid;
@@ -14,6 +16,8 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
+import java.math.BigDecimal;
+import java.time.LocalDate;
 
 @RestController
 @RequestMapping("/api/v1/payments")
@@ -25,9 +29,19 @@ public class PaymentController {
     @GetMapping
     @RequirePermission(menu = "PAYMENTS", action = "VIEW")
     public ResponseEntity<ApiResponse<PageResponse<PaymentResponse>>> list(Authentication authentication,
+                                                                          @RequestParam(required = false) String search,
+                                                                          @RequestParam(required = false) String paymentStatus,
+                                                                          @RequestParam(required = false) LocalDate startDate,
+                                                                          @RequestParam(required = false) LocalDate endDate,
+                                                                          @RequestParam(required = false) BigDecimal minAmount,
+                                                                          @RequestParam(required = false) BigDecimal maxAmount,
+                                                                          @RequestParam(required = false) PaymentMode mode,
+                                                                          @RequestParam(required = false) Boolean invoiceLinked,
+                                                                          @RequestParam(required = false) RoleName createdByRole,
                                                                           @RequestParam(defaultValue = "0") int page,
                                                                           @RequestParam(defaultValue = "20") int size) {
-        return ResponseEntity.ok(ApiResponse.success("Payments fetched successfully", paymentService.page(authentication.getName(), page, size)));
+        return ResponseEntity.ok(ApiResponse.success("Payments fetched successfully", paymentService.page(authentication.getName(),
+                search, paymentStatus, startDate, endDate, minAmount, maxAmount, mode, invoiceLinked, createdByRole, page, size)));
     }
 
     @GetMapping("/{paymentId}")

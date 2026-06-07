@@ -6,6 +6,7 @@ import com.billing.dto.analytics.CustomerDueResponse;
 import com.billing.dto.analytics.LowStockProductResponse;
 import com.billing.dto.analytics.MetricPointResponse;
 import com.billing.dto.analytics.OwnerAnalyticsResponse;
+import com.billing.dto.analytics.SalesByCategoryResponse;
 import com.billing.dto.analytics.SalesChartPointResponse;
 import com.billing.dto.analytics.SalesTrendStatus;
 import com.billing.dto.analytics.TopSellingProductResponse;
@@ -15,9 +16,11 @@ import com.billing.entity.Invoice;
 import com.billing.entity.InvoiceItem;
 import com.billing.entity.Payment;
 import com.billing.entity.Product;
+import com.billing.entity.ProductCategory;
 import com.billing.repository.CustomerRepository;
 import com.billing.repository.InvoiceRepository;
 import com.billing.repository.PaymentRepository;
+import com.billing.repository.ProductCategoryRepository;
 import com.billing.repository.ProductRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageImpl;
@@ -45,6 +48,7 @@ public class AnalyticsService {
     private final AccessControlService accessControlService;
     private final InvoiceRepository invoiceRepository;
     private final ProductRepository productRepository;
+    private final ProductCategoryRepository productCategoryRepository;
     private final CustomerRepository customerRepository;
     private final PaymentRepository paymentRepository;
 
@@ -183,6 +187,53 @@ public class AnalyticsService {
                         .build())
                 .toList();
         return page(allRecords, pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public List<SalesByCategoryResponse> salesByCategory(String email, LocalDate startDate, LocalDate endDate, int limit) {
+        Company company = accessControlService.getCurrentCompany(email);
+        List<ProductCategory> categories = productCategoryRepository.findAllByCompanyWithFilters(company, true, null);
+        List<Invoice> invoices = invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company).stream()
+                .filter(invoice -> isWithinRange(invoice.getInvoiceDate(), startDate, endDate))
+                .toList();
+        Map<Long, CategorySalesAggregate> aggregates = new HashMap<>();
+
+        for (ProductCategory category : categories) {
+            aggregates.put(category.getId(), new CategorySalesAggregate(category, BigDecimal.ZERO));
+        }
+
+        for (Invoice invoice : invoices) {
+            for (InvoiceItem item : invoice.getItems()) {
+                ProductCategory category = item.getProduct().getProductCategory();
+                if (category == null || !aggregates.containsKey(category.getId())) {
+                    continue;
+                }
+                aggregates.compute(category.getId(), (categoryId, current) -> {
+                    CategorySalesAggregate next = current == null
+                            ? new CategorySalesAggregate(category, BigDecimal.ZERO)
+                            : current;
+                    next.totalSales = scale(next.totalSales.add(item.getLineTotal()));
+                    return next;
+                });
+            }
+        }
+
+        BigDecimal totalSales = aggregates.values().stream()
+                .map(CategorySalesAggregate::getTotalSales)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        int safeLimit = Math.max(1, Math.min(limit, 10));
+
+        return aggregates.values().stream()
+                .sorted(Comparator.comparing(CategorySalesAggregate::getTotalSales, Comparator.reverseOrder())
+                        .thenComparing(aggregate -> aggregate.category.getCategoryName()))
+                .limit(safeLimit)
+                .map(aggregate -> SalesByCategoryResponse.builder()
+                        .categoryId(aggregate.category.getId())
+                        .categoryName(aggregate.category.getCategoryName())
+                        .totalAmount(scale(aggregate.totalSales))
+                        .percentage(calculateSharePercentage(aggregate.totalSales, totalSales))
+                        .build())
+                .toList();
     }
 
     @Transactional(readOnly = true)
@@ -444,6 +495,16 @@ public class AnalyticsService {
         return value == null ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP) : value.setScale(2, RoundingMode.HALF_UP);
     }
 
+    private BigDecimal calculateSharePercentage(BigDecimal amount, BigDecimal total) {
+        BigDecimal scaledTotal = scale(total);
+        if (scaledTotal.compareTo(BigDecimal.ZERO) == 0) {
+            return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        }
+        return scale(amount).divide(scaledTotal, 4, RoundingMode.HALF_UP)
+                .multiply(BigDecimal.valueOf(100))
+                .setScale(2, RoundingMode.HALF_UP);
+    }
+
     private Pageable pageRequest(int page, int size) {
         return PageRequest.of(Math.max(page, 0), Math.max(1, Math.min(size, 100)));
     }
@@ -467,6 +528,20 @@ public class AnalyticsService {
 
         public int getTotalQty() {
             return totalQty;
+        }
+
+        public BigDecimal getTotalSales() {
+            return totalSales;
+        }
+    }
+
+    private static class CategorySalesAggregate {
+        private final ProductCategory category;
+        private BigDecimal totalSales;
+
+        private CategorySalesAggregate(ProductCategory category, BigDecimal totalSales) {
+            this.category = category;
+            this.totalSales = totalSales;
         }
 
         public BigDecimal getTotalSales() {

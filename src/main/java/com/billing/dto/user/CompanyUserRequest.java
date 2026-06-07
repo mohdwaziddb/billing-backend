@@ -3,7 +3,6 @@ package com.billing.dto.user;
 import com.billing.entity.enums.RoleName;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
@@ -25,8 +24,7 @@ public class CompanyUserRequest {
     @Size(min = 8, message = "Password must be at least 8 characters")
     private String password;
 
-    @NotNull
-    private RoleName role;
+    private RoleName role = RoleName.USER;
 
     private Boolean active = true;
 }

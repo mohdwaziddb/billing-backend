@@ -3,6 +3,8 @@ package com.billing.dto.user;
 import lombok.Builder;
 import lombok.Getter;
 
+import java.time.LocalDateTime;
+
 @Getter
 @Builder
 public class UserProfileResponse {
@@ -12,5 +14,6 @@ public class UserProfileResponse {
     private String email;
     private String role;
     private boolean active;
+    private LocalDateTime createdAt;
     private CompanySummary company;
 }

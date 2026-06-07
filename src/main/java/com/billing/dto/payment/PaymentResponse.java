@@ -13,6 +13,7 @@ public class PaymentResponse {
     private Long id;
     private Long customerId;
     private String customerName;
+    private String customerMobile;
     private Long invoiceId;
     private String invoiceNo;
     private BigDecimal amount;

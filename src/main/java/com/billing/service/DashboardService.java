@@ -56,8 +56,20 @@ public class DashboardService {
         List<Payment> filteredPayments = allPayments.stream()
                 .filter(payment -> isWithinRange(payment.getPaymentDate(), safeStart, safeEnd))
                 .toList();
+        LocalDate previousStart = previousRangeStart(safeStart, safeEnd);
+        LocalDate previousEnd = previousRangeEnd(safeStart);
+        List<Invoice> previousInvoices = allInvoices.stream()
+                .filter(invoice -> isWithinRange(invoice.getInvoiceDate(), previousStart, previousEnd))
+                .toList();
+        List<Payment> previousPayments = allPayments.stream()
+                .filter(payment -> isWithinRange(payment.getPaymentDate(), previousStart, previousEnd))
+                .toList();
         Map<Long, LocalDate> firstPurchaseDates = firstPurchaseDates(allInvoices);
         List<Long> periodCustomerIds = filteredInvoices.stream()
+                .map(invoice -> invoice.getCustomer().getId())
+                .distinct()
+                .toList();
+        List<Long> previousCustomerIds = previousInvoices.stream()
                 .map(invoice -> invoice.getCustomer().getId())
                 .distinct()
                 .toList();
@@ -71,12 +83,19 @@ public class DashboardService {
         BigDecimal totalSales = filteredInvoices.stream()
                 .map(Invoice::getTotalAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal previousSales = previousInvoices.stream()
+                .map(Invoice::getTotalAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         BigDecimal totalCollection = filteredPayments.stream()
                 .map(Payment::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal previousCollection = previousPayments.stream()
+                .map(Payment::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         BigDecimal outstanding = calculateOutstandingAsOf(allCustomers, allInvoices, allPayments, safeEnd);
+        BigDecimal previousOutstanding = calculateOutstandingAsOf(allCustomers, allInvoices, allPayments, previousEnd);
 
         Map<Long, DashboardCustomerAggregate> customerAggregates = new HashMap<>();
         for (Invoice invoice : filteredInvoices) {
@@ -112,12 +131,17 @@ public class DashboardService {
                 .totalSales(scale(totalSales))
                 .totalCollection(scale(totalCollection))
                 .outstandingAmount(scale(outstanding))
+                .totalCustomers(periodCustomerIds.size())
                 .newCustomers(newCustomers)
                 .existingCustomers(existingCustomers)
                 .totalInvoices(filteredInvoices.size())
                 .totalProducts(productRepository.countByCompany(company))
                 .totalRevenue(scale(totalCollection))
                 .outstandingBalance(scale(outstanding))
+                .totalSalesTrendPercentage(calculateTrendPercentage(totalSales, previousSales))
+                .collectionTrendPercentage(calculateTrendPercentage(totalCollection, previousCollection))
+                .outstandingTrendPercentage(calculateTrendPercentage(outstanding, previousOutstanding))
+                .totalCustomersTrendPercentage(calculateTrendPercentage(BigDecimal.valueOf(periodCustomerIds.size()), BigDecimal.valueOf(previousCustomerIds.size())))
                 .topCustomers(topCustomers)
                 .build();
     }
@@ -155,6 +179,8 @@ public class DashboardService {
             case "newCustomers" -> customerRows(filteredInvoices, customersById, firstPurchaseDates, startDate, endDate, true);
             case "existingCustomers" -> customerRows(filteredInvoices, customersById, firstPurchaseDates, startDate, endDate, false);
             case "invoices" -> invoiceRows(filteredInvoices);
+            case "products" -> productSummary(filteredInvoices);
+            case "customers" -> totalCustomerRows(filteredInvoices, customersById);
             default -> throw new IllegalArgumentException("Unsupported dashboard card: " + card);
         };
 
@@ -175,7 +201,7 @@ public class DashboardService {
                 .sortDirection(sortDirection)
                 .search(search)
                 .rows(sortedRows.subList(fromIndex, toIndex))
-                .productSummary("totalSales".equals(normalizedCard) ? productSummary(filteredInvoices) : List.of())
+                .productSummary(List.of())
                 .build();
     }
 
@@ -217,8 +243,22 @@ public class DashboardService {
             case "new-customers", "newCustomers" -> "newCustomers";
             case "existing-customers", "existingCustomers" -> "existingCustomers";
             case "invoices" -> "invoices";
+            case "products" -> "products";
+            case "customers", "totalCustomers", "total-customers" -> "customers";
             default -> card.trim();
         };
+    }
+
+    private LocalDate previousRangeStart(LocalDate startDate, LocalDate endDate) {
+        if (startDate == null || endDate == null) {
+            return null;
+        }
+        long days = java.time.temporal.ChronoUnit.DAYS.between(startDate, endDate) + 1;
+        return startDate.minusDays(days);
+    }
+
+    private LocalDate previousRangeEnd(LocalDate startDate) {
+        return startDate == null ? null : startDate.minusDays(1);
     }
 
     private List<Map<String, Object>> totalSalesRows(List<Invoice> invoices) {
@@ -340,6 +380,32 @@ public class DashboardService {
         }).toList();
     }
 
+    private List<Map<String, Object>> totalCustomerRows(List<Invoice> invoices, Map<Long, Customer> customersById) {
+        Map<Long, DashboardCustomerAggregate> aggregates = new HashMap<>();
+        for (Invoice invoice : invoices) {
+            Customer customer = invoice.getCustomer();
+            DashboardCustomerAggregate aggregate = aggregates.computeIfAbsent(customer.getId(), id -> new DashboardCustomerAggregate(customer));
+            aggregate.invoiceCount++;
+            aggregate.totalPurchaseAmount = scale(aggregate.totalPurchaseAmount.add(invoice.getTotalAmount()));
+            if (aggregate.lastPurchaseDate == null || invoice.getInvoiceDate().isAfter(aggregate.lastPurchaseDate)) {
+                aggregate.lastPurchaseDate = invoice.getInvoiceDate();
+            }
+        }
+
+        return aggregates.values().stream().map(aggregate -> {
+            Customer customer = customersById.getOrDefault(aggregate.customer.getId(), aggregate.customer);
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("customerName", customer.getName());
+            row.put("mobile", customer.getMobile());
+            row.put("invoiceCount", aggregate.invoiceCount);
+            row.put("totalPurchaseAmount", scale(aggregate.totalPurchaseAmount));
+            row.put("outstandingAmount", scale(customer.getCurrentBalance()));
+            row.put("lastPurchaseDate", aggregate.lastPurchaseDate);
+            row.put("date", aggregate.lastPurchaseDate);
+            return row;
+        }).toList();
+    }
+
     private List<Map<String, Object>> productSummary(List<Invoice> invoices) {
         Map<Long, ProductSalesAggregate> aggregates = new HashMap<>();
         for (Invoice invoice : invoices) {
@@ -422,6 +488,21 @@ public class DashboardService {
 
     private BigDecimal scale(BigDecimal value) {
         return value == null ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP) : value.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal calculateTrendPercentage(BigDecimal current, BigDecimal previous) {
+        BigDecimal scaledCurrent = scale(current);
+        BigDecimal scaledPrevious = scale(previous);
+        if (scaledPrevious.compareTo(BigDecimal.ZERO) == 0) {
+            if (scaledCurrent.compareTo(BigDecimal.ZERO) == 0) {
+                return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+            }
+            return BigDecimal.valueOf(100).setScale(2, RoundingMode.HALF_UP);
+        }
+        return scaledCurrent.subtract(scaledPrevious)
+                .divide(scaledPrevious, 4, RoundingMode.HALF_UP)
+                .multiply(BigDecimal.valueOf(100))
+                .setScale(2, RoundingMode.HALF_UP);
     }
 
     private static final class DashboardCustomerAggregate {

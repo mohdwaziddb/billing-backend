@@ -2,9 +2,9 @@ package com.billing.service;
 
 import com.billing.entity.Company;
 import com.billing.entity.User;
+import com.billing.entity.enums.RoleName;
 import com.billing.exception.ResourceNotFoundException;
 import com.billing.exception.BadRequestException;
-import com.billing.repository.CompanyOwnerRepository;
 import com.billing.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
@@ -16,7 +16,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class AccessControlService {
 
     private final UserRepository userRepository;
-    private final CompanyOwnerRepository companyOwnerRepository;
 
     @Transactional(readOnly = true)
     public User getCurrentUser(String email) {
@@ -31,8 +30,8 @@ public class AccessControlService {
 
     @Transactional(readOnly = true)
     public boolean isCompanyOwner(User user) {
-        Company company = requireCompany(user);
-        return user.isActive() && companyOwnerRepository.existsByCompanyAndUserAndUserActiveTrue(company, user);
+        requireCompany(user);
+        return user.isActive() && user.getRole() == RoleName.OWNER;
     }
 
     @Transactional(readOnly = true)

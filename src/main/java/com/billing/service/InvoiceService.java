@@ -1,6 +1,7 @@
 package com.billing.service;
 
 import com.billing.entity.enums.InvoiceStatus;
+import com.billing.entity.enums.RoleName;
 import com.billing.exception.ResourceNotFoundException;
 import com.billing.dto.invoice.InvoiceItemRequest;
 import com.billing.dto.invoice.InvoiceItemResponse;
@@ -25,6 +26,7 @@ import org.springframework.data.domain.Sort;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -77,11 +79,52 @@ public class InvoiceService {
 
     @Transactional(readOnly = true)
     public PageResponse<InvoiceResponse> page(String email, Long customerId, int page, int size) {
+        return page(email, customerId, null, null, null, null, null, null, null, null, null, null, page, size);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<InvoiceResponse> page(String email,
+                                              Long customerId,
+                                              String search,
+                                              String invoiceStatus,
+                                              String paymentStatus,
+                                              LocalDate startDate,
+                                              LocalDate endDate,
+                                              String outstandingFilter,
+                                              BigDecimal minAmount,
+                                              BigDecimal maxAmount,
+                                              Long categoryId,
+                                              RoleName createdByRole,
+                                              int page,
+                                              int size) {
         Company company = accessControlService.getCurrentCompany(email);
-        PageRequest pageable = PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 100)), Sort.by(Sort.Direction.DESC, "invoiceDate").and(Sort.by(Sort.Direction.DESC, "id")));
-        Page<Invoice> invoices = customerId == null
-                ? invoiceRepository.findByCompany(company, pageable)
-                : invoiceRepository.findByCompanyAndCustomer(company, customerService.getCustomerOrThrow(company, customerId), pageable);
+        int safeSize = Math.max(1, Math.min(size, 1000));
+        PageRequest pageable = PageRequest.of(Math.max(0, page), safeSize, Sort.by(Sort.Direction.DESC, "invoiceDate").and(Sort.by(Sort.Direction.DESC, "id")));
+        InvoiceStatus resolvedStatus = resolveFilterStatus(invoiceStatus, paymentStatus);
+        if (isUnsupportedInvoiceStatus(invoiceStatus)) {
+            return PageResponse.<InvoiceResponse>builder()
+                    .records(List.of())
+                    .page(Math.max(0, page))
+                    .size(safeSize)
+                    .totalRecords(0)
+                    .totalPages(0)
+                    .build();
+        }
+        Customer customer = customerId == null ? null : customerService.getCustomerOrThrow(company, customerId);
+        Page<Invoice> invoices = invoiceRepository.searchInvoices(
+                company,
+                customer,
+                blankToNull(search),
+                resolvedStatus,
+                startDate,
+                endDate,
+                normalizeOutstandingFilter(outstandingFilter),
+                minAmount,
+                maxAmount,
+                categoryId,
+                createdByRole,
+                pageable
+        );
         return PageResponse.from(invoices.map(this::toResponse));
     }
 
@@ -245,6 +288,51 @@ public class InvoiceService {
             return InvoiceStatus.PARTIAL;
         }
         return InvoiceStatus.UNPAID;
+    }
+
+    private InvoiceStatus resolveFilterStatus(String invoiceStatus, String paymentStatus) {
+        String invoiceValue = blankToNull(invoiceStatus);
+        if (invoiceValue != null) {
+            return switch (invoiceValue.trim().toUpperCase()) {
+                case "PENDING", "UNPAID" -> InvoiceStatus.UNPAID;
+                case "PARTIAL", "PARTIAL_PAID" -> InvoiceStatus.PARTIAL;
+                case "PAID", "FULLY_PAID" -> InvoiceStatus.PAID;
+                default -> null;
+            };
+        }
+        String paymentValue = blankToNull(paymentStatus);
+        if (paymentValue == null) {
+            return null;
+        }
+        return switch (paymentValue.trim().toUpperCase()) {
+            case "UNPAID" -> InvoiceStatus.UNPAID;
+            case "PARTIAL" -> InvoiceStatus.PARTIAL;
+            case "PAID", "FULLY_PAID" -> InvoiceStatus.PAID;
+            default -> null;
+        };
+    }
+
+    private boolean isUnsupportedInvoiceStatus(String invoiceStatus) {
+        String value = blankToNull(invoiceStatus);
+        if (value == null) {
+            return false;
+        }
+        return switch (value.trim().toUpperCase()) {
+            case "DRAFT", "CANCELLED" -> true;
+            default -> false;
+        };
+    }
+
+    private String normalizeOutstandingFilter(String outstandingFilter) {
+        String value = blankToNull(outstandingFilter);
+        return value == null ? null : value.trim().toUpperCase();
+    }
+
+    private String blankToNull(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
     }
 
     private String generateInvoiceNumber(Company company, Customer customer, java.time.LocalDate invoiceDate) {

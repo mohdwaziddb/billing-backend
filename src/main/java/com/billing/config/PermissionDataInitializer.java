@@ -3,20 +3,19 @@ package com.billing.config;
 import com.billing.entity.AppMenu;
 import com.billing.entity.AppMenuAction;
 import com.billing.entity.Company;
-import com.billing.entity.CompanyOwner;
 import com.billing.entity.CompanyThemeSetting;
+import com.billing.entity.PlatformSetting;
 import com.billing.entity.RoleMaster;
 import com.billing.entity.RoleMenuActionPermission;
 import com.billing.entity.RoleMenuPermission;
 import com.billing.repository.AppMenuActionRepository;
 import com.billing.repository.AppMenuRepository;
 import com.billing.repository.CompanyRepository;
-import com.billing.repository.CompanyOwnerRepository;
 import com.billing.repository.RoleMasterRepository;
 import com.billing.repository.CompanyThemeSettingRepository;
+import com.billing.repository.PlatformSettingRepository;
 import com.billing.repository.RoleMenuActionPermissionRepository;
 import com.billing.repository.RoleMenuPermissionRepository;
-import com.billing.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -34,12 +33,11 @@ public class PermissionDataInitializer implements ApplicationRunner {
     private final AppMenuRepository appMenuRepository;
     private final AppMenuActionRepository appMenuActionRepository;
     private final CompanyRepository companyRepository;
-    private final CompanyOwnerRepository companyOwnerRepository;
     private final CompanyThemeSettingRepository companyThemeSettingRepository;
+    private final PlatformSettingRepository platformSettingRepository;
     private final RoleMasterRepository roleMasterRepository;
     private final RoleMenuPermissionRepository roleMenuPermissionRepository;
     private final RoleMenuActionPermissionRepository roleMenuActionPermissionRepository;
-    private final UserRepository userRepository;
 
     private static final List<MenuSeed> MENUS = List.of(
             new MenuSeed("Dashboard", "DASHBOARD", "LayoutDashboard", "/dashboard", 1, null),
@@ -70,11 +68,11 @@ public class PermissionDataInitializer implements ApplicationRunner {
     @Transactional
     public void run(ApplicationArguments args) {
         seedRoles();
+        seedPlatformSettings();
         seedMenus();
         seedActions();
         for (Company company : companyRepository.findAll()) {
             seedPermissionsForCompany(company);
-            seedOwnersForCompany(company);
             seedThemeForCompany(company);
         }
     }
@@ -91,6 +89,14 @@ public class PermissionDataInitializer implements ApplicationRunner {
                         .roleName(name)
                         .roleCode(code)
                         .systemRole(true)
+                        .build()));
+    }
+
+    private void seedPlatformSettings() {
+        platformSettingRepository.findTopByOrderByIdAsc()
+                .orElseGet(() -> platformSettingRepository.save(PlatformSetting.builder()
+                        .platformName("BizPulse Technologies")
+                        .platformTagline("Business Management Platform")
                         .build()));
     }
 
@@ -195,16 +201,6 @@ public class PermissionDataInitializer implements ApplicationRunner {
                 }
             }
         }
-    }
-
-    public void seedOwnersForCompany(Company company) {
-        userRepository.findByCompanyOrderByCreatedAtDesc(company).stream()
-                .filter(user -> "OWNER".equals(user.getRole().name()))
-                .forEach(user -> companyOwnerRepository.findByCompanyAndUser(company, user)
-                        .orElseGet(() -> companyOwnerRepository.save(CompanyOwner.builder()
-                                .company(company)
-                                .user(user)
-                                .build())));
     }
 
     public void seedThemeForCompany(Company company) {

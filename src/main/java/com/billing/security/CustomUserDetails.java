@@ -1,6 +1,7 @@
 package com.billing.security;
 
 import com.billing.entity.User;
+import com.billing.entity.enums.RoleName;
 import lombok.Getter;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -24,7 +25,7 @@ public class CustomUserDetails implements UserDetails {
         this.email = user.getEmail();
         this.password = user.getPassword();
         this.active = user.isActive();
-        this.role = user.getRole().name();
+        this.role = (user.getRole() == null ? RoleName.USER : user.getRole()).name();
         this.companyId = user.getCompany() != null ? user.getCompany().getId() : null;
     }
 
