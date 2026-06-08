@@ -11,10 +11,10 @@
     </parent>
 
     <groupId>com.billing</groupId>
-    <artifactId>billing-saas</artifactId>
+    <artifactId>billing</artifactId>
     <version>1.0.0</version>
-    <name>billing-saas</name>
-    <description>Billing SaaS backend</description>
+    <name>billing</name>
+    <description>Billing backend</description>
 
     <properties>
         <java.version>17</java.version>
