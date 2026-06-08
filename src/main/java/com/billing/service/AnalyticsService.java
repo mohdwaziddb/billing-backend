@@ -155,10 +155,13 @@ public class AnalyticsService {
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<TopSellingProductResponse> topSellingProducts(String email, int page, int size) {
+    public PageResponse<TopSellingProductResponse> topSellingProducts(String email, LocalDate startDate, LocalDate endDate, String search, int page, int size) {
         Company company = accessControlService.getCurrentCompany(email);
         Pageable pageable = pageRequest(page, size);
-        List<Invoice> invoices = invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company);
+        String normalizedSearch = blankToNull(search);
+        List<Invoice> invoices = invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company).stream()
+                .filter(invoice -> isWithinRange(invoice.getInvoiceDate(), startDate, endDate))
+                .toList();
         Map<Long, ProductSalesAggregate> aggregates = new HashMap<>();
 
         for (Invoice invoice : invoices) {
@@ -175,8 +178,11 @@ public class AnalyticsService {
         }
 
         List<TopSellingProductResponse> allRecords = aggregates.values().stream()
-                .sorted(Comparator.comparing(ProductSalesAggregate::getTotalQty, Comparator.reverseOrder())
-                        .thenComparing(ProductSalesAggregate::getTotalSales, Comparator.reverseOrder()))
+                .filter(aggregate -> normalizedSearch == null
+                        || containsIgnoreCase(aggregate.product.getName(), normalizedSearch)
+                        || containsIgnoreCase(aggregate.product.getSku(), normalizedSearch))
+                .sorted(Comparator.comparing(ProductSalesAggregate::getTotalSales, Comparator.reverseOrder())
+                        .thenComparing(ProductSalesAggregate::getTotalQty, Comparator.reverseOrder()))
                 .map(aggregate -> TopSellingProductResponse.builder()
                         .productId(aggregate.product.getId())
                         .productName(aggregate.product.getName())
@@ -191,7 +197,19 @@ public class AnalyticsService {
 
     @Transactional(readOnly = true)
     public List<SalesByCategoryResponse> salesByCategory(String email, LocalDate startDate, LocalDate endDate, int limit) {
+        return salesByCategoryRecords(email, startDate, endDate, null).stream()
+                .limit(Math.max(1, Math.min(limit, 7)))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<SalesByCategoryResponse> salesByCategoryPage(String email, LocalDate startDate, LocalDate endDate, String search, int page, int size) {
+        return page(salesByCategoryRecords(email, startDate, endDate, search), pageRequest(page, size));
+    }
+
+    private List<SalesByCategoryResponse> salesByCategoryRecords(String email, LocalDate startDate, LocalDate endDate, String search) {
         Company company = accessControlService.getCurrentCompany(email);
+        String normalizedSearch = blankToNull(search);
         List<ProductCategory> categories = productCategoryRepository.findAllByCompanyWithFilters(company, true, null);
         List<Invoice> invoices = invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company).stream()
                 .filter(invoice -> isWithinRange(invoice.getInvoiceDate(), startDate, endDate))
@@ -221,12 +239,11 @@ public class AnalyticsService {
         BigDecimal totalSales = aggregates.values().stream()
                 .map(CategorySalesAggregate::getTotalSales)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        int safeLimit = Math.max(1, Math.min(limit, 10));
 
         return aggregates.values().stream()
+                .filter(aggregate -> normalizedSearch == null || containsIgnoreCase(aggregate.category.getCategoryName(), normalizedSearch))
                 .sorted(Comparator.comparing(CategorySalesAggregate::getTotalSales, Comparator.reverseOrder())
                         .thenComparing(aggregate -> aggregate.category.getCategoryName()))
-                .limit(safeLimit)
                 .map(aggregate -> SalesByCategoryResponse.builder()
                         .categoryId(aggregate.category.getId())
                         .categoryName(aggregate.category.getCategoryName())
@@ -257,9 +274,9 @@ public class AnalyticsService {
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<CustomerDueResponse> customerDueList(String email, int page, int size) {
+    public PageResponse<CustomerDueResponse> customerDueList(String email, String search, int page, int size) {
         Company company = accessControlService.getCurrentCompany(email);
-        return PageResponse.from(customerRepository.findOutstandingPageByCompanyWithFilters(company, null, null, pageRequest(page, size))
+        return PageResponse.from(customerRepository.findOutstandingPageByCompanyWithFilters(company, blankToNull(search), null, pageRequest(page, size))
                 .map(customer -> CustomerDueResponse.builder()
                         .customerId(customer.getId())
                         .customerName(customer.getName())
@@ -507,6 +524,17 @@ public class AnalyticsService {
 
     private Pageable pageRequest(int page, int size) {
         return PageRequest.of(Math.max(page, 0), Math.max(1, Math.min(size, 100)));
+    }
+
+    private String blankToNull(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
+    }
+
+    private boolean containsIgnoreCase(String value, String search) {
+        return value != null && value.toLowerCase(Locale.ENGLISH).contains(search.toLowerCase(Locale.ENGLISH));
     }
 
     private <T> PageResponse<T> page(List<T> allRecords, Pageable pageable) {

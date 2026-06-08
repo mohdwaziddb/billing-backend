@@ -96,6 +96,11 @@ public class DashboardService {
 
         BigDecimal outstanding = calculateOutstandingAsOf(allCustomers, allInvoices, allPayments, safeEnd);
         BigDecimal previousOutstanding = calculateOutstandingAsOf(allCustomers, allInvoices, allPayments, previousEnd);
+        long soldProducts = filteredInvoices.stream()
+                .flatMap(invoice -> invoice.getItems().stream())
+                .map(item -> item.getProduct().getId())
+                .distinct()
+                .count();
 
         Map<Long, DashboardCustomerAggregate> customerAggregates = new HashMap<>();
         for (Invoice invoice : filteredInvoices) {
@@ -113,7 +118,7 @@ public class DashboardService {
 
         List<DashboardTopCustomerResponse> topCustomers = customerAggregates.values().stream()
                 .sorted(Comparator.comparing(DashboardCustomerAggregate::getTotalPurchaseAmount, Comparator.reverseOrder()))
-                .limit(5)
+                .limit(7)
                 .map(aggregate -> DashboardTopCustomerResponse.builder()
                         .customerId(aggregate.customer.getId())
                         .customerName(aggregate.customer.getName())
@@ -135,7 +140,7 @@ public class DashboardService {
                 .newCustomers(newCustomers)
                 .existingCustomers(existingCustomers)
                 .totalInvoices(filteredInvoices.size())
-                .totalProducts(productRepository.countByCompany(company))
+                .totalProducts(soldProducts)
                 .totalRevenue(scale(totalCollection))
                 .outstandingBalance(scale(outstanding))
                 .totalSalesTrendPercentage(calculateTrendPercentage(totalSales, previousSales))

@@ -76,11 +76,14 @@ public class AnalyticsController {
     @RequirePermission(menu = "ANALYTICS", action = "VIEW")
     public ResponseEntity<ApiResponse<PageResponse<TopSellingProductResponse>>> topProducts(
             Authentication authentication,
+            @RequestParam(required = false) LocalDate startDate,
+            @RequestParam(required = false) LocalDate endDate,
+            @RequestParam(required = false) String search,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
         return ResponseEntity.ok(ApiResponse.success("Top selling products fetched successfully",
-                analyticsService.topSellingProducts(authentication.getName(), page, size)));
+                analyticsService.topSellingProducts(authentication.getName(), startDate, endDate, search, page, size)));
     }
 
     @GetMapping("/sales-by-category")
@@ -89,10 +92,24 @@ public class AnalyticsController {
             Authentication authentication,
             @RequestParam(required = false) LocalDate startDate,
             @RequestParam(required = false) LocalDate endDate,
-            @RequestParam(defaultValue = "5") int limit
+            @RequestParam(defaultValue = "7") int limit
     ) {
         return ResponseEntity.ok(ApiResponse.success("Sales by category fetched successfully",
                 analyticsService.salesByCategory(authentication.getName(), startDate, endDate, limit)));
+    }
+
+    @GetMapping("/sales-by-category/details")
+    @RequirePermission(menu = "ANALYTICS", action = "VIEW")
+    public ResponseEntity<ApiResponse<PageResponse<SalesByCategoryResponse>>> salesByCategoryDetails(
+            Authentication authentication,
+            @RequestParam(required = false) LocalDate startDate,
+            @RequestParam(required = false) LocalDate endDate,
+            @RequestParam(required = false) String search,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size
+    ) {
+        return ResponseEntity.ok(ApiResponse.success("Sales by category details fetched successfully",
+                analyticsService.salesByCategoryPage(authentication.getName(), startDate, endDate, search, page, size)));
     }
 
     @GetMapping("/low-stock-products")
@@ -110,10 +127,11 @@ public class AnalyticsController {
     @RequirePermission(menu = "ANALYTICS", action = "VIEW")
     public ResponseEntity<ApiResponse<PageResponse<CustomerDueResponse>>> customerDueList(
             Authentication authentication,
+            @RequestParam(required = false) String search,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
         return ResponseEntity.ok(ApiResponse.success("Customer due list fetched successfully",
-                analyticsService.customerDueList(authentication.getName(), page, size)));
+                analyticsService.customerDueList(authentication.getName(), search, page, size)));
     }
 }
