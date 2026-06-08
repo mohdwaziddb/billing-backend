@@ -17,6 +17,8 @@ public class AuditingConfig {
     @Bean
     public AuditorAware<String> auditorProvider() {
         System.out.println("");
+        System.out.println("");
+
         return () -> {
             Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
             if (authentication == null
