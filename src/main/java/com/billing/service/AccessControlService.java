@@ -37,6 +37,7 @@ public class AccessControlService {
     @Transactional(readOnly = true)
     public Company requireOwnerCompany(String email) {
         User user = getCurrentUser(email);
+        System.out.println("");
         if (!isCompanyOwner(user)) {
             throw new AccessDeniedException("Only company owner can perform this action");
         }
