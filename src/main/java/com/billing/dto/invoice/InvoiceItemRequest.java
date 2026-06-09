@@ -21,4 +21,9 @@ public class InvoiceItemRequest {
 
     @DecimalMin(value = "0.00")
     private BigDecimal discountPercent;
+
+    private String discountType;
+
+    @DecimalMin(value = "0.00")
+    private BigDecimal discountValue;
 }

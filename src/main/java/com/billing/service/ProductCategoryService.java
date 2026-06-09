@@ -13,7 +13,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.PageRequest;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -21,6 +23,7 @@ public class ProductCategoryService {
 
     private final ProductCategoryRepository productCategoryRepository;
     private final AccessControlService accessControlService;
+    private final AuditLogService auditLogService;
 
     @Transactional(readOnly = true)
     public List<ProductCategoryResponse> list(String email, String search, Boolean active) {
@@ -57,13 +60,16 @@ public class ProductCategoryService {
                 .description(blankToNull(request.getDescription()))
                 .active(Boolean.TRUE.equals(request.getActive()))
                 .build();
-        return toResponse(productCategoryRepository.save(category));
+        ProductCategory saved = productCategoryRepository.save(category);
+        auditLogService.logCreate(email, company, "Product Category", "ProductCategory", saved.getId(), snapshot(saved));
+        return toResponse(saved);
     }
 
     @Transactional
     public ProductCategoryResponse update(String email, Long categoryId, ProductCategoryRequest request) {
         Company company = requireOwnerCompany(email);
         ProductCategory category = getCategoryOrThrow(company, categoryId);
+        Map<String, Object> oldData = snapshot(category);
         String categoryName = normalizeName(request.getCategoryName());
         if (productCategoryRepository.existsByCompanyAndCategoryNameIgnoreCaseAndIdNot(company, categoryName, categoryId)) {
             throw new BadRequestException("Product category already exists");
@@ -72,15 +78,19 @@ public class ProductCategoryService {
         category.setCategoryName(categoryName);
         category.setDescription(blankToNull(request.getDescription()));
         category.setActive(Boolean.TRUE.equals(request.getActive()));
-        return toResponse(productCategoryRepository.save(category));
+        ProductCategory saved = productCategoryRepository.save(category);
+        auditLogService.logUpdate(email, company, "Product Category", "ProductCategory", saved.getId(), oldData, snapshot(saved));
+        return toResponse(saved);
     }
 
     @Transactional
     public void delete(String email, Long categoryId) {
         Company company = requireOwnerCompany(email);
         ProductCategory category = getCategoryOrThrow(company, categoryId);
+        Map<String, Object> oldData = snapshot(category);
         category.setActive(false);
-        productCategoryRepository.save(category);
+        ProductCategory saved = productCategoryRepository.save(category);
+        auditLogService.logDelete(email, company, "Product Category", "ProductCategory", saved.getId(), oldData);
     }
 
     public ProductCategory getActiveByNameOrThrow(Company company, String categoryName) {
@@ -119,6 +129,14 @@ public class ProductCategoryService {
                 .createdBy(category.getCreatedBy())
                 .updatedBy(category.getUpdatedBy())
                 .build();
+    }
+
+    private Map<String, Object> snapshot(ProductCategory category) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("categoryName", category.getCategoryName());
+        data.put("description", category.getDescription());
+        data.put("active", category.isActive());
+        return data;
     }
 
     private String normalizeName(String value) {

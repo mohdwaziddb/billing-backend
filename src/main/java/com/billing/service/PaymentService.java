@@ -21,7 +21,9 @@ import org.springframework.data.domain.Sort;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -31,6 +33,7 @@ public class PaymentService {
     private final AccessControlService accessControlService;
     private final CustomerService customerService;
     private final InvoiceService invoiceService;
+    private final AuditLogService auditLogService;
 
     @Transactional
     public PaymentResponse create(String email, PaymentRequest request) {
@@ -54,7 +57,9 @@ public class PaymentService {
                 .remarks(request.getRemarks())
                 .build();
 
-        return toResponse(paymentRepository.save(payment));
+        Payment saved = paymentRepository.save(payment);
+        auditLogService.logCreate(email, company, "Payment", "Payment", saved.getId(), snapshot(saved));
+        return toResponse(saved);
     }
 
     @Transactional(readOnly = true)
@@ -119,6 +124,7 @@ public class PaymentService {
     public PaymentResponse update(String email, Long paymentId, PaymentRequest request) {
         Company company = accessControlService.getCurrentCompany(email);
         Payment payment = getPaymentOrThrow(company, paymentId);
+        Map<String, Object> oldData = snapshot(payment);
 
         revertPayment(payment);
 
@@ -138,15 +144,19 @@ public class PaymentService {
         payment.setMode(request.getMode());
         payment.setRemarks(request.getRemarks());
 
-        return toResponse(paymentRepository.save(payment));
+        Payment saved = paymentRepository.save(payment);
+        auditLogService.logUpdate(email, company, "Payment", "Payment", saved.getId(), oldData, snapshot(saved));
+        return toResponse(saved);
     }
 
     @Transactional
     public void delete(String email, Long paymentId) {
         Company company = accessControlService.getCurrentCompany(email);
         Payment payment = getPaymentOrThrow(company, paymentId);
+        Map<String, Object> oldData = snapshot(payment);
         revertPayment(payment);
         paymentRepository.delete(payment);
+        auditLogService.logDelete(email, company, "Payment", "Payment", paymentId, oldData);
     }
 
     private Payment getPaymentOrThrow(Company company, Long paymentId) {
@@ -191,6 +201,19 @@ public class PaymentService {
                 .createdAt(payment.getCreatedAt())
                 .createdBy(payment.getCreatedBy())
                 .build();
+    }
+
+    private Map<String, Object> snapshot(Payment payment) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("customerId", payment.getCustomer().getId());
+        data.put("customerName", payment.getCustomer().getName());
+        data.put("invoiceId", payment.getInvoice() != null ? payment.getInvoice().getId() : null);
+        data.put("invoiceNo", payment.getInvoice() != null ? payment.getInvoice().getInvoiceNo() : null);
+        data.put("amount", scale(payment.getAmount()));
+        data.put("paymentDate", payment.getPaymentDate());
+        data.put("mode", payment.getMode() != null ? payment.getMode().name() : null);
+        data.put("remarks", payment.getRemarks());
+        return data;
     }
 
     private boolean isUnsupportedPaymentStatus(String status) {

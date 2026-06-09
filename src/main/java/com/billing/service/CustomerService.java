@@ -43,6 +43,7 @@ public class CustomerService {
     private final PaymentRepository paymentRepository;
     private final AccessControlService accessControlService;
     private final AuditNameResolver auditNameResolver;
+    private final AuditLogService auditLogService;
 
     @Transactional
     public CustomerResponse create(String email, CustomerRequest request) {
@@ -61,6 +62,7 @@ public class CustomerService {
                 .build();
 
         Customer saved = customerRepository.save(customer);
+        auditLogService.logCreate(email, company, "Customer", "Customer", saved.getId(), snapshot(saved));
         return toResponse(saved, emptyMetrics(saved));
     }
 
@@ -98,6 +100,7 @@ public class CustomerService {
     public CustomerResponse update(String email, Long customerId, CustomerRequest request) {
         Company company = accessControlService.getCurrentCompany(email);
         Customer customer = getCustomerOrThrow(company, customerId);
+        Map<String, Object> oldData = snapshot(customer);
         validateUnique(company, request, customerId);
 
         customer.setName(request.getName());
@@ -108,6 +111,7 @@ public class CustomerService {
         customer.setActive(Boolean.TRUE.equals(request.getActive()));
 
         Customer saved = customerRepository.save(customer);
+        auditLogService.logUpdate(email, company, "Customer", "Customer", saved.getId(), oldData, snapshot(saved));
         return toResponse(saved, loadMetrics(company, List.of(saved)).get(saved.getId()));
     }
 
@@ -115,11 +119,13 @@ public class CustomerService {
     public void delete(String email, Long customerId) {
         Company company = accessControlService.getCurrentCompany(email);
         Customer customer = getCustomerOrThrow(company, customerId);
+        Map<String, Object> oldData = snapshot(customer);
         if (customer.getCurrentBalance().compareTo(BigDecimal.ZERO) > 0) {
             throw new BadRequestException("Customer has outstanding balance and cannot be deleted");
         }
         customer.setActive(false);
-        customerRepository.save(customer);
+        Customer saved = customerRepository.save(customer);
+        auditLogService.logDelete(email, company, "Customer", "Customer", saved.getId(), oldData);
     }
 
     @Transactional(readOnly = true)
@@ -420,6 +426,18 @@ public class CustomerService {
 
     private String normalizeSearch(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private Map<String, Object> snapshot(Customer customer) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("name", customer.getName());
+        data.put("mobile", customer.getMobile());
+        data.put("email", customer.getEmail());
+        data.put("address", customer.getAddress());
+        data.put("gstNo", customer.getGstNo());
+        data.put("currentBalance", scale(customer.getCurrentBalance()));
+        data.put("active", customer.isActive());
+        return data;
     }
 
     private PageRequest pageRequest(int page, int size) {

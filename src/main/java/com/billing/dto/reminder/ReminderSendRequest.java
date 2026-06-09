@@ -14,4 +14,6 @@ public class ReminderSendRequest {
 
     @NotNull
     private ReminderChannel channel;
+
+    private Long templateId;
 }

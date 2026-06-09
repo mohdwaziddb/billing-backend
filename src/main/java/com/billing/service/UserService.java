@@ -16,7 +16,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.PageRequest;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -26,6 +28,7 @@ public class UserService {
     private final UserMapper userMapper;
     private final AccessControlService accessControlService;
     private final PasswordEncoder passwordEncoder;
+    private final AuditLogService auditLogService;
 
     @Transactional(readOnly = true)
     public UserProfileResponse getProfile(String email) {
@@ -87,7 +90,9 @@ public class UserService {
                 .active(Boolean.TRUE.equals(request.getActive()))
                 .build();
 
-        return userMapper.toProfile(userRepository.save(user));
+        User saved = userRepository.save(user);
+        auditLogService.logCreate(email, company, "User", "User", saved.getId(), snapshot(saved));
+        return userMapper.toProfile(saved);
     }
 
     @Transactional
@@ -95,6 +100,7 @@ public class UserService {
         Company company = accessControlService.requireOwnerCompany(email);
         User user = userRepository.findByIdAndCompany(userId, company)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        Map<String, Object> oldData = snapshot(user);
 
         validateUniqueUser(request.getMobileNumber(), request.getEmail(), user.getId());
         RoleName role = resolveRole(request.getRole());
@@ -114,7 +120,9 @@ public class UserService {
         user.setRole(role);
         user.setActive(Boolean.TRUE.equals(request.getActive()));
 
-        return userMapper.toProfile(userRepository.save(user));
+        User saved = userRepository.save(user);
+        auditLogService.logUpdate(email, company, "User", "User", saved.getId(), oldData, snapshot(saved));
+        return userMapper.toProfile(saved);
     }
 
     @Transactional
@@ -122,11 +130,13 @@ public class UserService {
         Company company = accessControlService.requireOwnerCompany(email);
         User user = userRepository.findByIdAndCompany(userId, company)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        Map<String, Object> oldData = snapshot(user);
         if (user.getRole() == RoleName.OWNER && user.isActive()) {
             ensureAnotherOwnerExists(company, user.getId());
         }
         user.setActive(false);
-        userRepository.save(user);
+        User saved = userRepository.save(user);
+        auditLogService.logDelete(email, company, "User", "User", saved.getId(), oldData);
     }
 
     private void ensureAnotherOwnerExists(Company company, Long excludedUserId) {
@@ -172,5 +182,15 @@ public class UserService {
 
     private RoleName resolveRole(RoleName role) {
         return role == null ? RoleName.USER : role;
+    }
+
+    private Map<String, Object> snapshot(User user) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("fullName", user.getFullName());
+        data.put("mobileNumber", user.getMobileNumber());
+        data.put("email", user.getEmail());
+        data.put("role", user.getRole() != null ? user.getRole().name() : null);
+        data.put("active", user.isActive());
+        return data;
     }
 }

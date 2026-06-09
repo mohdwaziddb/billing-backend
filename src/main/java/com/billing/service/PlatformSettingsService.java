@@ -18,17 +18,24 @@ public class PlatformSettingsService {
         return platformSettingRepository.findTopByOrderByIdAsc()
                 .map(this::toResponse)
                 .orElseGet(() -> PlatformSettingsResponse.builder()
-                        .platformName("BizPulse Technologies")
+                        .platformName("")
                         .platformLogo(null)
-                        .platformTagline("Business Management Platform")
+                        .platformTagline(null)
                         .build());
     }
 
     private PlatformSettingsResponse toResponse(PlatformSetting setting) {
         return PlatformSettingsResponse.builder()
-                .platformName(setting.getPlatformName())
+                .platformName(removeLegacyDefault(setting.getPlatformName(), "BizPulse Technologies"))
                 .platformLogo(setting.getPlatformLogo())
-                .platformTagline(setting.getPlatformTagline())
+                .platformTagline(removeLegacyDefault(setting.getPlatformTagline(), "Business Management Platform"))
                 .build();
+    }
+
+    private String removeLegacyDefault(String value, String legacyDefault) {
+        if (value == null) {
+            return null;
+        }
+        return value.trim().equalsIgnoreCase(legacyDefault) ? "" : value;
     }
 }

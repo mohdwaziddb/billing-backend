@@ -16,7 +16,9 @@ import org.springframework.data.domain.PageRequest;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -25,6 +27,7 @@ public class ProductService {
     private final ProductRepository productRepository;
     private final AccessControlService accessControlService;
     private final ProductCategoryService productCategoryService;
+    private final AuditLogService auditLogService;
 
     @Transactional
     public ProductResponse create(String email, ProductRequest request) {
@@ -47,7 +50,9 @@ public class ProductService {
                 .active(Boolean.TRUE.equals(request.getActive()))
                 .build();
 
-        return toResponse(productRepository.save(product));
+        Product saved = productRepository.save(product);
+        auditLogService.logCreate(email, company, "Product", "Product", saved.getId(), snapshot(saved));
+        return toResponse(saved);
     }
 
     @Transactional(readOnly = true)
@@ -76,6 +81,7 @@ public class ProductService {
         Company company = accessControlService.getCurrentCompany(email);
         validateProduct(company, request, productId);
         Product product = getProductOrThrow(company, productId);
+        Map<String, Object> oldData = snapshot(product);
         ProductCategory productCategory = productCategoryService.getActiveByIdOrThrow(company, request.getCategoryId());
 
         product.setName(request.getName());
@@ -90,15 +96,19 @@ public class ProductService {
         product.setTaxPercent(scalePercent(request.getTaxPercent()));
         product.setActive(Boolean.TRUE.equals(request.getActive()));
 
-        return toResponse(productRepository.save(product));
+        Product saved = productRepository.save(product);
+        auditLogService.logUpdate(email, company, "Product", "Product", saved.getId(), oldData, snapshot(saved));
+        return toResponse(saved);
     }
 
     @Transactional
     public void delete(String email, Long productId) {
         Company company = accessControlService.getCurrentCompany(email);
         Product product = getProductOrThrow(company, productId);
+        Map<String, Object> oldData = snapshot(product);
         product.setActive(false);
-        productRepository.save(product);
+        Product saved = productRepository.save(product);
+        auditLogService.logDelete(email, company, "Product", "Product", saved.getId(), oldData);
     }
 
     public Product getProductOrThrow(Company company, Long productId) {
@@ -158,6 +168,21 @@ public class ProductService {
 
     private String normalizeSearch(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private Map<String, Object> snapshot(Product product) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("name", product.getName());
+        data.put("category", product.getProductCategory() != null ? product.getProductCategory().getCategoryName() : null);
+        data.put("brand", product.getBrand());
+        data.put("sku", product.getSku());
+        data.put("purchasePrice", scale(product.getPurchasePrice()));
+        data.put("sellingPrice", scale(product.getSellingPrice()));
+        data.put("stockQty", product.getStockQty());
+        data.put("minStockQty", product.getMinStockQty());
+        data.put("taxPercent", scalePercent(product.getTaxPercent()));
+        data.put("active", product.isActive());
+        return data;
     }
 
     private PageRequest pageRequest(int page, int size) {

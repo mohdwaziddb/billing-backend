@@ -8,11 +8,16 @@ import com.billing.entity.enums.InvoiceStatus;
 import com.billing.entity.enums.ReminderChannel;
 import com.billing.entity.enums.ReminderStatus;
 import com.billing.dto.PageResponse;
+import com.billing.dto.email.EmailLogResponse;
+import com.billing.dto.email.EmailSendRequest;
 import com.billing.dto.reminder.OverdueCustomerResponse;
 import com.billing.dto.reminder.ReminderHistoryResponse;
 import com.billing.dto.reminder.ReminderSendRequest;
+import com.billing.entity.EmailTemplate;
 import com.billing.exception.BadRequestException;
+import com.billing.exception.ResourceNotFoundException;
 import com.billing.repository.CustomerRepository;
+import com.billing.repository.EmailTemplateRepository;
 import com.billing.repository.InvoiceRepository;
 import com.billing.repository.ReminderLogRepository;
 import lombok.RequiredArgsConstructor;
@@ -31,8 +36,10 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Stream;
 
@@ -45,7 +52,10 @@ public class ReminderService {
     private final CustomerRepository customerRepository;
     private final InvoiceRepository invoiceRepository;
     private final ReminderLogRepository reminderLogRepository;
+    private final EmailTemplateRepository emailTemplateRepository;
     private final CustomerService customerService;
+    private final EmailService emailService;
+    private final EmailTemplateVariableService variableService;
 
     @Value("${app.reminder.mock-mode:false}")
     private boolean reminderMockMode;
@@ -85,6 +95,20 @@ public class ReminderService {
 
         String message = buildReminderMessage(customer, company);
         ReminderStatus status = determineStatus(request.getChannel());
+        if (request.getChannel() == ReminderChannel.EMAIL && request.getTemplateId() != null) {
+            if (customer.getEmail() == null || customer.getEmail().isBlank()) {
+                throw new BadRequestException("Customer email is required to send email reminder");
+            }
+            EmailTemplate template = emailTemplateRepository.findByIdAndCompanyAndActiveTrue(request.getTemplateId(), company)
+                    .orElseThrow(() -> new ResourceNotFoundException("Active email template not found"));
+            EmailSendRequest emailRequest = new EmailSendRequest();
+            emailRequest.setTemplateId(template.getId());
+            emailRequest.setRecipientEmail(customer.getEmail());
+            emailRequest.setVariables(reminderVariables(customer, company));
+            EmailLogResponse emailLog = emailService.sendTemplateEmail(email, company, template, emailRequest);
+            message = variableService.render(template.getEmailBody(), company, emailRequest.getVariables());
+            status = toReminderStatus(emailLog.getStatus());
+        }
 
         ReminderLog reminderLog = ReminderLog.builder()
                 .company(company)
@@ -168,14 +192,36 @@ public class ReminderService {
         return ReminderStatus.PENDING;
     }
 
+    private ReminderStatus toReminderStatus(String emailStatus) {
+        if ("Sent".equalsIgnoreCase(emailStatus)) {
+            return ReminderStatus.SENT;
+        }
+        if ("Failed".equalsIgnoreCase(emailStatus)) {
+            return ReminderStatus.FAILED;
+        }
+        return ReminderStatus.PENDING;
+    }
+
     private String buildReminderMessage(Customer customer, Company company) {
         return String.format(
                 Locale.ENGLISH,
-                "Dear %s, your outstanding balance is ₹%s. Please clear your dues. - %s",
+                "Dear %s, your outstanding balance is Rs. %s. Please clear your dues. - %s",
                 customer.getName(),
                 scale(customer.getCurrentBalance()).toPlainString(),
                 company.getName()
         );
+    }
+
+    private Map<String, Object> reminderVariables(Customer customer, Company company) {
+        Map<String, Object> variables = new LinkedHashMap<>();
+        variables.put("Customer_Name", customer.getName());
+        variables.put("Customer_Email", customer.getEmail());
+        variables.put("Outstanding_Amount", scale(customer.getCurrentBalance()).toPlainString());
+        variables.put("Company_Name", company.getName());
+        variables.put("Company_Email", company.getEmail());
+        variables.put("Company_Phone", company.getPhone());
+        variables.put("Current_Date", LocalDate.now().toString());
+        return variables;
     }
 
     private ReminderHistoryResponse toHistoryResponse(ReminderLog logEntry) {

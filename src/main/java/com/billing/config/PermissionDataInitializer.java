@@ -4,6 +4,7 @@ import com.billing.entity.AppMenu;
 import com.billing.entity.AppMenuAction;
 import com.billing.entity.Company;
 import com.billing.entity.CompanyThemeSetting;
+import com.billing.entity.NotificationChannel;
 import com.billing.entity.PlatformSetting;
 import com.billing.entity.RoleMaster;
 import com.billing.entity.RoleMenuActionPermission;
@@ -13,6 +14,7 @@ import com.billing.repository.AppMenuRepository;
 import com.billing.repository.CompanyRepository;
 import com.billing.repository.RoleMasterRepository;
 import com.billing.repository.CompanyThemeSettingRepository;
+import com.billing.repository.NotificationChannelRepository;
 import com.billing.repository.PlatformSettingRepository;
 import com.billing.repository.RoleMenuActionPermissionRepository;
 import com.billing.repository.RoleMenuPermissionRepository;
@@ -34,6 +36,7 @@ public class PermissionDataInitializer implements ApplicationRunner {
     private final AppMenuActionRepository appMenuActionRepository;
     private final CompanyRepository companyRepository;
     private final CompanyThemeSettingRepository companyThemeSettingRepository;
+    private final NotificationChannelRepository notificationChannelRepository;
     private final PlatformSettingRepository platformSettingRepository;
     private final RoleMasterRepository roleMasterRepository;
     private final RoleMenuPermissionRepository roleMenuPermissionRepository;
@@ -53,7 +56,8 @@ public class PermissionDataInitializer implements ApplicationRunner {
             new MenuSeed("Product Categories", "PRODUCT_CATEGORY", "Tags", "/setup/product-categories", 11, "SETUP"),
             new MenuSeed("Theme Settings", "THEME_SETTINGS", "Palette", "/setup/theme-settings", 12, "SETUP"),
             new MenuSeed("About Company", "ABOUT_COMPANY", "Building2", "/setup/about-company", 13, "SETUP"),
-            new MenuSeed("Role Permissions", "ROLE_PERMISSIONS", "ShieldCheck", "/setup/role-permissions", 14, "SETUP")
+            new MenuSeed("Email Templates", "EMAIL_TEMPLATES", "Mail", "/setup/email-templates", 14, "SETUP"),
+            new MenuSeed("Role Permissions", "ROLE_PERMISSIONS", "ShieldCheck", "/setup/role-permissions", 15, "SETUP")
     );
 
     private static final List<ActionSeed> ACTIONS = List.of(
@@ -61,7 +65,9 @@ public class PermissionDataInitializer implements ApplicationRunner {
             new ActionSeed("Add", "ADD"),
             new ActionSeed("Edit", "EDIT"),
             new ActionSeed("Delete", "DELETE"),
-            new ActionSeed("Export", "EXPORT")
+            new ActionSeed("Export", "EXPORT"),
+            new ActionSeed("View Logs", "VIEW_LOGS"),
+            new ActionSeed("Send Email", "EMAIL_SEND")
     );
 
     @Override
@@ -74,6 +80,7 @@ public class PermissionDataInitializer implements ApplicationRunner {
         for (Company company : companyRepository.findAll()) {
             seedPermissionsForCompany(company);
             seedThemeForCompany(company);
+            seedDefaultNotificationChannels(company);
         }
     }
 
@@ -95,8 +102,8 @@ public class PermissionDataInitializer implements ApplicationRunner {
     private void seedPlatformSettings() {
         platformSettingRepository.findTopByOrderByIdAsc()
                 .orElseGet(() -> platformSettingRepository.save(PlatformSetting.builder()
-                        .platformName("BizPulse Technologies")
-                        .platformTagline("Business Management Platform")
+                        .platformName("")
+                        .platformTagline(null)
                         .build()));
     }
 
@@ -139,13 +146,13 @@ public class PermissionDataInitializer implements ApplicationRunner {
 
     public void seedPermissionsForCompany(Company company) {
         Map<String, Set<String>> visibleMenusByRole = Map.of(
-                "OWNER", Set.of("DASHBOARD", "CUSTOMERS", "PRODUCTS", "CREATE_INVOICE", "INVOICES", "PAYMENTS", "OUTSTANDING", "ANALYTICS", "SETUP", "USERS", "PRODUCT_CATEGORY", "THEME_SETTINGS", "ABOUT_COMPANY", "ROLE_PERMISSIONS"),
-                "ADMIN", Set.of("DASHBOARD", "CUSTOMERS", "PRODUCTS", "CREATE_INVOICE", "INVOICES", "PAYMENTS", "OUTSTANDING", "ANALYTICS", "PRODUCT_CATEGORY", "ABOUT_COMPANY"),
+                "OWNER", Set.of("DASHBOARD", "CUSTOMERS", "PRODUCTS", "CREATE_INVOICE", "INVOICES", "PAYMENTS", "OUTSTANDING", "ANALYTICS", "SETUP", "USERS", "PRODUCT_CATEGORY", "THEME_SETTINGS", "ABOUT_COMPANY", "EMAIL_TEMPLATES", "ROLE_PERMISSIONS"),
+                "ADMIN", Set.of("DASHBOARD", "CUSTOMERS", "PRODUCTS", "CREATE_INVOICE", "INVOICES", "PAYMENTS", "OUTSTANDING", "ANALYTICS", "SETUP", "PRODUCT_CATEGORY", "ABOUT_COMPANY", "EMAIL_TEMPLATES"),
                 "USER", Set.of("DASHBOARD", "CUSTOMERS", "PRODUCTS", "CREATE_INVOICE", "INVOICES", "OUTSTANDING", "ANALYTICS", "ABOUT_COMPANY")
         );
         Map<String, Set<String>> actionCodesByRole = Map.of(
-                "OWNER", Set.of("VIEW", "ADD", "EDIT", "DELETE", "EXPORT"),
-                "ADMIN", Set.of("VIEW", "ADD", "EDIT", "DELETE", "EXPORT"),
+                "OWNER", Set.of("VIEW", "ADD", "EDIT", "DELETE", "EXPORT", "VIEW_LOGS", "EMAIL_SEND"),
+                "ADMIN", Set.of("VIEW", "ADD", "EDIT", "DELETE", "EXPORT", "VIEW_LOGS", "EMAIL_SEND"),
                 "USER", Set.of("VIEW")
         );
 
@@ -209,6 +216,18 @@ public class PermissionDataInitializer implements ApplicationRunner {
                         .company(company)
                         .themeColor("#0EA5E9")
                         .build()));
+    }
+
+    public void seedDefaultNotificationChannels(Company company) {
+        if (notificationChannelRepository.existsByCompanyAndChannelNameIgnoreCase(company, "Email")) {
+            return;
+        }
+        notificationChannelRepository.save(NotificationChannel.builder()
+                .company(company)
+                .channelName("Email")
+                .defaultChannel(true)
+                .active(true)
+                .build());
     }
 
     private record MenuSeed(String name, String code, String icon, String route, int order, String parentCode) {

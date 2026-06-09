@@ -28,7 +28,9 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -40,6 +42,8 @@ public class InvoiceService {
     private final AccessControlService accessControlService;
     private final CustomerService customerService;
     private final AuditNameResolver auditNameResolver;
+    private final InvoiceCalculationService invoiceCalculationService;
+    private final AuditLogService auditLogService;
 
     @Transactional
     public InvoiceResponse create(String email, InvoiceRequest request) {
@@ -59,6 +63,7 @@ public class InvoiceService {
 
         applyInvoiceState(invoice, request, customer, true);
         invoiceRepository.save(invoice);
+        auditLogService.logCreate(email, company, "Invoice", "Invoice", invoice.getId(), snapshot(invoice));
         return toResponse(invoice);
     }
 
@@ -138,6 +143,7 @@ public class InvoiceService {
     public InvoiceResponse update(String email, Long invoiceId, InvoiceRequest request) {
         Company company = accessControlService.getCurrentCompany(email);
         Invoice invoice = getInvoiceOrThrow(company, invoiceId);
+        Map<String, Object> oldData = snapshot(invoice);
         Customer newCustomer = customerService.getCustomerOrThrow(company, request.getCustomerId());
         if (!newCustomer.isActive()) {
             throw new BadRequestException("Inactive customer cannot be invoiced");
@@ -148,6 +154,7 @@ public class InvoiceService {
         invoice.setInvoiceDate(request.getInvoiceDate());
         applyInvoiceState(invoice, request, newCustomer, false);
         invoiceRepository.save(invoice);
+        auditLogService.logUpdate(email, company, "Invoice", "Invoice", invoice.getId(), oldData, snapshot(invoice));
         return toResponse(invoice);
     }
 
@@ -155,11 +162,13 @@ public class InvoiceService {
     public void delete(String email, Long invoiceId) {
         Company company = accessControlService.getCurrentCompany(email);
         Invoice invoice = getInvoiceOrThrow(company, invoiceId);
+        Map<String, Object> oldData = snapshot(invoice);
         if (paymentRepository.existsByInvoice(invoice) || scale(invoice.getPaidAmount()).compareTo(BigDecimal.ZERO) > 0) {
             throw new BadRequestException("Delete linked payments before deleting this invoice");
         }
         restoreInvoiceEffects(invoice);
         invoiceRepository.delete(invoice);
+        auditLogService.logDelete(email, company, "Invoice", "Invoice", invoiceId, oldData);
     }
 
     public Invoice getInvoiceOrThrow(Company company, Long invoiceId) {
@@ -190,9 +199,7 @@ public class InvoiceService {
     }
 
     private void applyInvoiceState(Invoice invoice, InvoiceRequest request, Customer customer, boolean creating) {
-        List<InvoiceItem> items = new ArrayList<>();
-        BigDecimal subtotal = BigDecimal.ZERO;
-        BigDecimal taxAmount = BigDecimal.ZERO;
+        List<InvoiceCalculationService.CalculationLineInput> calculationLines = new ArrayList<>();
 
         for (InvoiceItemRequest itemRequest : request.getItems()) {
             Product product = productRepository.findByIdAndCompany(itemRequest.getProductId(), invoice.getCompany())
@@ -205,60 +212,52 @@ public class InvoiceService {
                 throw new BadRequestException("Insufficient stock for product " + product.getName());
             }
 
-            BigDecimal unitPrice = scale(product.getSellingPrice());
-            BigDecimal lineBase = scale(unitPrice.multiply(BigDecimal.valueOf(itemRequest.getQty())));
-            BigDecimal itemDiscount = percentageAmount(lineBase, itemRequest.getDiscountPercent());
-            BigDecimal taxableAmount = scale(lineBase.subtract(itemDiscount));
-            BigDecimal itemTax = percentageAmount(taxableAmount, product.getTaxPercent());
-            BigDecimal lineTotal = scale(taxableAmount.add(itemTax));
-
-            subtotal = subtotal.add(lineBase);
-            taxAmount = taxAmount.add(itemTax);
-
             product.setStockQty(product.getStockQty() - itemRequest.getQty());
             productRepository.save(product);
 
+            calculationLines.add(new InvoiceCalculationService.CalculationLineInput(
+                    product,
+                    itemRequest.getQty(),
+                    scale(itemRequest.getDiscountPercent()),
+                    itemRequest.getDiscountType(),
+                    itemRequest.getDiscountValue()
+            ));
+        }
+
+        BigDecimal paidAmount = creating ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP) : scale(invoice.getPaidAmount());
+        InvoiceCalculationService.CalculationResult calculation = invoiceCalculationService.calculate(
+                calculationLines,
+                request.getDiscountAmount(),
+                paidAmount
+        );
+
+        List<InvoiceItem> items = new ArrayList<>();
+        for (InvoiceCalculationService.CalculationLine line : calculation.lines()) {
             items.add(InvoiceItem.builder()
                     .company(invoice.getCompany())
                     .invoice(invoice)
-                    .product(product)
-                    .qty(itemRequest.getQty())
-                    .price(unitPrice)
-                    .discountPercent(scale(itemRequest.getDiscountPercent()))
-                    .taxPercent(scale(product.getTaxPercent()))
-                    .lineTotal(lineTotal)
+                    .product(line.product())
+                    .qty(line.qty())
+                    .price(line.unitPrice())
+                    .discountPercent(line.discountPercent())
+                    .taxPercent(line.taxPercent())
+                    .lineTotal(line.grandTotal())
                     .build());
         }
 
-        BigDecimal itemTotals = items.stream()
-                .map(InvoiceItem::getLineTotal)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal discountAmount = scale(request.getDiscountAmount());
-
-        if (discountAmount.compareTo(itemTotals) > 0) {
-            throw new BadRequestException("Invoice discount cannot exceed line totals");
-        }
-
-        BigDecimal totalAmount = scale(itemTotals.subtract(discountAmount));
-        BigDecimal paidAmount = creating ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP) : scale(invoice.getPaidAmount());
-        if (paidAmount.compareTo(totalAmount) > 0) {
-            throw new BadRequestException("Existing payments exceed updated invoice total");
-        }
-
         BigDecimal previousBalance = creating ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP) : scale(invoice.getBalanceAmount());
-        BigDecimal balanceAmount = scale(totalAmount.subtract(paidAmount));
 
         invoice.getItems().clear();
         invoice.getItems().addAll(items);
-        invoice.setSubtotal(scale(subtotal));
-        invoice.setTaxAmount(scale(taxAmount));
-        invoice.setDiscountAmount(discountAmount);
-        invoice.setTotalAmount(totalAmount);
-        invoice.setPaidAmount(paidAmount);
-        invoice.setBalanceAmount(balanceAmount);
-        invoice.setPaymentStatus(resolveStatus(balanceAmount, paidAmount));
+        invoice.setSubtotal(scale(calculation.subtotal()));
+        invoice.setTaxAmount(scale(calculation.taxAmount()));
+        invoice.setDiscountAmount(scale(calculation.totalDiscount()));
+        invoice.setTotalAmount(scale(calculation.grandTotal()));
+        invoice.setPaidAmount(scale(calculation.paidAmount()));
+        invoice.setBalanceAmount(scale(calculation.outstandingAmount()));
+        invoice.setPaymentStatus(resolveStatus(invoice.getBalanceAmount(), invoice.getPaidAmount()));
 
-        customerService.increaseBalance(customer, balanceAmount.subtract(previousBalance));
+        customerService.increaseBalance(customer, invoice.getBalanceAmount().subtract(previousBalance));
     }
 
     private void restoreInvoiceEffects(Invoice invoice) {
@@ -392,8 +391,31 @@ public class InvoiceService {
         return String.format("%04d", digits.isEmpty() ? 0 : Integer.parseInt(digits));
     }
 
-    private BigDecimal percentageAmount(BigDecimal base, BigDecimal percent) {
-        return scale(base.multiply(scale(percent)).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP));
+    private Map<String, Object> snapshot(Invoice invoice) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("invoiceNo", invoice.getInvoiceNo());
+        data.put("customerId", invoice.getCustomer().getId());
+        data.put("customerName", invoice.getCustomer().getName());
+        data.put("invoiceDate", invoice.getInvoiceDate());
+        data.put("subtotal", scale(invoice.getSubtotal()));
+        data.put("taxAmount", scale(invoice.getTaxAmount()));
+        data.put("discountAmount", scale(invoice.getDiscountAmount()));
+        data.put("totalAmount", scale(invoice.getTotalAmount()));
+        data.put("paidAmount", scale(invoice.getPaidAmount()));
+        data.put("balanceAmount", scale(invoice.getBalanceAmount()));
+        data.put("paymentStatus", invoice.getPaymentStatus() != null ? invoice.getPaymentStatus().name() : null);
+        data.put("items", invoice.getItems().stream().map(item -> {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("productId", item.getProduct().getId());
+            row.put("productName", item.getProduct().getName());
+            row.put("qty", item.getQty());
+            row.put("price", scale(item.getPrice()));
+            row.put("discountPercent", scale(item.getDiscountPercent()));
+            row.put("taxPercent", scale(item.getTaxPercent()));
+            row.put("lineTotal", scale(item.getLineTotal()));
+            return row;
+        }).toList());
+        return data;
     }
 
     private BigDecimal scale(BigDecimal value) {
