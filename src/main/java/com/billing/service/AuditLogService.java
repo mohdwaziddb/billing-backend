@@ -2,25 +2,33 @@ package com.billing.service;
 
 import com.billing.dto.PageResponse;
 import com.billing.dto.audit.AuditLogResponse;
+import com.billing.dto.audit.AuditUserOptionResponse;
 import com.billing.entity.AuditLog;
 import com.billing.entity.Company;
 import com.billing.entity.User;
-import com.billing.entity.enums.RoleName;
-import com.billing.exception.BadRequestException;
 import com.billing.repository.AuditLogRepository;
+import com.billing.exception.BadRequestException;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import jakarta.servlet.http.HttpServletRequest;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
@@ -35,6 +43,7 @@ public class AuditLogService {
 
     private final AuditLogRepository auditLogRepository;
     private final AccessControlService accessControlService;
+    private final PermissionService permissionService;
     private final ObjectMapper objectMapper;
 
     @Transactional
@@ -57,19 +66,89 @@ public class AuditLogService {
         save(email, company, moduleName, entityName, entityId, DELETE, oldData, null, oldData);
     }
 
+    @Transactional
+    public void logEvent(String email, Company company, String moduleName, String entityName, Long entityId, String actionType, Map<String, Object> data) {
+        save(email, company, moduleName, entityName, entityId, actionType, null, data, data);
+    }
+
     @Transactional(readOnly = true)
-    public PageResponse<AuditLogResponse> page(String email, String moduleName, Long entityId, int page, int size) {
+    public PageResponse<AuditLogResponse> page(String email,
+                                               String moduleName,
+                                               Long entityId,
+                                               Long userId,
+                                               String actionType,
+                                               String startDate,
+                                               String endDate,
+                                               String search,
+                                               int page,
+                                               int size) {
         User user = accessControlService.getCurrentUser(email);
-        if (user.getRole() != RoleName.OWNER && user.getRole() != RoleName.ADMIN) {
-            throw new BadRequestException("You do not have permission to view audit logs");
-        }
         Company company = accessControlService.requireCompany(user);
-        return PageResponse.from(auditLogRepository.findByCompanyAndModuleNameAndEntityIdOrderByCreatedAtDescIdDesc(
-                company,
-                moduleName,
-                entityId,
-                PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 100)), Sort.by(Sort.Direction.DESC, "createdAt"))
+        requireRowLogPermission(email, moduleName);
+        return PageResponse.from(auditLogRepository.findAll(
+                auditFilter(company, moduleName, entityId, userId, actionType, startDate, endDate, search),
+                PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 100)), Sort.by(Sort.Direction.DESC, "createdAt").and(Sort.by(Sort.Direction.DESC, "id")))
         ).map(this::toResponse));
+    }
+
+    @Transactional(readOnly = true)
+    public List<AuditUserOptionResponse> users(String email) {
+        User user = accessControlService.getCurrentUser(email);
+        Company company = accessControlService.requireCompany(user);
+        if (!permissionService.has(email, "USERS", "VIEW_LOGS")) {
+            throw new AccessDeniedException("You do not have permission to view audit log users");
+        }
+        return auditLogRepository.findDistinctUsersByCompany(company).stream()
+                .map(row -> AuditUserOptionResponse.builder()
+                        .id((Long) row[0])
+                        .name(row[1] == null ? "User #" + row[0] : String.valueOf(row[1]))
+                        .build())
+                .toList();
+    }
+
+    private Specification<AuditLog> auditFilter(Company company,
+                                                String moduleName,
+                                                Long entityId,
+                                                Long userId,
+                                                String actionType,
+                                                String startDate,
+                                                String endDate,
+                                                String search) {
+        return (root, query, builder) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(builder.equal(root.get("company"), company));
+            if (hasText(moduleName)) {
+                predicates.add(builder.equal(builder.lower(root.get("moduleName")), moduleName.trim().toLowerCase()));
+            }
+            if (entityId != null) {
+                predicates.add(builder.equal(root.get("entityId"), entityId));
+            }
+            if (userId != null) {
+                predicates.add(builder.equal(root.get("userId"), userId));
+            }
+            if (hasText(actionType)) {
+                predicates.add(builder.equal(builder.lower(root.get("actionType")), actionType.trim().toLowerCase()));
+            }
+            LocalDateTime from = parseDate(startDate, LocalTime.MIN);
+            LocalDateTime to = parseDate(endDate, LocalTime.MAX);
+            if (from != null) {
+                predicates.add(builder.greaterThanOrEqualTo(root.get("createdAt"), from));
+            }
+            if (to != null) {
+                predicates.add(builder.lessThanOrEqualTo(root.get("createdAt"), to));
+            }
+            if (hasText(search)) {
+                String like = "%" + search.trim().toLowerCase() + "%";
+                predicates.add(builder.or(
+                        builder.like(builder.lower(root.get("userName")), like),
+                        builder.like(builder.lower(root.get("entityName")), like),
+                        builder.like(builder.lower(root.get("oldData").as(String.class)), like),
+                        builder.like(builder.lower(root.get("newData").as(String.class)), like),
+                        builder.like(root.get("entityId").as(String.class), "%" + search.trim() + "%")
+                ));
+            }
+            return builder.and(predicates.toArray(Predicate[]::new));
+        };
     }
 
     private void save(String email,
@@ -154,6 +233,7 @@ public class AuditLogService {
                 .moduleName(log.getModuleName())
                 .entityName(log.getEntityName())
                 .entityId(log.getEntityId())
+                .recordName(resolveRecordName(log))
                 .actionType(log.getActionType())
                 .oldData(log.getOldData())
                 .newData(log.getNewData())
@@ -164,5 +244,63 @@ public class AuditLogService {
                 .userAgent(log.getUserAgent())
                 .createdAt(log.getCreatedAt())
                 .build();
+    }
+
+    private String resolveRecordName(AuditLog log) {
+        Map<String, Object> newData = fromJson(log.getNewData());
+        Map<String, Object> oldData = fromJson(log.getOldData());
+        for (String key : List.of("product_name", "name", "customer_name", "invoice_no", "invoiceNo", "payment_ref", "category_name", "template_name", "email", "full_name")) {
+            Object value = newData.getOrDefault(key, oldData.get(key));
+            if (value != null && !String.valueOf(value).isBlank()) {
+                return String.valueOf(value);
+            }
+        }
+        return log.getEntityName() + " #" + log.getEntityId();
+    }
+
+    private Map<String, Object> fromJson(String value) {
+        if (!hasText(value)) {
+            return Map.of();
+        }
+        try {
+            return objectMapper.readValue(value, new TypeReference<Map<String, Object>>() {});
+        } catch (JsonProcessingException ex) {
+            return Map.of();
+        }
+    }
+
+    private LocalDateTime parseDate(String value, LocalTime time) {
+        if (!hasText(value)) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(value.trim()).atTime(time);
+        } catch (RuntimeException ex) {
+            throw new BadRequestException("Invalid audit log date filter");
+        }
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private void requireRowLogPermission(String email, String moduleName) {
+        if (!hasText(moduleName)) {
+            throw new BadRequestException("Module name is required to view logs");
+        }
+        String menuCode = switch (moduleName.trim().toLowerCase()) {
+            case "product" -> "PRODUCTS";
+            case "customer" -> "CUSTOMERS";
+            case "invoice" -> "INVOICES";
+            case "payment" -> "PAYMENTS";
+            case "product category" -> "PRODUCT_CATEGORY";
+            case "user" -> "USERS";
+            case "email template" -> "EMAIL_TEMPLATES";
+            case "sms template" -> "SMS_TEMPLATES";
+            default -> null;
+        };
+        if (menuCode == null || !permissionService.has(email, menuCode, "VIEW_LOGS")) {
+            throw new AccessDeniedException("You do not have permission to view logs");
+        }
     }
 }

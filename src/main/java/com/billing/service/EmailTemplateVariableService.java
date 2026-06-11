@@ -14,6 +14,7 @@ public class EmailTemplateVariableService {
     public static final Map<String, String> AVAILABLE_VARIABLES = Map.ofEntries(
             Map.entry("Customer_Name", "Customer name"),
             Map.entry("Customer_Email", "Customer email"),
+            Map.entry("Customer_Mobile", "Customer mobile"),
             Map.entry("Outstanding_Amount", "Outstanding amount"),
             Map.entry("Invoice_Number", "Invoice number"),
             Map.entry("Invoice_Date", "Invoice date"),

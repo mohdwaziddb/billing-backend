@@ -12,6 +12,7 @@ public class AuditLogResponse {
     private String moduleName;
     private String entityName;
     private Long entityId;
+    private String recordName;
     private String actionType;
     private String oldData;
     private String newData;

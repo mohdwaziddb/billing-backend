@@ -8,16 +8,14 @@ import com.billing.entity.enums.InvoiceStatus;
 import com.billing.entity.enums.ReminderChannel;
 import com.billing.entity.enums.ReminderStatus;
 import com.billing.dto.PageResponse;
-import com.billing.dto.email.EmailLogResponse;
-import com.billing.dto.email.EmailSendRequest;
+import com.billing.dto.notification.NotificationChannelType;
+import com.billing.dto.notification.NotificationLogResponse;
+import com.billing.dto.notification.NotificationSendRequest;
 import com.billing.dto.reminder.OverdueCustomerResponse;
 import com.billing.dto.reminder.ReminderHistoryResponse;
 import com.billing.dto.reminder.ReminderSendRequest;
-import com.billing.entity.EmailTemplate;
 import com.billing.exception.BadRequestException;
-import com.billing.exception.ResourceNotFoundException;
 import com.billing.repository.CustomerRepository;
-import com.billing.repository.EmailTemplateRepository;
 import com.billing.repository.InvoiceRepository;
 import com.billing.repository.ReminderLogRepository;
 import lombok.RequiredArgsConstructor;
@@ -52,9 +50,8 @@ public class ReminderService {
     private final CustomerRepository customerRepository;
     private final InvoiceRepository invoiceRepository;
     private final ReminderLogRepository reminderLogRepository;
-    private final EmailTemplateRepository emailTemplateRepository;
     private final CustomerService customerService;
-    private final EmailService emailService;
+    private final NotificationService notificationService;
     private final EmailTemplateVariableService variableService;
 
     @Value("${app.reminder.mock-mode:false}")
@@ -99,15 +96,24 @@ public class ReminderService {
             if (customer.getEmail() == null || customer.getEmail().isBlank()) {
                 throw new BadRequestException("Customer email is required to send email reminder");
             }
-            EmailTemplate template = emailTemplateRepository.findByIdAndCompanyAndActiveTrue(request.getTemplateId(), company)
-                    .orElseThrow(() -> new ResourceNotFoundException("Active email template not found"));
-            EmailSendRequest emailRequest = new EmailSendRequest();
-            emailRequest.setTemplateId(template.getId());
-            emailRequest.setRecipientEmail(customer.getEmail());
-            emailRequest.setVariables(reminderVariables(customer, company));
-            EmailLogResponse emailLog = emailService.sendTemplateEmail(email, company, template, emailRequest);
-            message = variableService.render(template.getEmailBody(), company, emailRequest.getVariables());
-            status = toReminderStatus(emailLog.getStatus());
+            NotificationSendRequest notificationRequest = new NotificationSendRequest();
+            notificationRequest.setChannel(NotificationChannelType.EMAIL);
+            notificationRequest.setTemplateId(request.getTemplateId());
+            notificationRequest.setToEmails(List.of(customer.getEmail()));
+            notificationRequest.setVariables(reminderVariables(customer, company));
+            NotificationLogResponse log = notificationService.sendNotification(email, notificationRequest).get(0);
+            message = log.getMessage();
+            status = toReminderStatus(log.getStatus());
+        }
+        if (request.getChannel() == ReminderChannel.SMS && request.getTemplateId() != null) {
+            NotificationSendRequest notificationRequest = new NotificationSendRequest();
+            notificationRequest.setChannel(NotificationChannelType.SMS);
+            notificationRequest.setTemplateId(request.getTemplateId());
+            notificationRequest.setMobileNumbers(List.of(customer.getMobile()));
+            notificationRequest.setVariables(reminderVariables(customer, company));
+            NotificationLogResponse log = notificationService.sendNotification(email, notificationRequest).get(0);
+            message = log.getMessage();
+            status = toReminderStatus(log.getStatus());
         }
 
         ReminderLog reminderLog = ReminderLog.builder()
@@ -193,10 +199,10 @@ public class ReminderService {
     }
 
     private ReminderStatus toReminderStatus(String emailStatus) {
-        if ("Sent".equalsIgnoreCase(emailStatus)) {
+        if ("Sent".equalsIgnoreCase(emailStatus) || "SENT".equalsIgnoreCase(emailStatus)) {
             return ReminderStatus.SENT;
         }
-        if ("Failed".equalsIgnoreCase(emailStatus)) {
+        if ("Failed".equalsIgnoreCase(emailStatus) || "FAILED".equalsIgnoreCase(emailStatus)) {
             return ReminderStatus.FAILED;
         }
         return ReminderStatus.PENDING;
@@ -216,6 +222,7 @@ public class ReminderService {
         Map<String, Object> variables = new LinkedHashMap<>();
         variables.put("Customer_Name", customer.getName());
         variables.put("Customer_Email", customer.getEmail());
+        variables.put("Customer_Mobile", customer.getMobile());
         variables.put("Outstanding_Amount", scale(customer.getCurrentBalance()).toPlainString());
         variables.put("Company_Name", company.getName());
         variables.put("Company_Email", company.getEmail());
