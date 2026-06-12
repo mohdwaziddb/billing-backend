@@ -14,12 +14,17 @@ public class OwnerAnalyticsResponse {
     private LocalDate endDate;
     private BigDecimal totalSales;
     private BigDecimal totalCollection;
+    private BigDecimal totalExpense;
+    private BigDecimal netRevenue;
     private BigDecimal outstandingAmount;
     private long newCustomers;
     private long totalInvoices;
     private List<MetricPointResponse> salesTrend;
     private List<MetricPointResponse> collectionTrend;
+    private List<MetricPointResponse> expenseTrend;
+    private List<MetricPointResponse> netProfitTrend;
     private List<MetricPointResponse> outstandingTrend;
     private List<MetricPointResponse> customerGrowthTrend;
     private List<MetricPointResponse> monthlyRevenue;
+    private List<MetricPointResponse> expenseByCategory;
 }

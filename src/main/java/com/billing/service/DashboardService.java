@@ -9,6 +9,7 @@ import com.billing.entity.Customer;
 import com.billing.entity.Invoice;
 import com.billing.entity.InvoiceItem;
 import com.billing.repository.CustomerRepository;
+import com.billing.repository.ExpenseRepository;
 import com.billing.repository.InvoiceRepository;
 import com.billing.repository.PaymentRepository;
 import com.billing.repository.ProductRepository;
@@ -39,6 +40,7 @@ public class DashboardService {
     private final PaymentRepository paymentRepository;
     private final CustomerRepository customerRepository;
     private final AccessControlService accessControlService;
+    private final ExpenseRepository expenseRepository;
 
     @Transactional(readOnly = true)
     public DashboardSummaryResponse summary(String email, LocalDate startDate, LocalDate endDate) {
@@ -46,9 +48,12 @@ public class DashboardService {
         List<Invoice> allInvoices = invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company);
         List<Payment> allPayments = paymentRepository.findByCompanyOrderByPaymentDateDescIdDesc(company);
         List<Customer> allCustomers = customerRepository.findByCompanyOrderByCreatedAtDesc(company);
-
         LocalDate safeStart = startDate;
         LocalDate safeEnd = endDate;
+        BigDecimal totalExpense = expenseRepository.findByCompanyOrderByExpenseDateDescIdDesc(company).stream()
+                .filter(expense -> isWithinRange(expense.getExpenseDate(), safeStart, safeEnd))
+                .map(com.billing.entity.Expense::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         List<Invoice> filteredInvoices = allInvoices.stream()
                 .filter(invoice -> isWithinRange(invoice.getInvoiceDate(), safeStart, safeEnd))
@@ -142,6 +147,8 @@ public class DashboardService {
                 .totalInvoices(filteredInvoices.size())
                 .totalProducts(soldProducts)
                 .totalRevenue(scale(totalCollection))
+                .totalExpense(scale(totalExpense))
+                .netRevenue(scale(totalSales.subtract(totalExpense)))
                 .outstandingBalance(scale(outstanding))
                 .totalSalesTrendPercentage(calculateTrendPercentage(totalSales, previousSales))
                 .collectionTrendPercentage(calculateTrendPercentage(totalCollection, previousCollection))

@@ -71,6 +71,15 @@ public class AuditLogService {
         save(email, company, moduleName, entityName, entityId, actionType, null, data, data);
     }
 
+    @Transactional
+    public void logCustomUpdate(String email, Company company, String moduleName, String entityName, Long entityId, String actionType, Map<String, Object> oldData, Map<String, Object> newData) {
+        Map<String, Object> changedFields = changedFields(oldData, newData);
+        if (changedFields.isEmpty()) {
+            return;
+        }
+        save(email, company, moduleName, entityName, entityId, actionType, oldData, newData, changedFields);
+    }
+
     @Transactional(readOnly = true)
     public PageResponse<AuditLogResponse> page(String email,
                                                String moduleName,
@@ -95,7 +104,7 @@ public class AuditLogService {
     public List<AuditUserOptionResponse> users(String email) {
         User user = accessControlService.getCurrentUser(email);
         Company company = accessControlService.requireCompany(user);
-        if (!permissionService.has(email, "USERS", "VIEW_LOGS")) {
+        if (!hasLogPermission(email, "USERS")) {
             throw new AccessDeniedException("You do not have permission to view audit log users");
         }
         return auditLogRepository.findDistinctUsersByCompany(company).stream()
@@ -249,7 +258,7 @@ public class AuditLogService {
     private String resolveRecordName(AuditLog log) {
         Map<String, Object> newData = fromJson(log.getNewData());
         Map<String, Object> oldData = fromJson(log.getOldData());
-        for (String key : List.of("product_name", "name", "customer_name", "invoice_no", "invoiceNo", "payment_ref", "category_name", "template_name", "email", "full_name")) {
+        for (String key : List.of("product_name", "name", "customer_name", "customerName", "invoice_no", "invoiceNo", "payment_ref", "category_name", "categoryName", "expenseType", "template_name", "email", "full_name")) {
             Object value = newData.getOrDefault(key, oldData.get(key));
             if (value != null && !String.valueOf(value).isBlank()) {
                 return String.valueOf(value);
@@ -293,14 +302,20 @@ public class AuditLogService {
             case "customer" -> "CUSTOMERS";
             case "invoice" -> "INVOICES";
             case "payment" -> "PAYMENTS";
+            case "expense" -> "EXPENSES";
+            case "expense category" -> "EXPENSE_CATEGORIES";
             case "product category" -> "PRODUCT_CATEGORY";
             case "user" -> "USERS";
             case "email template" -> "EMAIL_TEMPLATES";
             case "sms template" -> "SMS_TEMPLATES";
             default -> null;
         };
-        if (menuCode == null || !permissionService.has(email, menuCode, "VIEW_LOGS")) {
+        if (menuCode == null || !hasLogPermission(email, menuCode)) {
             throw new AccessDeniedException("You do not have permission to view logs");
         }
+    }
+
+    private boolean hasLogPermission(String email, String menuCode) {
+        return permissionService.has(email, menuCode, "LOGS") || permissionService.has(email, menuCode, "VIEW_LOGS");
     }
 }

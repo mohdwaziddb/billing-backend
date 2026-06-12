@@ -12,12 +12,14 @@ import com.billing.dto.analytics.SalesTrendStatus;
 import com.billing.dto.analytics.TopSellingProductResponse;
 import com.billing.entity.Company;
 import com.billing.entity.Customer;
+import com.billing.entity.Expense;
 import com.billing.entity.Invoice;
 import com.billing.entity.InvoiceItem;
 import com.billing.entity.Payment;
 import com.billing.entity.Product;
 import com.billing.entity.ProductCategory;
 import com.billing.repository.CustomerRepository;
+import com.billing.repository.ExpenseRepository;
 import com.billing.repository.InvoiceRepository;
 import com.billing.repository.PaymentRepository;
 import com.billing.repository.ProductCategoryRepository;
@@ -51,6 +53,7 @@ public class AnalyticsService {
     private final ProductCategoryRepository productCategoryRepository;
     private final CustomerRepository customerRepository;
     private final PaymentRepository paymentRepository;
+    private final ExpenseRepository expenseRepository;
 
     @Transactional(readOnly = true)
     public AnalyticsSummaryResponse summary(String email, LocalDate startDate, LocalDate endDate) {
@@ -292,6 +295,7 @@ public class AnalyticsService {
         List<Invoice> invoices = invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company);
         List<Payment> payments = paymentRepository.findByCompanyOrderByPaymentDateDescIdDesc(company);
         List<Customer> customers = customerRepository.findByCompanyOrderByCreatedAtDesc(company);
+        List<Expense> expenses = expenseRepository.findByCompanyOrderByExpenseDateDescIdDesc(company);
 
         LocalDate safeEnd = endDate != null ? endDate : LocalDate.now();
         LocalDate safeStart = startDate != null ? startDate : safeEnd.minusDays(29);
@@ -302,12 +306,18 @@ public class AnalyticsService {
         List<Payment> filteredPayments = payments.stream()
                 .filter(payment -> isWithinRange(payment.getPaymentDate(), safeStart, safeEnd))
                 .toList();
+        List<Expense> filteredExpenses = expenses.stream()
+                .filter(expense -> isWithinRange(expense.getExpenseDate(), safeStart, safeEnd))
+                .toList();
 
         BigDecimal totalSales = filteredInvoices.stream()
                 .map(Invoice::getTotalAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal totalCollection = filteredPayments.stream()
                 .map(Payment::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalExpense = filteredExpenses.stream()
+                .map(Expense::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal outstandingAmount = calculateOutstandingAsOf(customers, invoices, payments, safeEnd);
         long newCustomers = customers.stream()
@@ -318,6 +328,8 @@ public class AnalyticsService {
         boolean useDailyBuckets = java.time.temporal.ChronoUnit.DAYS.between(safeStart, safeEnd) <= 45;
         List<MetricPointResponse> salesTrend = new ArrayList<>();
         List<MetricPointResponse> collectionTrend = new ArrayList<>();
+        List<MetricPointResponse> expenseTrend = new ArrayList<>();
+        List<MetricPointResponse> netProfitTrend = new ArrayList<>();
         List<MetricPointResponse> outstandingTrend = new ArrayList<>();
         List<MetricPointResponse> customerGrowthTrend = new ArrayList<>();
 
@@ -336,6 +348,10 @@ public class AnalyticsService {
                     .filter(payment -> isWithinRange(payment.getPaymentDate(), periodStart, periodEnd))
                     .map(Payment::getAmount)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal periodExpense = filteredExpenses.stream()
+                    .filter(expense -> isWithinRange(expense.getExpenseDate(), periodStart, periodEnd))
+                    .map(Expense::getAmount)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
             long periodNewCustomers = customers.stream()
                     .filter(customer -> customer.getCreatedAt() != null && isWithinRange(customer.getCreatedAt().toLocalDate(), periodStart, periodEnd))
                     .count();
@@ -346,27 +362,53 @@ public class AnalyticsService {
             String label = buildLabel(periodStart, useDailyBuckets);
             salesTrend.add(point(label, index, periodSales));
             collectionTrend.add(point(label, index, periodCollection));
+            expenseTrend.add(point(label, index, periodExpense));
+            netProfitTrend.add(point(label, index, periodSales.subtract(periodExpense)));
             outstandingTrend.add(point(label, index, runningOutstanding));
             customerGrowthTrend.add(point(label, index, BigDecimal.valueOf(runningCustomers)));
             index++;
         }
 
         List<MetricPointResponse> monthlyRevenue = buildMonthlyRevenueTrend(invoices, safeEnd);
+        List<MetricPointResponse> expenseByCategory = buildExpenseByCategory(filteredExpenses);
 
         return OwnerAnalyticsResponse.builder()
                 .startDate(safeStart)
                 .endDate(safeEnd)
                 .totalSales(scale(totalSales))
                 .totalCollection(scale(totalCollection))
+                .totalExpense(scale(totalExpense))
+                .netRevenue(scale(totalSales.subtract(totalExpense)))
                 .outstandingAmount(scale(outstandingAmount))
                 .newCustomers(newCustomers)
                 .totalInvoices(filteredInvoices.size())
                 .salesTrend(salesTrend)
                 .collectionTrend(collectionTrend)
+                .expenseTrend(expenseTrend)
+                .netProfitTrend(netProfitTrend)
                 .outstandingTrend(outstandingTrend)
                 .customerGrowthTrend(customerGrowthTrend)
                 .monthlyRevenue(monthlyRevenue)
+                .expenseByCategory(expenseByCategory)
                 .build();
+    }
+
+    private List<MetricPointResponse> buildExpenseByCategory(List<Expense> expenses) {
+        Map<String, BigDecimal> totals = new HashMap<>();
+        for (Expense expense : expenses) {
+            String category = expense.getCategory() != null ? expense.getCategory().getCategoryName() : "Other";
+            totals.merge(category, scale(expense.getAmount()), BigDecimal::add);
+        }
+        List<Map.Entry<String, BigDecimal>> sorted = totals.entrySet().stream()
+                .sorted(Map.Entry.<String, BigDecimal>comparingByValue(Comparator.reverseOrder()))
+                .limit(6)
+                .toList();
+        List<MetricPointResponse> points = new ArrayList<>();
+        for (int i = 0; i < sorted.size(); i++) {
+            Map.Entry<String, BigDecimal> entry = sorted.get(i);
+            points.add(point(entry.getKey(), i + 1, entry.getValue()));
+        }
+        return points;
     }
 
     private List<MetricPointResponse> buildMonthlyRevenueTrend(List<Invoice> invoices, LocalDate endDate) {

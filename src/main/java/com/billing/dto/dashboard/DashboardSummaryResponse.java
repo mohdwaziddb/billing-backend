@@ -21,6 +21,8 @@ public class DashboardSummaryResponse {
     private long totalInvoices;
     private long totalProducts;
     private BigDecimal totalRevenue;
+    private BigDecimal totalExpense;
+    private BigDecimal netRevenue;
     private BigDecimal outstandingBalance;
     private BigDecimal totalSalesTrendPercentage;
     private BigDecimal collectionTrendPercentage;

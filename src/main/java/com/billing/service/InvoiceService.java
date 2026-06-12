@@ -187,6 +187,18 @@ public class InvoiceService {
         invoiceRepository.save(invoice);
     }
 
+    public void logPaymentApplied(String email, Company company, Invoice invoice, BigDecimal amount, BigDecimal oldOutstanding, BigDecimal newOutstanding, String paymentMode) {
+        auditLogService.logEvent(email, company, "Invoice", "Invoice", invoice.getId(), "PAYMENT_ADDED", paymentAuditData(invoice, amount, oldOutstanding, newOutstanding, paymentMode));
+    }
+
+    public void logPaymentUpdated(String email, Company company, Invoice invoice, BigDecimal amount, BigDecimal oldOutstanding, BigDecimal newOutstanding, String paymentMode) {
+        auditLogService.logEvent(email, company, "Invoice", "Invoice", invoice.getId(), "PAYMENT_UPDATED", paymentAuditData(invoice, amount, oldOutstanding, newOutstanding, paymentMode));
+    }
+
+    public void logPaymentDeleted(String email, Company company, Invoice invoice, BigDecimal amount, BigDecimal oldOutstanding, BigDecimal newOutstanding, String paymentMode) {
+        auditLogService.logEvent(email, company, "Invoice", "Invoice", invoice.getId(), "PAYMENT_DELETED", paymentAuditData(invoice, amount, oldOutstanding, newOutstanding, paymentMode));
+    }
+
     public void reversePayment(Invoice invoice, BigDecimal amount) {
         BigDecimal nextPaid = scale(invoice.getPaidAmount().subtract(amount));
         if (nextPaid.compareTo(BigDecimal.ZERO) < 0) {
@@ -415,6 +427,20 @@ public class InvoiceService {
             row.put("lineTotal", scale(item.getLineTotal()));
             return row;
         }).toList());
+        return data;
+    }
+
+    private Map<String, Object> paymentAuditData(Invoice invoice, BigDecimal amount, BigDecimal oldOutstanding, BigDecimal newOutstanding, String paymentMode) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("invoiceNo", invoice.getInvoiceNo());
+        data.put("customerName", invoice.getCustomer().getName());
+        data.put("paymentAmount", scale(amount));
+        data.put("paymentMode", paymentMode);
+        data.put("oldOutstanding", scale(oldOutstanding));
+        data.put("newOutstanding", scale(newOutstanding));
+        data.put("outstandingChange", scale(newOutstanding).subtract(scale(oldOutstanding)).setScale(2, RoundingMode.HALF_UP));
+        data.put("paidAmount", scale(invoice.getPaidAmount()));
+        data.put("balanceAmount", scale(invoice.getBalanceAmount()));
         return data;
     }
 

@@ -43,6 +43,7 @@ public class PaymentService {
         BigDecimal amount = requirePositiveAmount(request.getAmount());
 
         customerService.decreaseBalance(customer, amount);
+        BigDecimal oldOutstanding = invoice != null ? scale(invoice.getBalanceAmount()) : null;
         if (invoice != null) {
             invoiceService.applyPayment(invoice, amount);
         }
@@ -59,6 +60,9 @@ public class PaymentService {
 
         Payment saved = paymentRepository.save(payment);
         auditLogService.logCreate(email, company, "Payment", "Payment", saved.getId(), snapshot(saved));
+        if (invoice != null) {
+            invoiceService.logPaymentApplied(email, company, invoice, amount, oldOutstanding, invoice.getBalanceAmount(), saved.getMode().name());
+        }
         return toResponse(saved);
     }
 
@@ -125,6 +129,9 @@ public class PaymentService {
         Company company = accessControlService.getCurrentCompany(email);
         Payment payment = getPaymentOrThrow(company, paymentId);
         Map<String, Object> oldData = snapshot(payment);
+        Invoice previousInvoice = payment.getInvoice();
+        BigDecimal previousAmount = scale(payment.getAmount());
+        BigDecimal previousOutstanding = previousInvoice != null ? scale(previousInvoice.getBalanceAmount()) : null;
 
         revertPayment(payment);
 
@@ -133,6 +140,9 @@ public class PaymentService {
         BigDecimal amount = requirePositiveAmount(request.getAmount());
 
         customerService.decreaseBalance(customer, amount);
+        BigDecimal nextOldOutstanding = invoice != null && invoice.equals(previousInvoice) && previousOutstanding != null
+                ? previousOutstanding
+                : invoice != null ? scale(invoice.getBalanceAmount()) : null;
         if (invoice != null) {
             invoiceService.applyPayment(invoice, amount);
         }
@@ -146,6 +156,12 @@ public class PaymentService {
 
         Payment saved = paymentRepository.save(payment);
         auditLogService.logUpdate(email, company, "Payment", "Payment", saved.getId(), oldData, snapshot(saved));
+        if (previousInvoice != null && !previousInvoice.equals(invoice)) {
+            invoiceService.logPaymentUpdated(email, company, previousInvoice, previousAmount.negate(), previousOutstanding, previousInvoice.getBalanceAmount(), oldData.get("mode") != null ? String.valueOf(oldData.get("mode")) : null);
+        }
+        if (invoice != null) {
+            invoiceService.logPaymentUpdated(email, company, invoice, amount, nextOldOutstanding, invoice.getBalanceAmount(), saved.getMode().name());
+        }
         return toResponse(saved);
     }
 
@@ -154,9 +170,15 @@ public class PaymentService {
         Company company = accessControlService.getCurrentCompany(email);
         Payment payment = getPaymentOrThrow(company, paymentId);
         Map<String, Object> oldData = snapshot(payment);
+        Invoice invoice = payment.getInvoice();
+        BigDecimal amount = scale(payment.getAmount());
+        BigDecimal oldOutstanding = invoice != null ? scale(invoice.getBalanceAmount()) : null;
         revertPayment(payment);
         paymentRepository.delete(payment);
         auditLogService.logDelete(email, company, "Payment", "Payment", paymentId, oldData);
+        if (invoice != null) {
+            invoiceService.logPaymentDeleted(email, company, invoice, amount, oldOutstanding, invoice.getBalanceAmount(), oldData.get("mode") != null ? String.valueOf(oldData.get("mode")) : null);
+        }
     }
 
     private Payment getPaymentOrThrow(Company company, Long paymentId) {
