@@ -5,6 +5,7 @@ import com.billing.entity.RefreshToken;
 import com.billing.entity.User;
 import com.billing.entity.enums.RoleName;
 import com.billing.dto.auth.AuthResponse;
+import com.billing.dto.auth.ForgotPasswordRequest;
 import com.billing.dto.auth.LoginRequest;
 import com.billing.dto.auth.RefreshTokenRequest;
 import com.billing.dto.auth.RegisterCompanyRequest;
@@ -125,6 +126,19 @@ public class AuthService {
     @Transactional
     public void logout(String refreshToken) {
         refreshTokenRepository.findByToken(refreshToken).ifPresent(refreshTokenRepository::delete);
+    }
+
+    @Transactional
+    public void forgotPassword(ForgotPasswordRequest request) {
+        User user = findByLoginIdentifier(request.getLoginIdentifier())
+                .orElseThrow(() -> new BadRequestException("No user found with this Mobile Number/Email ID."));
+        if (!user.isActive()) {
+            throw new BadRequestException("This user account is inactive.");
+        }
+
+        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        userRepository.save(user);
+        refreshTokenRepository.deleteByUser(user);
     }
 
     private AuthResponse buildAuthResponse(User user) {

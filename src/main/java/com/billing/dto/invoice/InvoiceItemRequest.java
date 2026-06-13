@@ -20,6 +20,12 @@ public class InvoiceItemRequest {
     private Integer qty;
 
     @DecimalMin(value = "0.00")
+    private BigDecimal price;
+
+    @DecimalMin(value = "0.00")
+    private BigDecimal taxPercent;
+
+    @DecimalMin(value = "0.00")
     private BigDecimal discountPercent;
 
     private String discountType;

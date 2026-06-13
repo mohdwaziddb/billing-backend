@@ -38,4 +38,7 @@ public class UserPreference extends BaseEntity {
     @Builder.Default
     @Column(name = "dark_mode_enabled", nullable = false)
     private boolean darkModeEnabled = false;
+
+    @Column(name = "column_preferences", columnDefinition = "TEXT")
+    private String columnPreferences;
 }

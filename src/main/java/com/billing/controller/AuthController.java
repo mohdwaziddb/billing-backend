@@ -2,6 +2,7 @@ package com.billing.controller;
 
 import com.billing.dto.ApiResponse;
 import com.billing.dto.auth.AuthResponse;
+import com.billing.dto.auth.ForgotPasswordRequest;
 import com.billing.dto.auth.LoginRequest;
 import com.billing.dto.auth.RefreshTokenRequest;
 import com.billing.dto.auth.RegisterCompanyRequest;
@@ -28,6 +29,12 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<ApiResponse<AuthResponse>> login(@Valid @RequestBody LoginRequest request) {
         return ResponseEntity.ok(ApiResponse.success("Login successful", authService.login(request)));
+    }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<ApiResponse<Map<String, String>>> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        authService.forgotPassword(request);
+        return ResponseEntity.ok(ApiResponse.success("Password updated successfully", Map.of("status", "ok")));
     }
 
     @PostMapping("/refresh")

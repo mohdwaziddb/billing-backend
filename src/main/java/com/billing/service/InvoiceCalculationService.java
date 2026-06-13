@@ -19,7 +19,7 @@ public class InvoiceCalculationService {
 
         for (CalculationLineInput line : lines) {
             Product product = line.product();
-            BigDecimal unitPrice = money(product.getSellingPrice());
+            BigDecimal unitPrice = money(line.unitPrice() != null ? line.unitPrice() : product.getSellingPrice());
             BigDecimal lineTotal = money(unitPrice.multiply(BigDecimal.valueOf(line.qty())));
             BigDecimal productDiscount = discountAmount(lineTotal, line.discountType(), line.discountValue(), line.discountPercent());
             if (productDiscount.compareTo(lineTotal) > 0) {
@@ -33,7 +33,7 @@ public class InvoiceCalculationService {
                     line.qty(),
                     unitPrice,
                     effectiveDiscountPercent(lineTotal, productDiscount, line.discountPercent()),
-                    percent(product.getTaxPercent()),
+                    percent(line.taxPercent() != null ? line.taxPercent() : product.getTaxPercent()),
                     lineTotal,
                     productDiscount,
                     afterProductDiscount
@@ -120,7 +120,13 @@ public class InvoiceCalculationService {
         return value == null ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP) : value.setScale(2, RoundingMode.HALF_UP);
     }
 
-    public record CalculationLineInput(Product product, Integer qty, BigDecimal discountPercent, String discountType, BigDecimal discountValue) {
+    public record CalculationLineInput(Product product,
+                                       Integer qty,
+                                       BigDecimal unitPrice,
+                                       BigDecimal taxPercent,
+                                       BigDecimal discountPercent,
+                                       String discountType,
+                                       BigDecimal discountValue) {
     }
 
     private record PreparedLine(

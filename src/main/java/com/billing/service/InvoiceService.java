@@ -230,6 +230,8 @@ public class InvoiceService {
             calculationLines.add(new InvoiceCalculationService.CalculationLineInput(
                     product,
                     itemRequest.getQty(),
+                    itemRequest.getPrice(),
+                    itemRequest.getTaxPercent(),
                     scale(itemRequest.getDiscountPercent()),
                     itemRequest.getDiscountType(),
                     itemRequest.getDiscountValue()
