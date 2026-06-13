@@ -39,6 +39,21 @@ public class EmailProviderSetting extends BaseEntity {
     @Column(name = "sender_email", nullable = false)
     private String senderEmail;
 
+    @Column(name = "smtp_host")
+    private String smtpHost;
+
+    @Column(name = "smtp_port")
+    private Integer smtpPort;
+
+    @Column(name = "smtp_username")
+    private String smtpUsername;
+
+    @Column(name = "smtp_password")
+    private String smtpPassword;
+
+    @Column(name = "smtp_tls_enabled")
+    private boolean smtpTlsEnabled;
+
     @Column(name = "aws_access_key")
     private String awsAccessKey;
 

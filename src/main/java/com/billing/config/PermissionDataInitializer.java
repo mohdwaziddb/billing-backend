@@ -41,7 +41,6 @@ public class PermissionDataInitializer implements ApplicationRunner {
     private final RoleMasterRepository roleMasterRepository;
     private final RoleMenuPermissionRepository roleMenuPermissionRepository;
     private final RoleMenuActionPermissionRepository roleMenuActionPermissionRepository;
-    private final com.billing.service.ExpenseCategoryService expenseCategoryService;
 
     private static final List<MenuSeed> MENUS = List.of(
             new MenuSeed("Dashboard", "DASHBOARD", "LayoutDashboard", "/dashboard", 1, null),
@@ -90,7 +89,6 @@ public class PermissionDataInitializer implements ApplicationRunner {
         seedActions();
         for (Company company : companyRepository.findAll()) {
             seedPermissionsForCompany(company);
-            expenseCategoryService.seedDefaults(company);
             seedThemeForCompany(company);
             seedDefaultNotificationChannels(company);
         }

@@ -9,6 +9,10 @@ public class ProviderSettingsResponse {
     private Long id;
     private String providerName;
     private String senderEmail;
+    private String smtpHost;
+    private Integer smtpPort;
+    private String smtpUsername;
+    private boolean smtpTlsEnabled;
     private String awsAccessKey;
     private String awsRegion;
     private String apiUrl;

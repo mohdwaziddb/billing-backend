@@ -2,6 +2,7 @@ package com.billing.controller;
 
 import com.billing.dto.ApiResponse;
 import com.billing.dto.PageResponse;
+import com.billing.dto.notification.EmailProviderTestRequest;
 import com.billing.dto.notification.NotificationLogResponse;
 import com.billing.dto.notification.NotificationSendRequest;
 import com.billing.dto.notification.ProviderSettingsRequest;
@@ -77,6 +78,12 @@ public class NotificationController {
     public ResponseEntity<ApiResponse<ProviderSettingsResponse>> saveEmailSettings(Authentication authentication, @PathVariable Long id, @RequestBody ProviderSettingsRequest request) {
         request.setId(id);
         return ResponseEntity.ok(ApiResponse.success("Email settings saved successfully", notificationSettingsService.saveEmailSettings(authentication.getName(), request)));
+    }
+
+    @PostMapping("/email-settings/test")
+    @RequirePermission(menu = "EMAIL_SETTINGS", action = "VIEW")
+    public ResponseEntity<ApiResponse<ProviderSettingsResponse>> sendTestEmail(Authentication authentication, @RequestBody(required = false) EmailProviderTestRequest request) {
+        return ResponseEntity.ok(ApiResponse.success("Test email sent successfully", notificationSettingsService.sendTestEmail(authentication.getName(), request)));
     }
 
     @GetMapping("/sms-settings")

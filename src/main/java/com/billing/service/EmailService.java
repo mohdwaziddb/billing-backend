@@ -12,9 +12,9 @@ import com.billing.repository.EmailLogRepository;
 import com.billing.repository.EmailProviderSettingRepository;
 import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.JavaMailSenderImpl;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
@@ -38,7 +38,7 @@ public class EmailService {
     private final EmailLogRepository emailLogRepository;
     private final EmailTemplateVariableService variableService;
     private final EmailProviderSettingRepository emailProviderSettingRepository;
-    private final ObjectProvider<JavaMailSender> mailSenderProvider;
+    private final SecretEncryptionService secretEncryptionService;
 
     public EmailLogResponse sendTemplateEmail(String email, Company company, EmailTemplate template, EmailSendRequest request) {
         String subject = variableService.render(template.getSubject(), company, request.getVariables());
@@ -69,34 +69,18 @@ public class EmailService {
                                          List<NotificationAttachmentRequest> attachments,
                                          String sentBy) {
         EmailProviderSetting settings = emailProviderSettingRepository.findFirstByCompanyAndActiveTrueOrderByIdDesc(company).orElse(null);
-        if (settings == null && mailSenderProvider.getIfAvailable() == null) {
+        if (settings == null) {
             return new EmailDeliveryResult(NotificationStatus.PENDING, "No active email provider configured", null);
         }
         try {
-            if (settings != null && hasSesCredentials(settings)) {
+            String providerName = normalizeProvider(settings.getProviderName());
+            if ("AWS_SES".equals(providerName)) {
                 return sendWithSes(settings, subject, htmlBody, toEmails, ccEmails, bccEmails, attachments);
             }
-            JavaMailSender mailSender = mailSenderProvider.getIfAvailable();
-            if (mailSender == null) {
-                return new EmailDeliveryResult(NotificationStatus.PENDING, "No JavaMail sender configured", null);
+            if ("GMAIL_SMTP".equals(providerName)) {
+                return sendWithSmtp(settings, subject, htmlBody, toEmails, ccEmails, bccEmails, attachments);
             }
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-            if (settings != null && settings.getSenderEmail() != null && !settings.getSenderEmail().isBlank()) {
-                helper.setFrom(settings.getSenderEmail().trim());
-            }
-            helper.setTo(toEmails.stream().map(String::trim).filter(value -> !value.isBlank()).toArray(String[]::new));
-            if (ccEmails != null && !ccEmails.isEmpty()) {
-                helper.setCc(ccEmails.stream().map(String::trim).filter(value -> !value.isBlank()).toArray(String[]::new));
-            }
-            if (bccEmails != null && !bccEmails.isEmpty()) {
-                helper.setBcc(bccEmails.stream().map(String::trim).filter(value -> !value.isBlank()).toArray(String[]::new));
-            }
-            helper.setSubject(subject);
-            helper.setText(stripHtml(htmlBody), htmlBody);
-            addAttachments(helper, attachments);
-            mailSender.send(message);
-            return new EmailDeliveryResult(NotificationStatus.SENT, "Email sent successfully", LocalDateTime.now());
+            return new EmailDeliveryResult(NotificationStatus.FAILED, "Unsupported email provider: " + settings.getProviderName(), LocalDateTime.now());
         } catch (Exception ex) {
             return new EmailDeliveryResult(NotificationStatus.FAILED, ex.getMessage(), LocalDateTime.now());
         }
@@ -113,6 +97,7 @@ public class EmailService {
                                             List<String> ccEmails,
                                             List<String> bccEmails,
                                             List<NotificationAttachmentRequest> attachments) throws Exception {
+        validateSesSettings(settings);
         MimeMessage message = new MimeMessage(jakarta.mail.Session.getInstance(new Properties()));
         MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
         helper.setFrom(settings.getSenderEmail().trim());
@@ -131,7 +116,7 @@ public class EmailService {
         message.writeTo(outputStream);
         try (SesClient sesClient = SesClient.builder()
                 .region(Region.of(settings.getAwsRegion()))
-                .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(settings.getAwsAccessKey(), settings.getAwsSecretKey())))
+                .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(settings.getAwsAccessKey(), secretEncryptionService.decrypt(settings.getAwsSecretKey()))))
                 .build()) {
             sesClient.sendRawEmail(SendRawEmailRequest.builder()
                     .rawMessage(RawMessage.builder().data(SdkBytes.fromByteArray(outputStream.toByteArray())).build())
@@ -140,11 +125,71 @@ public class EmailService {
         return new EmailDeliveryResult(NotificationStatus.SENT, "AWS SES SendRawEmail accepted", LocalDateTime.now());
     }
 
-    private boolean hasSesCredentials(EmailProviderSetting settings) {
-        return hasText(settings.getSenderEmail())
-                && hasText(settings.getAwsAccessKey())
-                && hasText(settings.getAwsSecretKey())
-                && hasText(settings.getAwsRegion());
+    private EmailDeliveryResult sendWithSmtp(EmailProviderSetting settings,
+                                             String subject,
+                                             String htmlBody,
+                                             List<String> toEmails,
+                                             List<String> ccEmails,
+                                             List<String> bccEmails,
+                                             List<NotificationAttachmentRequest> attachments) throws Exception {
+        validateSmtpSettings(settings);
+        JavaMailSender mailSender = buildSmtpSender(settings);
+        MimeMessage message = mailSender.createMimeMessage();
+        MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+        helper.setFrom(settings.getSenderEmail().trim());
+        helper.setTo(toEmails.stream().map(String::trim).filter(value -> !value.isBlank()).toArray(String[]::new));
+        if (ccEmails != null && !ccEmails.isEmpty()) {
+            helper.setCc(ccEmails.stream().map(String::trim).filter(value -> !value.isBlank()).toArray(String[]::new));
+        }
+        if (bccEmails != null && !bccEmails.isEmpty()) {
+            helper.setBcc(bccEmails.stream().map(String::trim).filter(value -> !value.isBlank()).toArray(String[]::new));
+        }
+        helper.setSubject(subject);
+        helper.setText(stripHtml(htmlBody), htmlBody);
+        addAttachments(helper, attachments);
+        mailSender.send(message);
+        return new EmailDeliveryResult(NotificationStatus.SENT, "Gmail SMTP email sent successfully", LocalDateTime.now());
+    }
+
+    private JavaMailSender buildSmtpSender(EmailProviderSetting settings) {
+        JavaMailSenderImpl sender = new JavaMailSenderImpl();
+        sender.setHost(settings.getSmtpHost());
+        sender.setPort(settings.getSmtpPort() == null ? 587 : settings.getSmtpPort());
+        sender.setUsername(settings.getSmtpUsername());
+        sender.setPassword(secretEncryptionService.decrypt(settings.getSmtpPassword()));
+        Properties properties = sender.getJavaMailProperties();
+        properties.put("mail.smtp.auth", "true");
+        properties.put("mail.smtp.starttls.enable", String.valueOf(settings.isSmtpTlsEnabled()));
+        properties.put("mail.smtp.starttls.required", String.valueOf(settings.isSmtpTlsEnabled()));
+        properties.put("mail.smtp.connectiontimeout", "10000");
+        properties.put("mail.smtp.timeout", "10000");
+        properties.put("mail.smtp.writetimeout", "10000");
+        return sender;
+    }
+
+    private void validateSesSettings(EmailProviderSetting settings) {
+        if (!hasText(settings.getSenderEmail()) || !hasText(settings.getAwsAccessKey()) || !hasText(settings.getAwsSecretKey()) || !hasText(settings.getAwsRegion())) {
+            throw new IllegalStateException("AWS SES provider is missing sender email, access key, secret key, or region");
+        }
+        if (!hasText(secretEncryptionService.decrypt(settings.getAwsSecretKey()))) {
+            throw new IllegalStateException("AWS SES secret key is unavailable");
+        }
+    }
+
+    private void validateSmtpSettings(EmailProviderSetting settings) {
+        if (!hasText(settings.getSenderEmail()) || !hasText(settings.getSmtpHost()) || settings.getSmtpPort() == null || !hasText(settings.getSmtpUsername()) || !hasText(settings.getSmtpPassword())) {
+            throw new IllegalStateException("Gmail SMTP provider is missing sender email, host, port, username, or password");
+        }
+        if (!hasText(secretEncryptionService.decrypt(settings.getSmtpPassword()))) {
+            throw new IllegalStateException("Gmail SMTP password is unavailable");
+        }
+    }
+
+    private String normalizeProvider(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.trim().toUpperCase().replace('-', '_').replace(' ', '_');
     }
 
     private boolean hasText(String value) {

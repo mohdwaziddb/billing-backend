@@ -25,6 +25,7 @@ import java.util.Set;
 public class SmsService {
 
     private final SmsProviderSettingRepository smsProviderSettingRepository;
+    private final SecretEncryptionService secretEncryptionService;
     private final HttpClient httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).build();
 
     public List<SmsDeliveryResult> sendSms(Company company, List<String> mobileNumbers, String message) {
@@ -66,7 +67,7 @@ public class SmsService {
         String separator = settings.getApiUrl().contains("?") ? "&" : "?";
         return settings.getApiUrl() + separator
                 + "user=" + encode(settings.getUsername())
-                + "&password=" + encode(settings.getPassword())
+                + "&password=" + encode(secretEncryptionService.decrypt(settings.getPassword()))
                 + "&senderid=" + encode(settings.getSenderId())
                 + "&number=" + encode(mobileNumber)
                 + "&text=" + encode(message);

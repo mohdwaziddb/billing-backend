@@ -9,6 +9,11 @@ public class ProviderSettingsRequest {
     private Long id;
     private String providerName;
     private String senderEmail;
+    private String smtpHost;
+    private Integer smtpPort;
+    private String smtpUsername;
+    private String smtpPassword;
+    private Boolean smtpTlsEnabled;
     private String awsAccessKey;
     private String awsSecretKey;
     private String awsRegion;
