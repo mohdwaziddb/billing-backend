@@ -28,6 +28,7 @@ public class ProductService {
     private final AccessControlService accessControlService;
     private final ProductCategoryService productCategoryService;
     private final AuditLogService auditLogService;
+    private final AuditNameResolver auditNameResolver;
 
     @Transactional
     public ProductResponse create(String email, ProductRequest request) {
@@ -149,8 +150,8 @@ public class ProductService {
                 .active(product.isActive())
                 .createdAt(product.getCreatedAt())
                 .updatedAt(product.getUpdatedAt())
-                .createdBy(product.getCreatedBy())
-                .updatedBy(product.getUpdatedBy())
+                .createdBy(auditNameResolver.displayName(product.getCreatedBy()))
+                .updatedBy(auditNameResolver.displayName(product.getUpdatedBy()))
                 .build();
     }
 

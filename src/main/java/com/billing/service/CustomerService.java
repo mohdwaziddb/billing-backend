@@ -378,8 +378,8 @@ public class CustomerService {
                 .active(customer.isActive())
                 .createdAt(customer.getCreatedAt())
                 .updatedAt(customer.getUpdatedAt())
-                .createdBy(customer.getCreatedBy())
-                .updatedBy(customer.getUpdatedBy())
+                .createdBy(auditNameResolver.displayName(customer.getCreatedBy()))
+                .updatedBy(auditNameResolver.displayName(customer.getUpdatedBy()))
                 .build();
     }
 

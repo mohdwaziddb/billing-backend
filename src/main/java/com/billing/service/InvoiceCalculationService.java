@@ -41,21 +41,24 @@ public class InvoiceCalculationService {
         }
 
         BigDecimal afterProductDiscountSubtotal = money(subtotal.subtract(productDiscountTotal));
+        BigDecimal totalBeforeInvoiceDiscount = preparedLines.stream()
+                .map(line -> line.afterProductDiscount().add(percentageAmount(line.lineTotal(), line.taxPercent())))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal invoiceDiscount = money(invoiceDiscountAmount);
-        if (invoiceDiscount.compareTo(afterProductDiscountSubtotal) > 0) {
-            throw new BadRequestException("Invoice discount cannot exceed subtotal after product discounts");
+        if (invoiceDiscount.compareTo(totalBeforeInvoiceDiscount) > 0) {
+            throw new BadRequestException("Invoice discount cannot exceed total amount");
         }
 
         List<CalculationLine> calculatedLines = new ArrayList<>();
         BigDecimal taxAmount = money(BigDecimal.ZERO);
         BigDecimal grandTotal = money(BigDecimal.ZERO);
         for (PreparedLine line : preparedLines) {
-            BigDecimal invoiceDiscountShare = afterProductDiscountSubtotal.compareTo(BigDecimal.ZERO) > 0
-                    ? money(invoiceDiscount.multiply(line.afterProductDiscount()).divide(afterProductDiscountSubtotal, 2, RoundingMode.HALF_UP))
+            BigDecimal lineTax = percentageAmount(line.lineTotal(), line.taxPercent());
+            BigDecimal lineTotalBeforeInvoiceDiscount = money(line.afterProductDiscount().add(lineTax));
+            BigDecimal invoiceDiscountShare = totalBeforeInvoiceDiscount.compareTo(BigDecimal.ZERO) > 0
+                    ? money(invoiceDiscount.multiply(lineTotalBeforeInvoiceDiscount).divide(totalBeforeInvoiceDiscount, 2, RoundingMode.HALF_UP))
                     : money(BigDecimal.ZERO);
-            BigDecimal taxableAmount = money(line.afterProductDiscount().subtract(invoiceDiscountShare));
-            BigDecimal lineTax = percentageAmount(taxableAmount, line.taxPercent());
-            BigDecimal lineGrandTotal = money(taxableAmount.add(lineTax));
+            BigDecimal lineGrandTotal = money(lineTotalBeforeInvoiceDiscount.subtract(invoiceDiscountShare));
             taxAmount = taxAmount.add(lineTax);
             grandTotal = grandTotal.add(lineGrandTotal);
             calculatedLines.add(new CalculationLine(
@@ -76,7 +79,7 @@ public class InvoiceCalculationService {
         BigDecimal safeGrandTotal = money(grandTotal);
         BigDecimal safePaidAmount = money(paidAmount);
         if (safePaidAmount.compareTo(safeGrandTotal) > 0) {
-            throw new BadRequestException("Existing payments exceed updated invoice total");
+            throw new BadRequestException("Paid amount cannot exceed grand total");
         }
 
         return new CalculationResult(

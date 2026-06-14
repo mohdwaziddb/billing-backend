@@ -16,10 +16,24 @@ public class AuditNameResolver {
         }
 
         String normalized = auditValue.trim();
+        if (normalized.chars().allMatch(Character::isDigit)) {
+            try {
+                return userRepository.findById(Long.parseLong(normalized))
+                        .map(this::userDisplayName)
+                        .orElse(normalized);
+            } catch (NumberFormatException ignored) {
+                return normalized;
+            }
+        }
+
         return userRepository.findByEmailIgnoreCase(normalized)
-                .map(user -> user.getFullName() == null || user.getFullName().isBlank()
-                        ? user.getEmail()
-                        : user.getFullName())
+                .map(this::userDisplayName)
                 .orElse(normalized);
+    }
+
+    private String userDisplayName(com.billing.entity.User user) {
+        return user.getFullName() == null || user.getFullName().isBlank()
+                ? user.getEmail()
+                : user.getFullName();
     }
 }

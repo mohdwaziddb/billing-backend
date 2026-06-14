@@ -1,5 +1,6 @@
 package com.billing.config;
 
+import com.billing.repository.UserRepository;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.domain.AuditorAware;
@@ -15,10 +16,7 @@ import java.util.Optional;
 public class AuditingConfig {
 
     @Bean
-    public AuditorAware<String> auditorProvider() {
-        System.out.println("");
-        System.out.println("");
-
+    public AuditorAware<String> auditorProvider(UserRepository userRepository) {
         return () -> {
             Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
             if (authentication == null
@@ -26,7 +24,10 @@ public class AuditingConfig {
                     || authentication instanceof AnonymousAuthenticationToken) {
                 return Optional.of("system");
             }
-            return Optional.ofNullable(authentication.getName());
+            String username = authentication.getName();
+            return userRepository.findByEmailIgnoreCase(username)
+                    .map(user -> String.valueOf(user.getId()))
+                    .or(() -> Optional.ofNullable(username));
         };
     }
 }

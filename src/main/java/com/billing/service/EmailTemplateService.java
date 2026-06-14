@@ -32,6 +32,7 @@ public class EmailTemplateService {
     private final EmailTemplateVariableService variableService;
     private final EmailService emailService;
     private final AuditLogService auditLogService;
+    private final AuditNameResolver auditNameResolver;
 
     @Transactional(readOnly = true)
     public PageResponse<EmailTemplateResponse> page(String email, String search, Boolean active, int page, int size) {
@@ -144,7 +145,7 @@ public class EmailTemplateService {
                 .subject(template.getSubject())
                 .emailBody(template.getEmailBody())
                 .active(template.isActive())
-                .createdBy(template.getCreatedBy())
+                .createdBy(auditNameResolver.displayName(template.getCreatedBy()))
                 .createdAt(template.getCreatedAt())
                 .updatedAt(template.getUpdatedAt())
                 .build();

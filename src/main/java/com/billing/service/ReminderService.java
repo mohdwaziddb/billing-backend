@@ -53,6 +53,7 @@ public class ReminderService {
     private final CustomerService customerService;
     private final NotificationService notificationService;
     private final EmailTemplateVariableService variableService;
+    private final AuditNameResolver auditNameResolver;
 
     @Value("${app.reminder.mock-mode:false}")
     private boolean reminderMockMode;
@@ -239,7 +240,7 @@ public class ReminderService {
                 .channel(logEntry.getChannel().name())
                 .status(logEntry.getStatus().name())
                 .createdAt(logEntry.getCreatedAt())
-                .createdBy(logEntry.getCreatedBy())
+                .createdBy(auditNameResolver.displayName(logEntry.getCreatedBy()))
                 .build();
     }
 

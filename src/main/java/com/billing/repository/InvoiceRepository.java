@@ -55,7 +55,7 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
                       and (:createdByRole is null or exists (
                         select 1 from User u
                         where u.company = i.company
-                          and lower(u.email) = lower(i.createdBy)
+                          and (str(u.id) = i.createdBy or lower(u.email) = lower(i.createdBy))
                           and u.role = :createdByRole
                       ))
                     """,
@@ -83,7 +83,7 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
                       and (:createdByRole is null or exists (
                         select 1 from User u
                         where u.company = i.company
-                          and lower(u.email) = lower(i.createdBy)
+                          and (str(u.id) = i.createdBy or lower(u.email) = lower(i.createdBy))
                           and u.role = :createdByRole
                       ))
                     """

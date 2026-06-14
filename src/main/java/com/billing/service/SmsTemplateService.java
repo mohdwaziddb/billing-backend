@@ -27,6 +27,7 @@ public class SmsTemplateService {
     private final SmsTemplateRepository smsTemplateRepository;
     private final EmailTemplateVariableService variableService;
     private final AuditLogService auditLogService;
+    private final AuditNameResolver auditNameResolver;
 
     @Transactional(readOnly = true)
     public PageResponse<SmsTemplateResponse> page(String email, String search, Boolean active, int page, int size) {
@@ -104,7 +105,7 @@ public class SmsTemplateService {
                 .templateName(template.getTemplateName())
                 .templateBody(template.getTemplateBody())
                 .active(template.isActive())
-                .createdBy(template.getCreatedBy())
+                .createdBy(auditNameResolver.displayName(template.getCreatedBy()))
                 .createdAt(template.getCreatedAt())
                 .updatedAt(template.getUpdatedAt())
                 .build();

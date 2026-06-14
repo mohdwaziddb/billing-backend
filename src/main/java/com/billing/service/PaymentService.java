@@ -3,7 +3,6 @@ package com.billing.service;
 import com.billing.entity.Company;
 import com.billing.dto.PageResponse;
 import com.billing.entity.Payment;
-import com.billing.entity.enums.PaymentMode;
 import com.billing.entity.enums.RoleName;
 import com.billing.exception.ResourceNotFoundException;
 import com.billing.dto.payment.PaymentRequest;
@@ -34,6 +33,8 @@ public class PaymentService {
     private final CustomerService customerService;
     private final InvoiceService invoiceService;
     private final AuditLogService auditLogService;
+    private final PaymentModeMasterService paymentModeMasterService;
+    private final AuditNameResolver auditNameResolver;
 
     @Transactional
     public PaymentResponse create(String email, PaymentRequest request) {
@@ -41,6 +42,8 @@ public class PaymentService {
         Customer customer = customerService.getCustomerOrThrow(company, request.getCustomerId());
         Invoice invoice = resolveInvoice(company, request.getInvoiceId(), customer);
         BigDecimal amount = requirePositiveAmount(request.getAmount());
+        paymentModeMasterService.ensureDefaults(company);
+        String mode = paymentModeMasterService.requireActiveModeCode(company, request.getMode());
 
         customerService.decreaseBalance(customer, amount);
         BigDecimal oldOutstanding = invoice != null ? scale(invoice.getBalanceAmount()) : null;
@@ -54,14 +57,14 @@ public class PaymentService {
                 .invoice(invoice)
                 .amount(amount)
                 .paymentDate(request.getPaymentDate())
-                .mode(request.getMode())
+                .mode(mode)
                 .remarks(request.getRemarks())
                 .build();
 
         Payment saved = paymentRepository.save(payment);
         auditLogService.logCreate(email, company, "Payment", "Payment", saved.getId(), snapshot(saved));
         if (invoice != null) {
-            invoiceService.logPaymentApplied(email, company, invoice, amount, oldOutstanding, invoice.getBalanceAmount(), saved.getMode().name());
+            invoiceService.logPaymentApplied(email, company, invoice, amount, oldOutstanding, invoice.getBalanceAmount(), saved.getMode());
         }
         return toResponse(saved);
     }
@@ -87,7 +90,7 @@ public class PaymentService {
                                               LocalDate endDate,
                                               BigDecimal minAmount,
                                               BigDecimal maxAmount,
-                                              PaymentMode mode,
+                                              String mode,
                                               Boolean invoiceLinked,
                                               RoleName createdByRole,
                                               int page,
@@ -111,7 +114,7 @@ public class PaymentService {
                 endDate,
                 minAmount,
                 maxAmount,
-                mode,
+                blankToNull(mode) == null ? null : blankToNull(mode).toUpperCase(java.util.Locale.ENGLISH),
                 invoiceLinked,
                 createdByRole,
                 pageable
@@ -138,6 +141,8 @@ public class PaymentService {
         Customer customer = customerService.getCustomerOrThrow(company, request.getCustomerId());
         Invoice invoice = resolveInvoice(company, request.getInvoiceId(), customer);
         BigDecimal amount = requirePositiveAmount(request.getAmount());
+        paymentModeMasterService.ensureDefaults(company);
+        String mode = paymentModeMasterService.requireActiveModeCode(company, request.getMode());
 
         customerService.decreaseBalance(customer, amount);
         BigDecimal nextOldOutstanding = invoice != null && invoice.equals(previousInvoice) && previousOutstanding != null
@@ -151,7 +156,7 @@ public class PaymentService {
         payment.setInvoice(invoice);
         payment.setAmount(amount);
         payment.setPaymentDate(request.getPaymentDate());
-        payment.setMode(request.getMode());
+        payment.setMode(mode);
         payment.setRemarks(request.getRemarks());
 
         Payment saved = paymentRepository.save(payment);
@@ -160,7 +165,7 @@ public class PaymentService {
             invoiceService.logPaymentUpdated(email, company, previousInvoice, previousAmount.negate(), previousOutstanding, previousInvoice.getBalanceAmount(), oldData.get("mode") != null ? String.valueOf(oldData.get("mode")) : null);
         }
         if (invoice != null) {
-            invoiceService.logPaymentUpdated(email, company, invoice, amount, nextOldOutstanding, invoice.getBalanceAmount(), saved.getMode().name());
+            invoiceService.logPaymentUpdated(email, company, invoice, amount, nextOldOutstanding, invoice.getBalanceAmount(), saved.getMode());
         }
         return toResponse(saved);
     }
@@ -218,10 +223,10 @@ public class PaymentService {
                 .invoiceNo(payment.getInvoice() != null ? payment.getInvoice().getInvoiceNo() : null)
                 .amount(scale(payment.getAmount()))
                 .paymentDate(payment.getPaymentDate())
-                .mode(payment.getMode().name())
+                .mode(payment.getMode())
                 .remarks(payment.getRemarks())
                 .createdAt(payment.getCreatedAt())
-                .createdBy(payment.getCreatedBy())
+                .createdBy(auditNameResolver.displayName(payment.getCreatedBy()))
                 .build();
     }
 
@@ -233,7 +238,7 @@ public class PaymentService {
         data.put("invoiceNo", payment.getInvoice() != null ? payment.getInvoice().getInvoiceNo() : null);
         data.put("amount", scale(payment.getAmount()));
         data.put("paymentDate", payment.getPaymentDate());
-        data.put("mode", payment.getMode() != null ? payment.getMode().name() : null);
+        data.put("mode", payment.getMode());
         data.put("remarks", payment.getRemarks());
         return data;
     }

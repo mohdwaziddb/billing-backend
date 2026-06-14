@@ -4,7 +4,6 @@ import com.billing.dto.ApiResponse;
 import com.billing.dto.PageResponse;
 import com.billing.dto.payment.PaymentRequest;
 import com.billing.dto.payment.PaymentResponse;
-import com.billing.entity.enums.PaymentMode;
 import com.billing.entity.enums.RoleName;
 import com.billing.security.RequirePermission;
 import com.billing.service.PaymentService;
@@ -35,7 +34,7 @@ public class PaymentController {
                                                                           @RequestParam(required = false) LocalDate endDate,
                                                                           @RequestParam(required = false) BigDecimal minAmount,
                                                                           @RequestParam(required = false) BigDecimal maxAmount,
-                                                                          @RequestParam(required = false) PaymentMode mode,
+                                                                          @RequestParam(required = false) String mode,
                                                                           @RequestParam(required = false) Boolean invoiceLinked,
                                                                           @RequestParam(required = false) RoleName createdByRole,
                                                                           @RequestParam(defaultValue = "0") int page,

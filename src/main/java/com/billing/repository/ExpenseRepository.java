@@ -43,7 +43,7 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long> {
                       and (:createdByRole is null or exists (
                         select 1 from User u
                         where u.company = e.company
-                          and lower(u.email) = lower(e.createdBy)
+                          and (str(u.id) = e.createdBy or lower(u.email) = lower(e.createdBy))
                           and u.role = :createdByRole
                       ))
                     """,
@@ -67,7 +67,7 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long> {
                       and (:createdByRole is null or exists (
                         select 1 from User u
                         where u.company = e.company
-                          and lower(u.email) = lower(e.createdBy)
+                          and (str(u.id) = e.createdBy or lower(u.email) = lower(e.createdBy))
                           and u.role = :createdByRole
                       ))
                     """

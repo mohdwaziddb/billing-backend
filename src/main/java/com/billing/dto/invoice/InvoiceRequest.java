@@ -24,6 +24,11 @@ public class InvoiceRequest {
     @DecimalMin(value = "0.00")
     private BigDecimal discountAmount;
 
+    @DecimalMin(value = "0.00")
+    private BigDecimal paidAmount;
+
+    private String paymentMode;
+
     @Valid
     @NotEmpty
     private List<InvoiceItemRequest> items;

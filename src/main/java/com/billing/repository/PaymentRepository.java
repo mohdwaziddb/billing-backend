@@ -4,7 +4,6 @@ import com.billing.entity.Company;
 import com.billing.entity.Customer;
 import com.billing.entity.Invoice;
 import com.billing.entity.Payment;
-import com.billing.entity.enums.PaymentMode;
 import com.billing.entity.enums.RoleName;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -49,7 +48,7 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
                       and (:createdByRole is null or exists (
                         select 1 from User u
                         where u.company = p.company
-                          and lower(u.email) = lower(p.createdBy)
+                          and (str(u.id) = p.createdBy or lower(u.email) = lower(p.createdBy))
                           and u.role = :createdByRole
                       ))
                     """,
@@ -73,7 +72,7 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
                       and (:createdByRole is null or exists (
                         select 1 from User u
                         where u.company = p.company
-                          and lower(u.email) = lower(p.createdBy)
+                          and (str(u.id) = p.createdBy or lower(u.email) = lower(p.createdBy))
                           and u.role = :createdByRole
                       ))
                     """
@@ -84,7 +83,7 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
                                  @Param("endDate") LocalDate endDate,
                                  @Param("minAmount") BigDecimal minAmount,
                                  @Param("maxAmount") BigDecimal maxAmount,
-                                 @Param("mode") PaymentMode mode,
+                                 @Param("mode") String mode,
                                  @Param("invoiceLinked") Boolean invoiceLinked,
                                  @Param("createdByRole") RoleName createdByRole,
                                  Pageable pageable);

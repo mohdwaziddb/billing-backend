@@ -24,6 +24,7 @@ public class ProductCategoryService {
     private final ProductCategoryRepository productCategoryRepository;
     private final AccessControlService accessControlService;
     private final AuditLogService auditLogService;
+    private final AuditNameResolver auditNameResolver;
 
     @Transactional(readOnly = true)
     public List<ProductCategoryResponse> list(String email, String search, Boolean active) {
@@ -126,8 +127,8 @@ public class ProductCategoryService {
                 .active(category.isActive())
                 .createdAt(category.getCreatedAt())
                 .updatedAt(category.getUpdatedAt())
-                .createdBy(category.getCreatedBy())
-                .updatedBy(category.getUpdatedBy())
+                .createdBy(auditNameResolver.displayName(category.getCreatedBy()))
+                .updatedBy(auditNameResolver.displayName(category.getUpdatedBy()))
                 .build();
     }
 

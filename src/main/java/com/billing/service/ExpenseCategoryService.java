@@ -23,6 +23,7 @@ public class ExpenseCategoryService {
     private final ExpenseCategoryRepository expenseCategoryRepository;
     private final AccessControlService accessControlService;
     private final AuditLogService auditLogService;
+    private final AuditNameResolver auditNameResolver;
 
     @Transactional(readOnly = true)
     public PageResponse<ExpenseCategoryResponse> page(String email, String search, Boolean active, int page, int size) {
@@ -106,8 +107,8 @@ public class ExpenseCategoryService {
                 .active(category.isActive())
                 .createdAt(category.getCreatedAt())
                 .updatedAt(category.getUpdatedAt())
-                .createdBy(category.getCreatedBy())
-                .updatedBy(category.getUpdatedBy())
+                .createdBy(auditNameResolver.displayName(category.getCreatedBy()))
+                .updatedBy(auditNameResolver.displayName(category.getUpdatedBy()))
                 .build();
     }
 

@@ -12,6 +12,7 @@ import com.billing.entity.Company;
 import com.billing.entity.Customer;
 import com.billing.entity.Invoice;
 import com.billing.entity.InvoiceItem;
+import com.billing.entity.Payment;
 import com.billing.entity.Product;
 import com.billing.exception.BadRequestException;
 import com.billing.repository.InvoiceRepository;
@@ -44,6 +45,7 @@ public class InvoiceService {
     private final AuditNameResolver auditNameResolver;
     private final InvoiceCalculationService invoiceCalculationService;
     private final AuditLogService auditLogService;
+    private final PaymentModeMasterService paymentModeMasterService;
 
     @Transactional
     public InvoiceResponse create(String email, InvoiceRequest request) {
@@ -52,6 +54,8 @@ public class InvoiceService {
         if (!customer.isActive()) {
             throw new BadRequestException("Inactive customer cannot be invoiced");
         }
+        BigDecimal initialPaidAmount = scale(request.getPaidAmount());
+        String initialPaymentMode = blankToNull(request.getPaymentMode());
 
         Invoice invoice = Invoice.builder()
                 .company(company)
@@ -61,8 +65,12 @@ public class InvoiceService {
                 .paidAmount(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP))
                 .build();
 
+        request.setPaidAmount(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
         applyInvoiceState(invoice, request, customer, true);
         invoiceRepository.save(invoice);
+        if (initialPaidAmount.compareTo(BigDecimal.ZERO) > 0) {
+            createInitialPayment(email, company, customer, invoice, initialPaidAmount, initialPaymentMode, request.getInvoiceDate());
+        }
         auditLogService.logCreate(email, company, "Invoice", "Invoice", invoice.getId(), snapshot(invoice));
         return toResponse(invoice);
     }
@@ -210,6 +218,34 @@ public class InvoiceService {
         invoiceRepository.save(invoice);
     }
 
+    private void createInitialPayment(String email, Company company, Customer customer, Invoice invoice, BigDecimal amount, String mode, LocalDate paymentDate) {
+        if (mode == null) {
+            throw new BadRequestException("Select payment mode when paid amount is greater than 0");
+        }
+        if (amount.compareTo(scale(invoice.getBalanceAmount())) > 0) {
+            throw new BadRequestException("Paid amount cannot exceed invoice outstanding amount");
+        }
+        paymentModeMasterService.ensureDefaults(company);
+        String modeCode = paymentModeMasterService.requireActiveModeCode(company, mode);
+        BigDecimal oldOutstanding = scale(invoice.getBalanceAmount());
+
+        customerService.decreaseBalance(customer, amount);
+        applyPayment(invoice, amount);
+
+        Payment payment = Payment.builder()
+                .company(company)
+                .customer(customer)
+                .invoice(invoice)
+                .amount(amount)
+                .paymentDate(paymentDate)
+                .mode(modeCode)
+                .remarks("Initial invoice payment")
+                .build();
+        Payment saved = paymentRepository.save(payment);
+        auditLogService.logCreate(email, company, "Payment", "Payment", saved.getId(), paymentSnapshot(saved));
+        logPaymentApplied(email, company, invoice, amount, oldOutstanding, invoice.getBalanceAmount(), modeCode);
+    }
+
     private void applyInvoiceState(Invoice invoice, InvoiceRequest request, Customer customer, boolean creating) {
         List<InvoiceCalculationService.CalculationLineInput> calculationLines = new ArrayList<>();
 
@@ -238,7 +274,9 @@ public class InvoiceService {
             ));
         }
 
-        BigDecimal paidAmount = creating ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP) : scale(invoice.getPaidAmount());
+        BigDecimal paidAmount = request.getPaidAmount() != null
+                ? scale(request.getPaidAmount())
+                : creating ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP) : scale(invoice.getPaidAmount());
         InvoiceCalculationService.CalculationResult calculation = invoiceCalculationService.calculate(
                 calculationLines,
                 request.getDiscountAmount(),
@@ -429,6 +467,19 @@ public class InvoiceService {
             row.put("lineTotal", scale(item.getLineTotal()));
             return row;
         }).toList());
+        return data;
+    }
+
+    private Map<String, Object> paymentSnapshot(Payment payment) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("customerId", payment.getCustomer().getId());
+        data.put("customerName", payment.getCustomer().getName());
+        data.put("invoiceId", payment.getInvoice() != null ? payment.getInvoice().getId() : null);
+        data.put("invoiceNo", payment.getInvoice() != null ? payment.getInvoice().getInvoiceNo() : null);
+        data.put("amount", scale(payment.getAmount()));
+        data.put("paymentDate", payment.getPaymentDate());
+        data.put("mode", payment.getMode());
+        data.put("remarks", payment.getRemarks());
         return data;
     }
 

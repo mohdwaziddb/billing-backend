@@ -44,6 +44,7 @@ public class ExpenseService {
     private final ExpenseRepository expenseRepository;
     private final InvoiceRepository invoiceRepository;
     private final AuditLogService auditLogService;
+    private final AuditNameResolver auditNameResolver;
 
     @Transactional(readOnly = true)
     public PageResponse<ExpenseResponse> page(String email,
@@ -244,8 +245,8 @@ public class ExpenseService {
                 .attachmentUrl(expense.getAttachmentUrl())
                 .createdAt(expense.getCreatedAt())
                 .updatedAt(expense.getUpdatedAt())
-                .createdBy(expense.getCreatedBy())
-                .updatedBy(expense.getUpdatedBy())
+                .createdBy(auditNameResolver.displayName(expense.getCreatedBy()))
+                .updatedBy(auditNameResolver.displayName(expense.getUpdatedBy()))
                 .build();
     }
 

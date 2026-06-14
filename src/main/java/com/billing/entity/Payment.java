@@ -1,10 +1,7 @@
 package com.billing.entity;
 
-import com.billing.entity.enums.PaymentMode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -54,9 +51,8 @@ public class Payment extends BaseEntity {
     @Column(nullable = false)
     private LocalDate paymentDate;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private PaymentMode mode;
+    @Column(nullable = false, length = 80)
+    private String mode;
 
     private String remarks;
 }

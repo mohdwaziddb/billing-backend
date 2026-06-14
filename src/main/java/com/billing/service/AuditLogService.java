@@ -305,6 +305,7 @@ public class AuditLogService {
             case "expense" -> "EXPENSES";
             case "expense category" -> "EXPENSE_CATEGORIES";
             case "product category" -> "PRODUCT_CATEGORY";
+            case "payment mode" -> "PAYMENT_MODES";
             case "user" -> "USERS";
             case "email template" -> "EMAIL_TEMPLATES";
             case "sms template" -> "SMS_TEMPLATES";

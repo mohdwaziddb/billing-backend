@@ -4,6 +4,7 @@ import com.billing.dto.dashboard.DashboardDetailResponse;
 import com.billing.dto.dashboard.DashboardSummaryResponse;
 import com.billing.dto.dashboard.DashboardTopCustomerResponse;
 import com.billing.entity.Company;
+import com.billing.entity.Expense;
 import com.billing.entity.Payment;
 import com.billing.entity.Customer;
 import com.billing.entity.Invoice;
@@ -172,6 +173,7 @@ public class DashboardService {
         List<Invoice> allInvoices = invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company);
         List<Payment> allPayments = paymentRepository.findByCompanyOrderByPaymentDateDescIdDesc(company);
         List<Customer> allCustomers = customerRepository.findByCompanyOrderByCreatedAtDesc(company);
+        List<Expense> allExpenses = expenseRepository.findByCompanyOrderByExpenseDateDescIdDesc(company);
         Map<Long, Customer> customersById = allCustomers.stream()
                 .collect(Collectors.toMap(Customer::getId, Function.identity()));
         Map<Long, LocalDate> firstPurchaseDates = firstPurchaseDates(allInvoices);
@@ -183,11 +185,16 @@ public class DashboardService {
         List<Payment> filteredPayments = allPayments.stream()
                 .filter(payment -> isWithinRange(payment.getPaymentDate(), startDate, endDate))
                 .toList();
+        List<Expense> filteredExpenses = allExpenses.stream()
+                .filter(expense -> isWithinRange(expense.getExpenseDate(), startDate, endDate))
+                .toList();
 
         List<Map<String, Object>> rows = switch (normalizedCard) {
             case "totalSales" -> totalSalesRows(filteredInvoices);
             case "collections" -> collectionRows(filteredPayments);
             case "outstanding" -> outstandingRows(allInvoices, allPayments, endDate);
+            case "totalExpense" -> expenseRows(filteredExpenses);
+            case "netRevenue" -> netRevenueRows(filteredInvoices, filteredExpenses);
             case "newCustomers" -> customerRows(filteredInvoices, customersById, firstPurchaseDates, startDate, endDate, true);
             case "existingCustomers" -> customerRows(filteredInvoices, customersById, firstPurchaseDates, startDate, endDate, false);
             case "invoices" -> invoiceRows(filteredInvoices);
@@ -252,6 +259,8 @@ public class DashboardService {
             case "total-sales", "totalSales" -> "totalSales";
             case "collections" -> "collections";
             case "outstanding" -> "outstanding";
+            case "total-expense", "totalExpense", "expenses" -> "totalExpense";
+            case "net-revenue", "netRevenue", "netProfit", "net-profit" -> "netRevenue";
             case "new-customers", "newCustomers" -> "newCustomers";
             case "existing-customers", "existingCustomers" -> "existingCustomers";
             case "invoices" -> "invoices";
@@ -302,6 +311,45 @@ public class DashboardService {
             row.put("date", payment.getPaymentDate());
             return row;
         }).toList();
+    }
+
+    private List<Map<String, Object>> expenseRows(List<Expense> expenses) {
+        return expenses.stream().map(expense -> {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("expenseType", expense.getExpenseType());
+            row.put("categoryName", expense.getCategory().getCategoryName());
+            row.put("customerName", expense.getCustomer() == null ? null : expense.getCustomer().getName());
+            row.put("invoiceNo", expense.getInvoice() == null ? null : expense.getInvoice().getInvoiceNo());
+            row.put("amount", scale(expense.getAmount()));
+            row.put("expenseDate", expense.getExpenseDate());
+            row.put("description", expense.getDescription());
+            row.put("date", expense.getExpenseDate());
+            return row;
+        }).toList();
+    }
+
+    private List<Map<String, Object>> netRevenueRows(List<Invoice> invoices, List<Expense> expenses) {
+        Map<LocalDate, BigDecimal> revenueByDate = invoices.stream()
+                .filter(invoice -> invoice.getInvoiceDate() != null)
+                .collect(Collectors.groupingBy(Invoice::getInvoiceDate,
+                        Collectors.mapping(Invoice::getTotalAmount, Collectors.reducing(BigDecimal.ZERO, BigDecimal::add))));
+        Map<LocalDate, BigDecimal> expenseByDate = expenses.stream()
+                .filter(expense -> expense.getExpenseDate() != null)
+                .collect(Collectors.groupingBy(Expense::getExpenseDate,
+                        Collectors.mapping(Expense::getAmount, Collectors.reducing(BigDecimal.ZERO, BigDecimal::add))));
+
+        return java.util.stream.Stream.concat(revenueByDate.keySet().stream(), expenseByDate.keySet().stream())
+                .distinct()
+                .map(date -> {
+                    BigDecimal revenue = scale(revenueByDate.getOrDefault(date, BigDecimal.ZERO));
+                    BigDecimal expense = scale(expenseByDate.getOrDefault(date, BigDecimal.ZERO));
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("date", date);
+                    row.put("totalRevenue", revenue);
+                    row.put("totalExpense", expense);
+                    row.put("netRevenue", scale(revenue.subtract(expense)));
+                    return row;
+                }).toList();
     }
 
     private List<Map<String, Object>> outstandingRows(List<Invoice> invoices, List<Payment> payments, LocalDate endDate) {
