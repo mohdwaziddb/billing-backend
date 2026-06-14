@@ -104,8 +104,36 @@ public class CompanyService {
             throw new BadRequestException("Unable to upload company logo");
         }
 
+        deleteLogoFile(company.getLogoUrl());
         company.setLogoUrl("/uploads/company-logos/" + fileName);
         return toSummary(companyRepository.save(company));
+    }
+
+    @Transactional
+    public CompanySummary deleteLogo(String email) {
+        Company company = accessControlService.requireOwnerCompany(email);
+        deleteLogoFile(company.getLogoUrl());
+        company.setLogoUrl(null);
+        return toSummary(companyRepository.save(company));
+    }
+
+    private void deleteLogoFile(String logoUrl) {
+        if (logoUrl == null || logoUrl.isBlank()) {
+            return;
+        }
+        try {
+            Path targetDir = Paths.get(uploadDir).toAbsolutePath().normalize().resolve("company-logos");
+            Path fileName = Paths.get(logoUrl).getFileName();
+            if (fileName == null) {
+                return;
+            }
+            Path logoFile = targetDir.resolve(fileName.toString()).normalize();
+            if (!logoFile.startsWith(targetDir)) {
+                return;
+            }
+            Files.deleteIfExists(logoFile);
+        } catch (IOException ignored) {
+        }
     }
 
     @Transactional(readOnly = true)

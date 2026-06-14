@@ -11,6 +11,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -48,6 +49,13 @@ public class CompanyController {
                                                                   @RequestParam("logo") MultipartFile logo) {
         return ResponseEntity.ok(ApiResponse.success("Company logo uploaded successfully",
                 companyService.uploadLogo(authentication.getName(), logo)));
+    }
+
+    @DeleteMapping("/logo")
+    @RequirePermission(menu = "ABOUT_COMPANY", action = "EDIT")
+    public ResponseEntity<ApiResponse<CompanySummary>> deleteLogo(Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.success("Company logo removed successfully",
+                companyService.deleteLogo(authentication.getName())));
     }
 
     @GetMapping("/theme")
