@@ -11,6 +11,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 public interface ProductRepository extends JpaRepository<Product, Long> {
     List<Product> findByCompanyOrderByCreatedAtDesc(Company company);
@@ -63,4 +64,11 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     boolean existsByCompanyAndSkuIgnoreCase(Company company, String sku);
     boolean existsByCompanyAndSkuIgnoreCaseAndIdNot(Company company, String sku, Long id);
     long countByCompany(Company company);
+
+    @Query("""
+            SELECT LOWER(TRIM(p.sku))
+            FROM Product p
+            WHERE p.company = :company
+            """)
+    Set<String> findNormalizedSkusByCompany(@Param("company") Company company);
 }

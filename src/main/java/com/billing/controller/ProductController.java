@@ -58,4 +58,11 @@ public class ProductController {
         productService.delete(authentication.getName(), productId);
         return ResponseEntity.ok(ApiResponse.success("Product deleted successfully", java.util.Map.of("status", "ok")));
     }
+
+    @DeleteMapping("/bulk-delete")
+    @RequirePermission(menu = "PRODUCTS", action = "DELETE")
+    public ResponseEntity<ApiResponse<com.billing.dto.BulkDeleteResponse>> bulkDelete(Authentication authentication, @RequestBody com.billing.dto.BulkDeleteRequest request) {
+        com.billing.dto.BulkDeleteResponse response = productService.deleteBulk(authentication.getName(), request.getIds());
+        return ResponseEntity.ok(ApiResponse.success("Products bulk delete completed", response));
+    }
 }

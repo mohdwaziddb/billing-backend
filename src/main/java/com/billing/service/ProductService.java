@@ -112,6 +112,43 @@ public class ProductService {
         auditLogService.logDelete(email, company, "Product", "Product", saved.getId(), oldData);
     }
 
+    public com.billing.dto.BulkDeleteResponse deleteBulk(String email, java.util.List<Long> ids) {
+        Company company = accessControlService.getCurrentCompany(email);
+        int deleted = 0;
+        int failed = 0;
+        java.util.Map<Long, String> failures = new java.util.LinkedHashMap<>();
+
+        for (Long id : ids) {
+            try {
+                java.util.Optional<Product> opt = productRepository.findByIdAndCompany(id, company);
+                if (opt.isEmpty()) {
+                    // check if exists but different company
+                    java.util.Optional<Product> exists = productRepository.findById(id);
+                    if (exists.isPresent()) {
+                        failures.put(id, "company_mismatch");
+                        failed++;
+                    } else {
+                        failures.put(id, "not_found");
+                        failed++;
+                    }
+                    continue;
+                }
+
+                Product product = opt.get();
+                Map<String, Object> oldData = snapshot(product);
+                product.setActive(false);
+                Product saved = productRepository.save(product);
+                auditLogService.logDelete(email, company, "Product", "Product", saved.getId(), oldData);
+                deleted++;
+            } catch (Exception ex) {
+                failures.put(id, ex.getMessage() != null ? ex.getMessage() : "error");
+                failed++;
+            }
+        }
+
+        return com.billing.dto.BulkDeleteResponse.builder().deleted(deleted).failed(failed).failures(failures).build();
+    }
+
     public Product getProductOrThrow(Company company, Long productId) {
         return productRepository.findByIdAndCompany(productId, company)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found"));

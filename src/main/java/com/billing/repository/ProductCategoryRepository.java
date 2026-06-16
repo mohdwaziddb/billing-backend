@@ -53,6 +53,8 @@ public interface ProductCategoryRepository extends JpaRepository<ProductCategory
 
     Optional<ProductCategory> findByCompanyAndCategoryNameIgnoreCaseAndActiveTrue(Company company, String categoryName);
 
+    List<ProductCategory> findByCompanyAndActiveTrueOrderByCategoryNameAsc(Company company);
+
     boolean existsByCompanyAndCategoryNameIgnoreCase(Company company, String categoryName);
 
     boolean existsByCompanyAndCategoryNameIgnoreCaseAndIdNot(Company company, String categoryName, Long id);

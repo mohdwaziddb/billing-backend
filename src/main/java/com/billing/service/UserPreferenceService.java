@@ -31,6 +31,7 @@ public class UserPreferenceService {
     private final UserRepository userRepository;
     private final UserPreferenceRepository userPreferenceRepository;
     private final ObjectMapper objectMapper;
+    private final AccessControlService accessControlService;
 
     @Transactional(readOnly = true)
     public UserPreferenceResponse getPreferences(String email) {
@@ -77,8 +78,7 @@ public class UserPreferenceService {
     }
 
     private User requireUser(String email) {
-        return userRepository.findByEmailIgnoreCase(email)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        return accessControlService.getCurrentUser(email);
     }
 
     private UserPreferenceResponse toResponse(UserPreference preference) {

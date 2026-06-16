@@ -32,8 +32,7 @@ public class UserService {
 
     @Transactional(readOnly = true)
     public UserProfileResponse getProfile(String email) {
-        User user = userRepository.findByEmailIgnoreCase(email)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        User user = accessControlService.getCurrentUser(email);
         return userMapper.toProfile(user);
     }
 

@@ -61,8 +61,7 @@ public class PermissionService {
 
     @Transactional(readOnly = true)
     public boolean has(String email, String menuCode, String actionCode) {
-        User user = userRepository.findByEmailIgnoreCase(email)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        User user = accessControlService.getCurrentUser(email);
         return hasPermission(user.getId(), user.getCompany().getId(), menuCode, actionCode);
     }
 
@@ -110,8 +109,7 @@ public class PermissionService {
 
     @Transactional(readOnly = true)
     public PermissionMatrixResponse effectivePermissions(String email) {
-        User user = userRepository.findByEmailIgnoreCase(email)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        User user = accessControlService.getCurrentUser(email);
         if (accessControlService.isCompanyOwner(user)) {
             return PermissionMatrixResponse.builder()
                     .roleCode(roleCode(user))

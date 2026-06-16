@@ -52,21 +52,23 @@ public class PermissionDataInitializer implements ApplicationRunner {
             new MenuSeed("Expenses", "EXPENSES", "ReceiptIndianRupee", "/expenses", 7, null),
             new MenuSeed("Outstanding", "OUTSTANDING", "Wallet", "/outstanding", 8, null),
             new MenuSeed("Analytics", "ANALYTICS", "BarChart3", "/analytics", 9, null),
-            new MenuSeed("Reports", "REPORTS", "BarChart3", "/reports", 10, null),
-            new MenuSeed("Profit & Loss", "PROFIT_LOSS", "TrendingUp", "/reports/profit-loss", 11, "REPORTS"),
-            new MenuSeed("Setup", "SETUP", "Settings", "/setup", 12, null),
-            new MenuSeed("Users", "USERS", "Users", "/setup/users", 13, "SETUP"),
-            new MenuSeed("Product Categories", "PRODUCT_CATEGORY", "Tags", "/setup/product-categories", 14, "SETUP"),
-            new MenuSeed("Expense Categories", "EXPENSE_CATEGORIES", "Tags", "/setup/expense-categories", 15, "SETUP"),
-            new MenuSeed("Payment Modes", "PAYMENT_MODES", "CreditCard", "/setup/payment-modes", 16, "SETUP"),
-            new MenuSeed("Theme Settings", "THEME_SETTINGS", "Palette", "/setup/theme-settings", 17, "SETUP"),
-            new MenuSeed("About Company", "ABOUT_COMPANY", "Building2", "/setup/about-company", 18, "SETUP"),
-            new MenuSeed("Email Templates", "EMAIL_TEMPLATES", "Mail", "/setup/email-templates", 19, "SETUP"),
-            new MenuSeed("SMS Templates", "SMS_TEMPLATES", "Mail", "/setup/sms-templates", 20, "SETUP"),
-            new MenuSeed("Email Settings", "EMAIL_SETTINGS", "Mail", "/setup/email-settings", 21, "SETUP"),
-            new MenuSeed("SMS Settings", "SMS_SETTINGS", "Mail", "/setup/sms-settings", 22, "SETUP"),
-            new MenuSeed("Role Permissions", "ROLE_PERMISSIONS", "ShieldCheck", "/setup/role-permissions", 23, "SETUP"),
-            new MenuSeed("Payment Hierarchy", "PAYMENT_HIERARCHY", "CreditCard", "/reports/payment-hierarchy", 24, "REPORTS")
+            new MenuSeed("DataPort", "DATA_PORT", "FileText", "/data-port", 10, null),
+            new MenuSeed("Product DataPort", "PRODUCT_DATAPORT", "Boxes", "/data-port/products", 11, "DATA_PORT"),
+            new MenuSeed("Reports", "REPORTS", "BarChart3", "/reports", 12, null),
+            new MenuSeed("Profit & Loss", "PROFIT_LOSS", "TrendingUp", "/reports/profit-loss", 13, "REPORTS"),
+            new MenuSeed("Setup", "SETUP", "Settings", "/setup", 14, null),
+            new MenuSeed("Users", "USERS", "Users", "/setup/users", 15, "SETUP"),
+            new MenuSeed("Product Categories", "PRODUCT_CATEGORY", "Tags", "/setup/product-categories", 16, "SETUP"),
+            new MenuSeed("Expense Categories", "EXPENSE_CATEGORIES", "Tags", "/setup/expense-categories", 17, "SETUP"),
+            new MenuSeed("Payment Modes", "PAYMENT_MODES", "CreditCard", "/setup/payment-modes", 18, "SETUP"),
+            new MenuSeed("Theme Settings", "THEME_SETTINGS", "Palette", "/setup/theme-settings", 19, "SETUP"),
+            new MenuSeed("About Company", "ABOUT_COMPANY", "Building2", "/setup/about-company", 20, "SETUP"),
+            new MenuSeed("Email Templates", "EMAIL_TEMPLATES", "Mail", "/setup/email-templates", 21, "SETUP"),
+            new MenuSeed("SMS Templates", "SMS_TEMPLATES", "Mail", "/setup/sms-templates", 22, "SETUP"),
+            new MenuSeed("Email Settings", "EMAIL_SETTINGS", "Mail", "/setup/email-settings", 23, "SETUP"),
+            new MenuSeed("SMS Settings", "SMS_SETTINGS", "Mail", "/setup/sms-settings", 24, "SETUP"),
+            new MenuSeed("Role Permissions", "ROLE_PERMISSIONS", "ShieldCheck", "/setup/role-permissions", 25, "SETUP"),
+            new MenuSeed("Payment Hierarchy", "PAYMENT_HIERARCHY", "CreditCard", "/reports/payment-hierarchy", 26, "REPORTS")
     );
 
     private static final List<ActionSeed> ACTIONS = List.of(
@@ -162,8 +164,8 @@ public class PermissionDataInitializer implements ApplicationRunner {
 
     public void seedPermissionsForCompany(Company company) {
         Map<String, Set<String>> visibleMenusByRole = Map.of(
-                "OWNER", Set.of("DASHBOARD", "CUSTOMERS", "PRODUCTS", "CREATE_INVOICE", "INVOICES", "PAYMENTS", "EXPENSES", "OUTSTANDING", "ANALYTICS", "REPORTS", "PROFIT_LOSS", "SETUP", "USERS", "PRODUCT_CATEGORY", "EXPENSE_CATEGORIES", "PAYMENT_MODES", "THEME_SETTINGS", "ABOUT_COMPANY", "EMAIL_TEMPLATES", "SMS_TEMPLATES", "EMAIL_SETTINGS", "SMS_SETTINGS", "ROLE_PERMISSIONS", "PAYMENT_HIERARCHY"),
-                "ADMIN", Set.of("DASHBOARD", "CUSTOMERS", "PRODUCTS", "CREATE_INVOICE", "INVOICES", "PAYMENTS", "EXPENSES", "OUTSTANDING", "ANALYTICS", "REPORTS", "PROFIT_LOSS", "SETUP", "PRODUCT_CATEGORY", "EXPENSE_CATEGORIES", "PAYMENT_MODES", "ABOUT_COMPANY", "EMAIL_TEMPLATES", "SMS_TEMPLATES"),
+                "OWNER", Set.of("DASHBOARD", "CUSTOMERS", "PRODUCTS", "CREATE_INVOICE", "INVOICES", "PAYMENTS", "EXPENSES", "OUTSTANDING", "ANALYTICS", "DATA_PORT", "PRODUCT_DATAPORT", "REPORTS", "PROFIT_LOSS", "SETUP", "USERS", "PRODUCT_CATEGORY", "EXPENSE_CATEGORIES", "PAYMENT_MODES", "THEME_SETTINGS", "ABOUT_COMPANY", "EMAIL_TEMPLATES", "SMS_TEMPLATES", "EMAIL_SETTINGS", "SMS_SETTINGS", "ROLE_PERMISSIONS", "PAYMENT_HIERARCHY"),
+                "ADMIN", Set.of("DASHBOARD", "CUSTOMERS", "PRODUCTS", "CREATE_INVOICE", "INVOICES", "PAYMENTS", "EXPENSES", "OUTSTANDING", "ANALYTICS", "DATA_PORT", "PRODUCT_DATAPORT", "REPORTS", "PROFIT_LOSS", "SETUP", "PRODUCT_CATEGORY", "EXPENSE_CATEGORIES", "PAYMENT_MODES", "ABOUT_COMPANY", "EMAIL_TEMPLATES", "SMS_TEMPLATES"),
                 "USER", Set.of("DASHBOARD", "CUSTOMERS", "PRODUCTS", "CREATE_INVOICE", "INVOICES", "OUTSTANDING", "ANALYTICS", "ABOUT_COMPANY")
         );
         Map<String, Set<String>> actionCodesByRole = Map.of(
