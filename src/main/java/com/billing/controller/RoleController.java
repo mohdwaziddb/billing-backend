@@ -24,7 +24,6 @@ public class RoleController {
         return ResponseEntity.ok(ApiResponse.success("Roles fetched successfully",
                 roleMasterRepository.findAll().stream()
                         .map(role -> role.getRoleCode())
-                        .filter(role -> !"SUPER_ADMIN".equals(role))
                         .toList()));
     }
 }

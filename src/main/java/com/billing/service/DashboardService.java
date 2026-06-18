@@ -47,7 +47,7 @@ public class DashboardService {
     @Transactional(readOnly = true)
     public DashboardSummaryResponse summary(String email, LocalDate startDate, LocalDate endDate) {
         User user = accessControlService.getCurrentUser(email);
-        Company company = accessControlService.isSuperAdmin(user) ? null : accessControlService.requireCompany(user);
+        Company company = accessControlService.requireCompany(user);
         List<Invoice> allInvoices = invoicesFor(company);
         List<Payment> allPayments = paymentsFor(company);
         List<Customer> allCustomers = customersFor(company);
@@ -172,7 +172,7 @@ public class DashboardService {
                                            String sortDirection,
                                            String search) {
         User user = accessControlService.getCurrentUser(email);
-        Company company = accessControlService.isSuperAdmin(user) ? null : accessControlService.requireCompany(user);
+        Company company = accessControlService.requireCompany(user);
         List<Invoice> allInvoices = invoicesFor(company);
         List<Payment> allPayments = paymentsFor(company);
         List<Customer> allCustomers = customersFor(company);
@@ -238,19 +238,19 @@ public class DashboardService {
     }
 
     private List<Invoice> invoicesFor(Company company) {
-        return company == null ? invoiceRepository.findAllByOrderByInvoiceDateDescIdDesc() : invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company);
+        return invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company);
     }
 
     private List<Payment> paymentsFor(Company company) {
-        return company == null ? paymentRepository.findAllByOrderByPaymentDateDescIdDesc() : paymentRepository.findByCompanyOrderByPaymentDateDescIdDesc(company);
+        return paymentRepository.findByCompanyOrderByPaymentDateDescIdDesc(company);
     }
 
     private List<Customer> customersFor(Company company) {
-        return company == null ? customerRepository.findAll() : customerRepository.findByCompanyOrderByCreatedAtDesc(company);
+        return customerRepository.findByCompanyOrderByCreatedAtDesc(company);
     }
 
     private List<Expense> expensesFor(Company company) {
-        return company == null ? expenseRepository.findAllByOrderByExpenseDateDescIdDesc() : expenseRepository.findByCompanyOrderByExpenseDateDescIdDesc(company);
+        return expenseRepository.findByCompanyOrderByExpenseDateDescIdDesc(company);
     }
 
     private boolean isBeforeStart(LocalDate value, LocalDate startDate) {

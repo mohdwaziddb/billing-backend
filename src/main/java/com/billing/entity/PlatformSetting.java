@@ -33,4 +33,10 @@ public class PlatformSetting extends BaseEntity {
 
     @Column(name = "platform_tagline")
     private String platformTagline;
+
+    @Column(name = "username")
+    private String username;
+
+    @Column(name = "password")
+    private String password;
 }

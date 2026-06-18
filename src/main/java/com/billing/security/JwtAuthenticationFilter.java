@@ -38,7 +38,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             String token = authHeader.substring(7);
             Long userId;
             String username;
+            String authType;
             try {
+                authType = jwtService.extractAuthType(token);
                 userId = jwtService.extractUserId(token);
                 username = jwtService.extractUsername(token);
             } catch (Exception ex) {
@@ -48,12 +50,26 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             }
 
             if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+                if ("PLATFORM_ADMIN".equals(authType)) {
+                    PlatformAdminPrincipal platformAdminPrincipal = new PlatformAdminPrincipal(username);
+                    if (jwtService.isTokenValid(token, platformAdminPrincipal)) {
+                        UsernamePasswordAuthenticationToken authenticationToken = new UsernamePasswordAuthenticationToken(
+                                platformAdminPrincipal,
+                                null,
+                                platformAdminPrincipal.getAuthorities()
+                        );
+                        authenticationToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                        SecurityContextHolder.getContext().setAuthentication(authenticationToken);
+                    }
+                    filterChain.doFilter(request, response);
+                    return;
+                }
+
                 UserDetails userDetails = userId != null
                         ? userDetailsService.loadUserById(userId)
                         : userDetailsService.loadUserByUsername(username);
                 if (jwtService.isTokenValid(token, userDetails)) {
                     if (userDetails instanceof CustomUserDetails customUserDetails
-                            && !"SUPER_ADMIN".equals(customUserDetails.getRole())
                             && (customUserDetails.getCompanyId() == null || !customUserDetails.isCompanyActive())) {
                         SecurityContextHolder.clearContext();
                         writeCompanyInactiveResponse(response);
@@ -67,11 +83,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     authenticationToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                     SecurityContextHolder.getContext().setAuthentication(authenticationToken);
                     if (userDetails instanceof CustomUserDetails customUserDetails) {
-                        if ("SUPER_ADMIN".equals(customUserDetails.getRole())) {
-                            TenantContext.clear();
-                        } else {
-                            TenantContext.setCompanyId(customUserDetails.getCompanyId());
-                        }
+                        TenantContext.setCompanyId(customUserDetails.getCompanyId());
                     }
                 }
             }

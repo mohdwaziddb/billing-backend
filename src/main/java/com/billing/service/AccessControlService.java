@@ -49,15 +49,6 @@ public class AccessControlService {
         return user.isActive() && user.getRole() == RoleName.OWNER;
     }
 
-    public boolean isSuperAdmin(User user) {
-        return user != null && user.isActive() && user.getRole() == RoleName.SUPER_ADMIN;
-    }
-
-    @Transactional(readOnly = true)
-    public boolean isSuperAdmin() {
-        return isSuperAdmin(getCurrentUser());
-    }
-
     @Transactional(readOnly = true)
     public boolean isCompanyOwner() {
         return isCompanyOwner(getCurrentUser());

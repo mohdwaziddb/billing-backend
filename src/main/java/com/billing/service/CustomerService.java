@@ -69,14 +69,14 @@ public class CustomerService {
 
     @Transactional(readOnly = true)
     public List<CustomerResponse> list(String email, String search, Boolean active) {
-        Company company = companyScopeOrNull(email);
+        Company company = companyScope(email);
         List<Customer> customers = customerRepository.findAllByCompanyWithFilters(company, active, normalizeSearch(search));
         return toResponses(company, customers);
     }
 
     @Transactional(readOnly = true)
     public PageResponse<CustomerResponse> page(String email, String search, Boolean active, int page, int size) {
-        Company company = companyScopeOrNull(email);
+        Company company = companyScope(email);
         Page<Customer> customers = customerRepository.findPageByCompanyWithFilters(company, active, normalizeSearch(search), pageRequest(page, size));
         Map<Long, CustomerSummaryMetrics> metricsByCustomer = loadMetrics(company, customers.getContent());
         return PageResponse.from(customers.map(customer -> toResponse(customer, metricsByCustomer.get(customer.getId()))));
@@ -84,10 +84,8 @@ public class CustomerService {
 
     @Transactional(readOnly = true)
     public CustomerResponse get(String email, Long customerId) {
-        Company company = companyScopeOrNull(email);
-        Customer customer = company == null
-                ? customerRepository.findById(customerId).orElseThrow(() -> new ResourceNotFoundException("Customer not found"))
-                : getCustomerOrThrow(company, customerId);
+        Company company = companyScope(email);
+        Customer customer = getCustomerOrThrow(company, customerId);
         return toResponse(customer, loadMetrics(company, List.of(customer)).get(customer.getId()));
     }
 
@@ -248,14 +246,8 @@ public class CustomerService {
 
     @Transactional(readOnly = true)
     public List<CustomerResponse> outstanding(String email) {
-        Company company = companyScopeOrNull(email);
-        List<Customer> customers = company == null
-                ? customerRepository.findAll().stream()
-                        .filter(Customer::isActive)
-                        .filter(customer -> scale(customer.getCurrentBalance()).compareTo(BigDecimal.ZERO) > 0)
-                        .sorted(Comparator.comparing(Customer::getCurrentBalance, Comparator.reverseOrder()))
-                        .toList()
-                : customerRepository.findByCompanyAndActiveTrueAndCurrentBalanceGreaterThanOrderByCurrentBalanceDesc(company, BigDecimal.ZERO);
+        Company company = companyScope(email);
+        List<Customer> customers = customerRepository.findByCompanyAndActiveTrueAndCurrentBalanceGreaterThanOrderByCurrentBalanceDesc(company, BigDecimal.ZERO);
         return toResponses(company, customers);
     }
 
@@ -298,7 +290,7 @@ public class CustomerService {
             return Map.of();
         }
 
-        List<Invoice> invoices = company == null ? invoiceRepository.findAllByOrderByInvoiceDateDescIdDesc() : invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company);
+        List<Invoice> invoices = invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company);
         for (Invoice invoice : invoices) {
             CustomerSummaryMetricsBuilderState state = states.get(invoice.getCustomer().getId());
             if (state == null) {
@@ -312,7 +304,7 @@ public class CustomerService {
             }
         }
 
-        List<Payment> payments = company == null ? paymentRepository.findAllByOrderByPaymentDateDescIdDesc() : paymentRepository.findByCompanyOrderByPaymentDateDescIdDesc(company);
+        List<Payment> payments = paymentRepository.findByCompanyOrderByPaymentDateDescIdDesc(company);
         for (Payment payment : payments) {
             CustomerSummaryMetricsBuilderState state = states.get(payment.getCustomer().getId());
             if (state == null) {
@@ -453,9 +445,9 @@ public class CustomerService {
         return PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 100)));
     }
 
-    private Company companyScopeOrNull(String email) {
+    private Company companyScope(String email) {
         User user = accessControlService.getCurrentUser(email);
-        return accessControlService.isSuperAdmin(user) ? null : accessControlService.requireCompany(user);
+        return accessControlService.requireCompany(user);
     }
 
     private static final class CustomerSummaryMetricsBuilderState {

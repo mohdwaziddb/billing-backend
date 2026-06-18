@@ -61,7 +61,7 @@ public class Company extends BaseEntity {
 
     private String pincode;
 
-    @Column(nullable = false, unique = true)
+    @Column(unique = true)
     private String taxId;
 
     @Column(name = "pan_number")

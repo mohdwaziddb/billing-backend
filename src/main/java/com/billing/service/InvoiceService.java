@@ -79,12 +79,6 @@ public class InvoiceService {
     @Transactional(readOnly = true)
     public List<InvoiceResponse> list(String email, Long customerId) {
         User user = accessControlService.getCurrentUser(email);
-        if (accessControlService.isSuperAdmin(user)) {
-            return invoiceRepository.findAllByOrderByInvoiceDateDescIdDesc().stream()
-                    .filter(invoice -> customerId == null || invoice.getCustomer().getId().equals(customerId))
-                    .map(this::toResponse)
-                    .toList();
-        }
         Company company = accessControlService.requireCompany(user);
         List<Invoice> invoices = customerId == null
                 ? invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company)
@@ -119,7 +113,7 @@ public class InvoiceService {
                                               int page,
                                               int size) {
         User user = accessControlService.getCurrentUser(email);
-        Company company = accessControlService.isSuperAdmin(user) ? null : accessControlService.requireCompany(user);
+        Company company = accessControlService.requireCompany(user);
         int safeSize = Math.max(1, Math.min(size, 1000));
         PageRequest pageable = PageRequest.of(Math.max(0, page), safeSize, Sort.by(Sort.Direction.DESC, "invoiceDate").and(Sort.by(Sort.Direction.DESC, "id")));
         InvoiceStatus resolvedStatus = resolveFilterStatus(invoiceStatus, paymentStatus);
@@ -154,11 +148,6 @@ public class InvoiceService {
     @Transactional(readOnly = true)
     public InvoiceResponse get(String email, Long invoiceId) {
         User user = accessControlService.getCurrentUser(email);
-        if (accessControlService.isSuperAdmin(user)) {
-            return invoiceRepository.findById(invoiceId)
-                    .map(this::toResponse)
-                    .orElseThrow(() -> new ResourceNotFoundException("Invoice not found"));
-        }
         Company company = accessControlService.requireCompany(user);
         return toResponse(getInvoiceOrThrow(company, invoiceId));
     }

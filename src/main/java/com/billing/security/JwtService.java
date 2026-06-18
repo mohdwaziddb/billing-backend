@@ -18,6 +18,10 @@ import java.util.function.Function;
 @Service
 public class JwtService {
 
+    private static final String AUTH_TYPE_CLAIM = "authType";
+    private static final String AUTH_TYPE_USER = "USER";
+    private static final String AUTH_TYPE_PLATFORM_ADMIN = "PLATFORM_ADMIN";
+
     @Value("${app.jwt.secret}")
     private String jwtSecret;
 
@@ -33,6 +37,7 @@ public class JwtService {
 
     public String generateAccessToken(CustomUserDetails userDetails) {
         Map<String, Object> claims = new HashMap<>();
+        claims.put(AUTH_TYPE_CLAIM, AUTH_TYPE_USER);
         claims.put("role", userDetails.getRole());
         claims.put("companyId", userDetails.getCompanyId());
         claims.put("userId", userDetails.getId());
@@ -40,6 +45,19 @@ public class JwtService {
         return Jwts.builder()
                 .claims(claims)
                 .subject(String.valueOf(userDetails.getId()))
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + accessTokenExpiration))
+                .signWith(getSigningKey())
+                .compact();
+    }
+
+    public String generatePlatformAdminAccessToken(String username) {
+        Map<String, Object> claims = new HashMap<>();
+        claims.put(AUTH_TYPE_CLAIM, AUTH_TYPE_PLATFORM_ADMIN);
+
+        return Jwts.builder()
+                .claims(claims)
+                .subject(username)
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + accessTokenExpiration))
                 .signWith(getSigningKey())
@@ -72,6 +90,11 @@ public class JwtService {
             return Long.parseLong(subject);
         }
         return null;
+    }
+
+    public String extractAuthType(String token) {
+        Object authType = extractClaim(token, claims -> claims.get(AUTH_TYPE_CLAIM));
+        return authType instanceof String value && !value.isBlank() ? value : AUTH_TYPE_USER;
     }
 
     public <T> T extractClaim(String token, Function<Claims, T> resolver) {

@@ -92,10 +92,8 @@ public class AuditLogService {
                                                int page,
                                                int size) {
         User user = accessControlService.getCurrentUser(email);
-        Company company = accessControlService.isSuperAdmin(user) ? null : accessControlService.requireCompany(user);
-        if (!accessControlService.isSuperAdmin(user)) {
-            requireRowLogPermission(email, moduleName);
-        }
+        Company company = accessControlService.requireCompany(user);
+        requireRowLogPermission(email, moduleName);
         return PageResponse.from(auditLogRepository.findAll(
                 auditFilter(company, moduleName, entityId, userId, actionType, startDate, endDate, search),
                 PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 100)), Sort.by(Sort.Direction.DESC, "createdAt").and(Sort.by(Sort.Direction.DESC, "id")))
@@ -108,9 +106,7 @@ public class AuditLogService {
         if (!hasLogPermission(email, "USERS")) {
             throw new AccessDeniedException("You do not have permission to view audit log users");
         }
-        List<Object[]> rows = accessControlService.isSuperAdmin(user)
-                ? auditLogRepository.findDistinctUsers()
-                : auditLogRepository.findDistinctUsersByCompany(accessControlService.requireCompany(user));
+        List<Object[]> rows = auditLogRepository.findDistinctUsersByCompany(accessControlService.requireCompany(user));
         return rows.stream()
                 .map(row -> AuditUserOptionResponse.builder()
                         .id((Long) row[0])

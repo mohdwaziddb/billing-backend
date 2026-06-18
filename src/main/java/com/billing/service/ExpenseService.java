@@ -60,7 +60,7 @@ public class ExpenseService {
                                               int page,
                                               int size) {
         User user = accessControlService.getCurrentUser(email);
-        Company company = accessControlService.isSuperAdmin(user) ? null : accessControlService.requireCompany(user);
+        Company company = accessControlService.requireCompany(user);
         return PageResponse.from(expenseRepository.searchExpenses(
                 company,
                 blankToNull(search),
@@ -78,11 +78,6 @@ public class ExpenseService {
     @Transactional(readOnly = true)
     public ExpenseResponse get(String email, Long expenseId) {
         User user = accessControlService.getCurrentUser(email);
-        if (accessControlService.isSuperAdmin(user)) {
-            return expenseRepository.findById(expenseId)
-                    .map(this::toResponse)
-                    .orElseThrow(() -> new ResourceNotFoundException("Expense not found"));
-        }
         Company company = accessControlService.requireCompany(user);
         return toResponse(getExpenseOrThrow(company, expenseId));
     }
@@ -155,9 +150,9 @@ public class ExpenseService {
                                                      LocalDate endDate,
                                                      RoleName createdByRole) {
         User user = accessControlService.getCurrentUser(email);
-        Company company = accessControlService.isSuperAdmin(user) ? null : accessControlService.requireCompany(user);
+        Company company = accessControlService.requireCompany(user);
         List<Expense> expenses = expenseRepository.searchExpenses(company, null, expenseType, categoryId, customerId, invoiceId, startDate, endDate, createdByRole, PageRequest.of(0, 1000)).getContent();
-        List<Invoice> invoices = (company == null ? invoiceRepository.findAllByOrderByInvoiceDateDescIdDesc() : invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company)).stream()
+        List<Invoice> invoices = invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company).stream()
                 .filter(invoice -> customerId == null || invoice.getCustomer().getId().equals(customerId))
                 .filter(invoice -> invoiceId == null || invoice.getId().equals(invoiceId))
                 .filter(invoice -> inRange(invoice.getInvoiceDate(), startDate, endDate))

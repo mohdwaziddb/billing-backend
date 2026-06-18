@@ -21,6 +21,7 @@ import com.billing.repository.RoleMenuPermissionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,6 +42,7 @@ public class PermissionDataInitializer implements ApplicationRunner {
     private final RoleMasterRepository roleMasterRepository;
     private final RoleMenuPermissionRepository roleMenuPermissionRepository;
     private final RoleMenuActionPermissionRepository roleMenuActionPermissionRepository;
+    private final PasswordEncoder passwordEncoder;
 
     private static final List<MenuSeed> MENUS = List.of(
             new MenuSeed("Dashboard", "DASHBOARD", "LayoutDashboard", "/dashboard", 1, null),
@@ -68,12 +70,7 @@ public class PermissionDataInitializer implements ApplicationRunner {
             new MenuSeed("Email Settings", "EMAIL_SETTINGS", "Mail", "/setup/email-settings", 23, "SETUP"),
             new MenuSeed("SMS Settings", "SMS_SETTINGS", "Mail", "/setup/sms-settings", 24, "SETUP"),
             new MenuSeed("Role Permissions", "ROLE_PERMISSIONS", "ShieldCheck", "/setup/role-permissions", 25, "SETUP"),
-            new MenuSeed("Payment Hierarchy", "PAYMENT_HIERARCHY", "CreditCard", "/reports/payment-hierarchy", 26, "REPORTS"),
-            new MenuSeed("Platform Administration", "SUPER_ADMIN", "ShieldCheck", "/super-admin", 100, null),
-            new MenuSeed("Dashboard", "SUPER_ADMIN_DASHBOARD", "LayoutDashboard", "/super-admin/dashboard", 101, "SUPER_ADMIN"),
-            new MenuSeed("Companies", "SUPER_ADMIN_COMPANIES", "Building2", "/super-admin/companies", 102, "SUPER_ADMIN"),
-            new MenuSeed("Users", "SUPER_ADMIN_USERS", "Users", "/super-admin/users", 103, "SUPER_ADMIN"),
-            new MenuSeed("Company Details", "SUPER_ADMIN_COMPANY_DETAILS", "Building2", "/super-admin/company-details", 104, "SUPER_ADMIN")
+            new MenuSeed("Payment Hierarchy", "PAYMENT_HIERARCHY", "CreditCard", "/reports/payment-hierarchy", 26, "REPORTS")
     );
 
     private static final List<ActionSeed> ACTIONS = List.of(
@@ -106,7 +103,6 @@ public class PermissionDataInitializer implements ApplicationRunner {
         saveRole("Owner", "OWNER");
         saveRole("Admin", "ADMIN");
         saveRole("User", "USER");
-        saveRole("Super Admin", "SUPER_ADMIN");
     }
 
     private void saveRole(String name, String code) {
@@ -119,11 +115,29 @@ public class PermissionDataInitializer implements ApplicationRunner {
     }
 
     private void seedPlatformSettings() {
-        platformSettingRepository.findTopByOrderByIdAsc()
+        PlatformSetting setting = platformSettingRepository.findTopByOrderByIdAsc()
                 .orElseGet(() -> platformSettingRepository.save(PlatformSetting.builder()
-                        .platformName("")
-                        .platformTagline(null)
+                        .platformName("Bizfinity")
+                        .platformTagline("Empowering Businesses, Simplifying Growth")
+                        .username("mohdwaziddb")
+                        .password(passwordEncoder.encode("123456789"))
                         .build()));
+
+        boolean updated = false;
+        if (setting.getUsername() == null || setting.getUsername().isBlank()) {
+            setting.setUsername("mohdwaziddb");
+            updated = true;
+        }
+        if (setting.getPassword() == null || setting.getPassword().isBlank()) {
+            setting.setPassword(passwordEncoder.encode("123456789"));
+            updated = true;
+        } else if (!isEncodedPassword(setting.getPassword())) {
+            setting.setPassword(passwordEncoder.encode(setting.getPassword().trim()));
+            updated = true;
+        }
+        if (updated) {
+            platformSettingRepository.save(setting);
+        }
     }
 
     private void seedMenus() {
@@ -172,14 +186,12 @@ public class PermissionDataInitializer implements ApplicationRunner {
         Map<String, Set<String>> visibleMenusByRole = Map.of(
                 "OWNER", Set.of("DASHBOARD", "CUSTOMERS", "PRODUCTS", "CREATE_INVOICE", "INVOICES", "PAYMENTS", "EXPENSES", "OUTSTANDING", "ANALYTICS", "DATA_PORT", "PRODUCT_DATAPORT", "REPORTS", "PROFIT_LOSS", "SETUP", "USERS", "PRODUCT_CATEGORY", "EXPENSE_CATEGORIES", "PAYMENT_MODES", "THEME_SETTINGS", "ABOUT_COMPANY", "EMAIL_TEMPLATES", "SMS_TEMPLATES", "EMAIL_SETTINGS", "SMS_SETTINGS", "ROLE_PERMISSIONS", "PAYMENT_HIERARCHY"),
                 "ADMIN", Set.of("DASHBOARD", "CUSTOMERS", "PRODUCTS", "CREATE_INVOICE", "INVOICES", "PAYMENTS", "EXPENSES", "OUTSTANDING", "ANALYTICS", "DATA_PORT", "PRODUCT_DATAPORT", "REPORTS", "PROFIT_LOSS", "SETUP", "PRODUCT_CATEGORY", "EXPENSE_CATEGORIES", "PAYMENT_MODES", "ABOUT_COMPANY", "EMAIL_TEMPLATES", "SMS_TEMPLATES"),
-                "USER", Set.of("DASHBOARD", "CUSTOMERS", "PRODUCTS", "CREATE_INVOICE", "INVOICES", "OUTSTANDING", "ANALYTICS", "ABOUT_COMPANY"),
-                "SUPER_ADMIN", Set.of("SUPER_ADMIN", "SUPER_ADMIN_DASHBOARD", "SUPER_ADMIN_COMPANIES", "SUPER_ADMIN_USERS", "SUPER_ADMIN_COMPANY_DETAILS")
+                "USER", Set.of("DASHBOARD", "CUSTOMERS", "PRODUCTS", "CREATE_INVOICE", "INVOICES", "OUTSTANDING", "ANALYTICS", "ABOUT_COMPANY")
         );
         Map<String, Set<String>> actionCodesByRole = Map.of(
                 "OWNER", Set.of("VIEW", "ADD", "EDIT", "DELETE", "EXPORT", "LOGS", "VIEW_LOGS", "EMAIL_SEND", "SMS_SEND"),
                 "ADMIN", Set.of("VIEW", "ADD", "EDIT", "DELETE", "EXPORT", "LOGS", "VIEW_LOGS", "EMAIL_SEND", "SMS_SEND"),
-                "USER", Set.of("VIEW"),
-                "SUPER_ADMIN", Set.of("VIEW", "ADD", "EDIT", "DELETE", "EXPORT", "LOGS", "VIEW_LOGS")
+                "USER", Set.of("VIEW")
         );
 
         for (RoleMaster role : roleMasterRepository.findAll()) {
@@ -271,5 +283,11 @@ public class PermissionDataInitializer implements ApplicationRunner {
     }
 
     private record ActionSeed(String name, String code) {
+    }
+
+    private boolean isEncodedPassword(String value) {
+        return value.startsWith("$2a$")
+                || value.startsWith("$2b$")
+                || value.startsWith("$2y$");
     }
 }

@@ -59,7 +59,7 @@ public class ProductService {
 
     @Transactional(readOnly = true)
     public List<ProductResponse> list(String email, String search, Boolean active) {
-        Company company = companyScopeOrNull(email);
+        Company company = companyScope(email);
         return productRepository.findAllByCompanyWithFilters(company, active, normalizeSearch(search)).stream()
                 .map(this::toResponse)
                 .toList();
@@ -67,7 +67,7 @@ public class ProductService {
 
     @Transactional(readOnly = true)
     public PageResponse<ProductResponse> page(String email, String search, Boolean active, int page, int size) {
-        Company company = companyScopeOrNull(email);
+        Company company = companyScope(email);
         return PageResponse.from(productRepository.findPageByCompanyWithFilters(company, active, normalizeSearch(search), pageRequest(page, size))
                 .map(this::toResponse));
     }
@@ -75,11 +75,6 @@ public class ProductService {
     @Transactional(readOnly = true)
     public ProductResponse get(String email, Long productId) {
         User user = accessControlService.getCurrentUser(email);
-        if (accessControlService.isSuperAdmin(user)) {
-            return productRepository.findById(productId)
-                    .map(this::toResponse)
-                    .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
-        }
         Company company = accessControlService.requireCompany(user);
         return toResponse(getProductOrThrow(company, productId));
     }
@@ -227,8 +222,8 @@ public class ProductService {
         return PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 100)));
     }
 
-    private Company companyScopeOrNull(String email) {
+    private Company companyScope(String email) {
         User user = accessControlService.getCurrentUser(email);
-        return accessControlService.isSuperAdmin(user) ? null : accessControlService.requireCompany(user);
+        return accessControlService.requireCompany(user);
     }
 }

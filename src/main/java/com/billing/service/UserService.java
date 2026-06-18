@@ -192,11 +192,7 @@ public class UserService {
     }
 
     private RoleName resolveRole(RoleName role) {
-        RoleName resolved = role == null ? RoleName.USER : role;
-        if (resolved == RoleName.SUPER_ADMIN) {
-            throw new BadRequestException("SUPER_ADMIN cannot be assigned from user management");
-        }
-        return resolved;
+        return role == null ? RoleName.USER : role;
     }
 
     private Map<String, Object> snapshot(User user) {

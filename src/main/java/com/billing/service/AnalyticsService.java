@@ -59,7 +59,7 @@ public class AnalyticsService {
     @Transactional(readOnly = true)
     public AnalyticsSummaryResponse summary(String email, LocalDate startDate, LocalDate endDate) {
         User user = accessControlService.getCurrentUser(email);
-        Company company = accessControlService.isSuperAdmin(user) ? null : accessControlService.requireCompany(user);
+        Company company = accessControlService.requireCompany(user);
         List<Invoice> invoices = invoicesFor(company);
         List<Payment> payments = paymentsFor(company);
         List<Customer> customers = customersFor(company);
@@ -211,7 +211,7 @@ public class AnalyticsService {
 
     private List<SalesByCategoryResponse> salesByCategoryRecords(String email, LocalDate startDate, LocalDate endDate, String search) {
         User user = accessControlService.getCurrentUser(email);
-        Company company = accessControlService.isSuperAdmin(user) ? null : accessControlService.requireCompany(user);
+        Company company = accessControlService.requireCompany(user);
         String normalizedSearch = blankToNull(search);
         List<ProductCategory> categories = categoriesFor(company);
         List<Invoice> invoices = invoicesFor(company).stream()
@@ -259,7 +259,7 @@ public class AnalyticsService {
     @Transactional(readOnly = true)
     public PageResponse<LowStockProductResponse> lowStockProducts(String email, int page, int size) {
         User user = accessControlService.getCurrentUser(email);
-        Company company = accessControlService.isSuperAdmin(user) ? null : accessControlService.requireCompany(user);
+        Company company = accessControlService.requireCompany(user);
         Pageable pageable = pageRequest(page, size);
         List<LowStockProductResponse> allRecords = productsFor(company).stream()
                 .filter(Product::isActive)
@@ -280,40 +280,21 @@ public class AnalyticsService {
     @Transactional(readOnly = true)
     public PageResponse<CustomerDueResponse> customerDueList(String email, String search, int page, int size) {
         User user = accessControlService.getCurrentUser(email);
-        if (!accessControlService.isSuperAdmin(user)) {
-            Company company = accessControlService.requireCompany(user);
-            return PageResponse.from(customerRepository.findOutstandingPageByCompanyWithFilters(company, blankToNull(search), null, pageRequest(page, size))
-                    .map(customer -> CustomerDueResponse.builder()
-                            .customerId(customer.getId())
-                            .customerName(customer.getName())
-                            .mobile(customer.getMobile())
-                            .email(customer.getEmail())
-                            .currentBalance(scale(customer.getCurrentBalance()))
-                            .build()));
-        }
-        String normalizedSearch = blankToNull(search);
-        List<CustomerDueResponse> records = customersFor(null).stream()
-                .filter(customer -> scale(customer.getCurrentBalance()).compareTo(BigDecimal.ZERO) > 0)
-                .filter(customer -> normalizedSearch == null
-                        || containsIgnoreCase(customer.getName(), normalizedSearch)
-                        || containsIgnoreCase(customer.getMobile(), normalizedSearch)
-                        || containsIgnoreCase(customer.getEmail(), normalizedSearch))
-                .sorted(Comparator.comparing(Customer::getCurrentBalance, Comparator.reverseOrder()))
+        Company company = accessControlService.requireCompany(user);
+        return PageResponse.from(customerRepository.findOutstandingPageByCompanyWithFilters(company, blankToNull(search), null, pageRequest(page, size))
                 .map(customer -> CustomerDueResponse.builder()
                         .customerId(customer.getId())
                         .customerName(customer.getName())
                         .mobile(customer.getMobile())
                         .email(customer.getEmail())
                         .currentBalance(scale(customer.getCurrentBalance()))
-                        .build())
-                .toList();
-        return page(records, pageRequest(page, size));
+                        .build()));
     }
 
     @Transactional(readOnly = true)
     public OwnerAnalyticsResponse ownerOverview(String email, LocalDate startDate, LocalDate endDate) {
         User user = accessControlService.getCurrentUser(email);
-        Company company = accessControlService.isSuperAdmin(user) ? null : accessControlService.requireCompany(user);
+        Company company = accessControlService.requireCompany(user);
         List<Invoice> invoices = invoicesFor(company);
         List<Payment> payments = paymentsFor(company);
         List<Customer> customers = customersFor(company);
@@ -603,34 +584,32 @@ public class AnalyticsService {
 
     private List<Invoice> invoicesForCurrentUser(String email) {
         User user = accessControlService.getCurrentUser(email);
-        Company company = accessControlService.isSuperAdmin(user) ? null : accessControlService.requireCompany(user);
+        Company company = accessControlService.requireCompany(user);
         return invoicesFor(company);
     }
 
     private List<Invoice> invoicesFor(Company company) {
-        return company == null ? invoiceRepository.findAllByOrderByInvoiceDateDescIdDesc() : invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company);
+        return invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company);
     }
 
     private List<Payment> paymentsFor(Company company) {
-        return company == null ? paymentRepository.findAllByOrderByPaymentDateDescIdDesc() : paymentRepository.findByCompanyOrderByPaymentDateDescIdDesc(company);
+        return paymentRepository.findByCompanyOrderByPaymentDateDescIdDesc(company);
     }
 
     private List<Customer> customersFor(Company company) {
-        return company == null ? customerRepository.findAll() : customerRepository.findByCompanyOrderByCreatedAtDesc(company);
+        return customerRepository.findByCompanyOrderByCreatedAtDesc(company);
     }
 
     private List<Product> productsFor(Company company) {
-        return company == null ? productRepository.findAll() : productRepository.findByCompanyOrderByCreatedAtDesc(company);
+        return productRepository.findByCompanyOrderByCreatedAtDesc(company);
     }
 
     private List<ProductCategory> categoriesFor(Company company) {
-        return company == null
-                ? productCategoryRepository.findAll().stream().filter(ProductCategory::isActive).toList()
-                : productCategoryRepository.findAllByCompanyWithFilters(company, true, null);
+        return productCategoryRepository.findAllByCompanyWithFilters(company, true, null);
     }
 
     private List<Expense> expensesFor(Company company) {
-        return company == null ? expenseRepository.findAllByOrderByExpenseDateDescIdDesc() : expenseRepository.findByCompanyOrderByExpenseDateDescIdDesc(company);
+        return expenseRepository.findByCompanyOrderByExpenseDateDescIdDesc(company);
     }
 
     private <T> PageResponse<T> page(List<T> allRecords, Pageable pageable) {
