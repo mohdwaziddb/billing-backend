@@ -11,6 +11,7 @@ import com.billing.entity.Customer;
 import com.billing.entity.Expense;
 import com.billing.entity.ExpenseCategory;
 import com.billing.entity.Invoice;
+import com.billing.entity.User;
 import com.billing.entity.enums.ExpenseType;
 import com.billing.entity.enums.RoleName;
 import com.billing.exception.BadRequestException;
@@ -58,7 +59,8 @@ public class ExpenseService {
                                               RoleName createdByRole,
                                               int page,
                                               int size) {
-        Company company = accessControlService.getCurrentCompany(email);
+        User user = accessControlService.getCurrentUser(email);
+        Company company = accessControlService.isSuperAdmin(user) ? null : accessControlService.requireCompany(user);
         return PageResponse.from(expenseRepository.searchExpenses(
                 company,
                 blankToNull(search),
@@ -75,7 +77,13 @@ public class ExpenseService {
 
     @Transactional(readOnly = true)
     public ExpenseResponse get(String email, Long expenseId) {
-        Company company = accessControlService.getCurrentCompany(email);
+        User user = accessControlService.getCurrentUser(email);
+        if (accessControlService.isSuperAdmin(user)) {
+            return expenseRepository.findById(expenseId)
+                    .map(this::toResponse)
+                    .orElseThrow(() -> new ResourceNotFoundException("Expense not found"));
+        }
+        Company company = accessControlService.requireCompany(user);
         return toResponse(getExpenseOrThrow(company, expenseId));
     }
 
@@ -146,9 +154,10 @@ public class ExpenseService {
                                                      LocalDate startDate,
                                                      LocalDate endDate,
                                                      RoleName createdByRole) {
-        Company company = accessControlService.getCurrentCompany(email);
+        User user = accessControlService.getCurrentUser(email);
+        Company company = accessControlService.isSuperAdmin(user) ? null : accessControlService.requireCompany(user);
         List<Expense> expenses = expenseRepository.searchExpenses(company, null, expenseType, categoryId, customerId, invoiceId, startDate, endDate, createdByRole, PageRequest.of(0, 1000)).getContent();
-        List<Invoice> invoices = invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company).stream()
+        List<Invoice> invoices = (company == null ? invoiceRepository.findAllByOrderByInvoiceDateDescIdDesc() : invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company)).stream()
                 .filter(invoice -> customerId == null || invoice.getCustomer().getId().equals(customerId))
                 .filter(invoice -> invoiceId == null || invoice.getId().equals(invoiceId))
                 .filter(invoice -> inRange(invoice.getInvoiceDate(), startDate, endDate))

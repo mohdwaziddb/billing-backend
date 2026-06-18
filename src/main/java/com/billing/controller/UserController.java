@@ -42,13 +42,14 @@ public class UserController {
                                                                                           @RequestParam(defaultValue = "0") int page,
                                                                                           @RequestParam(defaultValue = "20") int size,
                                                                                           @RequestParam(required = false) String name,
+                                                                                          @RequestParam(required = false) String username,
                                                                                           @RequestParam(required = false) String mobileNumber,
                                                                                           @RequestParam(required = false) String email,
                                                                                           @RequestParam(required = false) String search,
                                                                                           @RequestParam(required = false) RoleName role,
                                                                                           @RequestParam(required = false) Boolean active) {
         return ResponseEntity.ok(ApiResponse.success("Users fetched successfully",
-                userService.pageCompanyUsers(authentication.getName(), page, size, name, mobileNumber, email, search, role, active)));
+                userService.pageCompanyUsers(authentication.getName(), page, size, name, username, mobileNumber, email, search, role, active)));
     }
 
     @PostMapping

@@ -9,6 +9,7 @@ import com.billing.dto.payment.PaymentRequest;
 import com.billing.dto.payment.PaymentResponse;
 import com.billing.entity.Customer;
 import com.billing.entity.Invoice;
+import com.billing.entity.User;
 import com.billing.exception.BadRequestException;
 import com.billing.repository.PaymentRepository;
 import lombok.RequiredArgsConstructor;
@@ -71,8 +72,11 @@ public class PaymentService {
 
     @Transactional(readOnly = true)
     public List<PaymentResponse> list(String email) {
-        Company company = accessControlService.getCurrentCompany(email);
-        return paymentRepository.findByCompanyOrderByPaymentDateDescIdDesc(company).stream()
+        User user = accessControlService.getCurrentUser(email);
+        List<Payment> payments = accessControlService.isSuperAdmin(user)
+                ? paymentRepository.findAllByOrderByPaymentDateDescIdDesc()
+                : paymentRepository.findByCompanyOrderByPaymentDateDescIdDesc(accessControlService.requireCompany(user));
+        return payments.stream()
                 .map(this::toResponse)
                 .toList();
     }
@@ -95,7 +99,8 @@ public class PaymentService {
                                               RoleName createdByRole,
                                               int page,
                                               int size) {
-        Company company = accessControlService.getCurrentCompany(email);
+        User user = accessControlService.getCurrentUser(email);
+        Company company = accessControlService.isSuperAdmin(user) ? null : accessControlService.requireCompany(user);
         int safeSize = Math.max(1, Math.min(size, 1000));
         PageRequest pageable = PageRequest.of(Math.max(0, page), safeSize, Sort.by(Sort.Direction.DESC, "paymentDate").and(Sort.by(Sort.Direction.DESC, "id")));
         if (isUnsupportedPaymentStatus(paymentStatus)) {
@@ -123,7 +128,13 @@ public class PaymentService {
 
     @Transactional(readOnly = true)
     public PaymentResponse get(String email, Long paymentId) {
-        Company company = accessControlService.getCurrentCompany(email);
+        User user = accessControlService.getCurrentUser(email);
+        if (accessControlService.isSuperAdmin(user)) {
+            return paymentRepository.findById(paymentId)
+                    .map(this::toResponse)
+                    .orElseThrow(() -> new ResourceNotFoundException("Payment not found"));
+        }
+        Company company = accessControlService.requireCompany(user);
         return toResponse(getPaymentOrThrow(company, paymentId));
     }
 

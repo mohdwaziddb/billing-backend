@@ -62,6 +62,9 @@ public class PermissionService {
     @Transactional(readOnly = true)
     public boolean has(String email, String menuCode, String actionCode) {
         User user = accessControlService.getCurrentUser(email);
+        if (user.getRole() == RoleName.SUPER_ADMIN) {
+            return true;
+        }
         return hasPermission(user.getId(), user.getCompany().getId(), menuCode, actionCode);
     }
 
@@ -69,6 +72,9 @@ public class PermissionService {
     public boolean hasPermission(Long userId, Long companyId, String menuCode, String actionCode) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        if (user.getRole() == RoleName.SUPER_ADMIN) {
+            return true;
+        }
         Company company = user.getCompany();
         if (company == null || !company.getId().equals(companyId)) {
             return false;
@@ -110,6 +116,13 @@ public class PermissionService {
     @Transactional(readOnly = true)
     public PermissionMatrixResponse effectivePermissions(String email) {
         User user = accessControlService.getCurrentUser(email);
+        if (user.getRole() == RoleName.SUPER_ADMIN) {
+            return PermissionMatrixResponse.builder()
+                    .roleCode(roleCode(user))
+                    .userId(user.getId())
+                    .menus(toHierarchy(superAdminMenus()))
+                    .build();
+        }
         if (accessControlService.isCompanyOwner(user)) {
             return PermissionMatrixResponse.builder()
                     .roleCode(roleCode(user))
@@ -140,9 +153,8 @@ public class PermissionService {
     @Transactional(readOnly = true)
     public PermissionMatrixResponse userMatrix(String ownerEmail, Long userId) {
         Company company = requireOwnerCompany(ownerEmail);
-        User user = userRepository.findById(userId)
+        User user = userRepository.findByIdAndCompany(userId, company)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-        requireSameCompany(company, user);
         RoleMaster role = roleMasterRepository.findByRoleCode(roleCode(user))
                 .orElseThrow(() -> new ResourceNotFoundException("Role not found"));
         return PermissionMatrixResponse.builder()
@@ -182,9 +194,8 @@ public class PermissionService {
     @Transactional
     public PermissionMatrixResponse saveUserMatrix(String ownerEmail, PermissionMatrixRequest request) {
         Company company = requireOwnerCompany(ownerEmail);
-        User user = userRepository.findById(request.getUserId())
+        User user = userRepository.findByIdAndCompany(request.getUserId(), company)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-        requireSameCompany(company, user);
         if (accessControlService.isCompanyOwner(user)) {
             return userMatrix(ownerEmail, user.getId());
         }
@@ -211,10 +222,12 @@ public class PermissionService {
     private List<MenuPermissionResponse> allMenus(boolean allowAll, User user, RoleMaster role, Company company, boolean onlyVisible) {
         if (allowAll) {
             return appMenuRepository.findByActiveTrueOrderByDisplayOrderAscIdAsc().stream()
+                    .filter(menu -> user.getRole() == RoleName.SUPER_ADMIN || !menu.getMenuCode().startsWith("SUPER_ADMIN"))
                     .map(menu -> toMenuResponse(menu, true, appMenuActionRepository.findByAppMenuAndActiveTrueOrderByIdAsc(menu), null, true))
                     .toList();
         }
         return appMenuRepository.findByActiveTrueOrderByDisplayOrderAscIdAsc().stream()
+                .filter(menu -> user.getRole() == RoleName.SUPER_ADMIN || !menu.getMenuCode().startsWith("SUPER_ADMIN"))
                 .map(menu -> effectiveMenuResponse(company, user, role, menu))
                 .filter(menu -> !onlyVisible || menu.isCanView())
                 .toList();
@@ -222,6 +235,7 @@ public class PermissionService {
 
     private List<MenuPermissionResponse> roleMenus(Company company, RoleMaster role) {
         return appMenuRepository.findByActiveTrueOrderByDisplayOrderAscIdAsc().stream()
+                .filter(menu -> !menu.getMenuCode().startsWith("SUPER_ADMIN"))
                 .map(menu -> {
                     boolean canView = "OWNER".equals(role.getRoleCode()) || roleMenuPermissionRepository.findByCompanyAndRoleAndAppMenu(company, role, menu).map(RoleMenuPermission::isCanView).orElse(false);
                     List<AppMenuAction> actions = appMenuActionRepository.findByAppMenuAndActiveTrueOrderByIdAsc(menu);
@@ -232,6 +246,7 @@ public class PermissionService {
 
     private List<MenuPermissionResponse> userMenus(Company company, User user, RoleMaster role) {
         return appMenuRepository.findByActiveTrueOrderByDisplayOrderAscIdAsc().stream()
+                .filter(menu -> !menu.getMenuCode().startsWith("SUPER_ADMIN"))
                 .map(menu -> effectiveMenuResponse(company, user, role, menu))
                 .toList();
     }
@@ -330,14 +345,15 @@ public class PermissionService {
                 .build();
     }
 
-    private void requireSameCompany(Company company, User targetUser) {
-        if (targetUser.getCompany() == null || !targetUser.getCompany().getId().equals(company.getId())) {
-            throw new ResourceNotFoundException("User not found");
-        }
-    }
-
     private String roleCode(User user) {
         return (user.getRole() == null ? RoleName.USER : user.getRole()).name();
+    }
+
+    private List<MenuPermissionResponse> superAdminMenus() {
+        return appMenuRepository.findByActiveTrueOrderByDisplayOrderAscIdAsc().stream()
+                .filter(menu -> menu.getMenuCode().startsWith("SUPER_ADMIN"))
+                .map(menu -> toMenuResponse(menu, true, appMenuActionRepository.findByAppMenuAndActiveTrueOrderByIdAsc(menu), null, true))
+                .toList();
     }
 
     private AppMenu requireMenu(Map<Long, AppMenu> menus, Long menuId) {

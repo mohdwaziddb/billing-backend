@@ -7,6 +7,7 @@ import com.billing.dto.product.ProductRequest;
 import com.billing.dto.product.ProductResponse;
 import com.billing.entity.Product;
 import com.billing.entity.ProductCategory;
+import com.billing.entity.User;
 import com.billing.exception.BadRequestException;
 import com.billing.repository.ProductRepository;
 import lombok.RequiredArgsConstructor;
@@ -58,7 +59,7 @@ public class ProductService {
 
     @Transactional(readOnly = true)
     public List<ProductResponse> list(String email, String search, Boolean active) {
-        Company company = accessControlService.getCurrentCompany(email);
+        Company company = companyScopeOrNull(email);
         return productRepository.findAllByCompanyWithFilters(company, active, normalizeSearch(search)).stream()
                 .map(this::toResponse)
                 .toList();
@@ -66,14 +67,20 @@ public class ProductService {
 
     @Transactional(readOnly = true)
     public PageResponse<ProductResponse> page(String email, String search, Boolean active, int page, int size) {
-        Company company = accessControlService.getCurrentCompany(email);
+        Company company = companyScopeOrNull(email);
         return PageResponse.from(productRepository.findPageByCompanyWithFilters(company, active, normalizeSearch(search), pageRequest(page, size))
                 .map(this::toResponse));
     }
 
     @Transactional(readOnly = true)
     public ProductResponse get(String email, Long productId) {
-        Company company = accessControlService.getCurrentCompany(email);
+        User user = accessControlService.getCurrentUser(email);
+        if (accessControlService.isSuperAdmin(user)) {
+            return productRepository.findById(productId)
+                    .map(this::toResponse)
+                    .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
+        }
+        Company company = accessControlService.requireCompany(user);
         return toResponse(getProductOrThrow(company, productId));
     }
 
@@ -122,15 +129,8 @@ public class ProductService {
             try {
                 java.util.Optional<Product> opt = productRepository.findByIdAndCompany(id, company);
                 if (opt.isEmpty()) {
-                    // check if exists but different company
-                    java.util.Optional<Product> exists = productRepository.findById(id);
-                    if (exists.isPresent()) {
-                        failures.put(id, "company_mismatch");
-                        failed++;
-                    } else {
-                        failures.put(id, "not_found");
-                        failed++;
-                    }
+                    failures.put(id, "not_found");
+                    failed++;
                     continue;
                 }
 
@@ -225,5 +225,10 @@ public class ProductService {
 
     private PageRequest pageRequest(int page, int size) {
         return PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 100)));
+    }
+
+    private Company companyScopeOrNull(String email) {
+        User user = accessControlService.getCurrentUser(email);
+        return accessControlService.isSuperAdmin(user) ? null : accessControlService.requireCompany(user);
     }
 }

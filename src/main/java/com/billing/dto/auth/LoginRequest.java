@@ -16,7 +16,7 @@ public class LoginRequest {
     @NotBlank(message = "Password is required")
     private String password;
 
-    @AssertTrue(message = "Mobile Number/Email ID is required")
+    @AssertTrue(message = "Email / Mobile / Username is required")
     public boolean isUsernameProvided() {
         return getLoginIdentifier() != null;
     }

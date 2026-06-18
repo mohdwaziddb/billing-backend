@@ -22,7 +22,7 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
             SELECT p
             FROM Product p
             LEFT JOIN p.productCategory pc
-            WHERE p.company = :company
+            WHERE (:company IS NULL OR p.company = :company)
               AND (:active IS NULL OR p.active = :active)
               AND (
                     :search IS NULL
@@ -42,7 +42,7 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
             SELECT p
             FROM Product p
             LEFT JOIN p.productCategory pc
-            WHERE p.company = :company
+            WHERE (:company IS NULL OR p.company = :company)
               AND (:active IS NULL OR p.active = :active)
               AND (
                     :search IS NULL

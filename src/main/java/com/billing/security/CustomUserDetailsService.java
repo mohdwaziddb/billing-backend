@@ -21,11 +21,23 @@ public class CustomUserDetailsService implements UserDetailsService {
         return new CustomUserDetails(user);
     }
 
+    public UserDetails loadUserById(Long userId) throws UsernameNotFoundException {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+        return new CustomUserDetails(user);
+    }
+
     private java.util.Optional<User> findByLoginIdentifier(String username) {
         String normalized = username == null ? null : username.trim();
-        if (normalized != null && normalized.contains("@")) {
-            return userRepository.findByEmailIgnoreCase(normalized);
+        java.util.List<User> candidates = new java.util.ArrayList<>();
+        candidates.addAll(userRepository.findAllByUsernameIgnoreCase(normalized));
+        candidates.addAll(userRepository.findAllByEmailIgnoreCase(normalized));
+        candidates.addAll(userRepository.findAllByMobileNumber(normalized));
+        java.util.Map<Long, User> byId = new java.util.LinkedHashMap<>();
+        for (User candidate : candidates) {
+            byId.putIfAbsent(candidate.getId(), candidate);
         }
-        return userRepository.findByMobileNumber(normalized);
+        java.util.List<User> uniqueCandidates = new java.util.ArrayList<>(byId.values());
+        return uniqueCandidates.size() == 1 ? uniqueCandidates.stream().findFirst() : java.util.Optional.empty();
     }
 }

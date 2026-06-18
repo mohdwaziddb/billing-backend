@@ -92,8 +92,10 @@ public class AuditLogService {
                                                int page,
                                                int size) {
         User user = accessControlService.getCurrentUser(email);
-        Company company = accessControlService.requireCompany(user);
-        requireRowLogPermission(email, moduleName);
+        Company company = accessControlService.isSuperAdmin(user) ? null : accessControlService.requireCompany(user);
+        if (!accessControlService.isSuperAdmin(user)) {
+            requireRowLogPermission(email, moduleName);
+        }
         return PageResponse.from(auditLogRepository.findAll(
                 auditFilter(company, moduleName, entityId, userId, actionType, startDate, endDate, search),
                 PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 100)), Sort.by(Sort.Direction.DESC, "createdAt").and(Sort.by(Sort.Direction.DESC, "id")))
@@ -103,11 +105,13 @@ public class AuditLogService {
     @Transactional(readOnly = true)
     public List<AuditUserOptionResponse> users(String email) {
         User user = accessControlService.getCurrentUser(email);
-        Company company = accessControlService.requireCompany(user);
         if (!hasLogPermission(email, "USERS")) {
             throw new AccessDeniedException("You do not have permission to view audit log users");
         }
-        return auditLogRepository.findDistinctUsersByCompany(company).stream()
+        List<Object[]> rows = accessControlService.isSuperAdmin(user)
+                ? auditLogRepository.findDistinctUsers()
+                : auditLogRepository.findDistinctUsersByCompany(accessControlService.requireCompany(user));
+        return rows.stream()
                 .map(row -> AuditUserOptionResponse.builder()
                         .id((Long) row[0])
                         .name(row[1] == null ? "User #" + row[0] : String.valueOf(row[1]))
@@ -125,7 +129,9 @@ public class AuditLogService {
                                                 String search) {
         return (root, query, builder) -> {
             List<Predicate> predicates = new ArrayList<>();
-            predicates.add(builder.equal(root.get("company"), company));
+            if (company != null) {
+                predicates.add(builder.equal(root.get("company"), company));
+            }
             if (hasText(moduleName)) {
                 predicates.add(builder.equal(builder.lower(root.get("moduleName")), moduleName.trim().toLowerCase()));
             }

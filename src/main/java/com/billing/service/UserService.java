@@ -48,12 +48,12 @@ public class UserService {
     public PageResponse<UserProfileResponse> pageCompanyUsers(String email, int page, int size,
                                                               String name, String mobileNumber,
                                                               String userEmail, RoleName role, Boolean active) {
-        return pageCompanyUsers(email, page, size, name, mobileNumber, userEmail, null, role, active);
+        return pageCompanyUsers(email, page, size, name, null, mobileNumber, userEmail, null, role, active);
     }
 
     @Transactional(readOnly = true)
     public PageResponse<UserProfileResponse> pageCompanyUsers(String email, int page, int size,
-                                                              String name, String mobileNumber,
+                                                              String name, String username, String mobileNumber,
                                                               String userEmail, String search,
                                                               RoleName role, Boolean active) {
         Company company = accessControlService.getCurrentCompany(email);
@@ -61,6 +61,7 @@ public class UserService {
         return PageResponse.from(userRepository.searchCompanyUsers(
                 company,
                 blankToNull(name),
+                blankToNull(username),
                 blankToNull(mobileNumber),
                 blankToNull(userEmail),
                 blankToNull(search),
@@ -76,12 +77,13 @@ public class UserService {
         if (request.getPassword() == null || request.getPassword().isBlank()) {
             throw new BadRequestException("Password is required");
         }
-        validateUniqueUser(request.getMobileNumber(), request.getEmail(), null);
+        validateUniqueUser(company, request.getUsername(), request.getMobileNumber(), request.getEmail(), null);
         RoleName role = resolveRole(request.getRole());
 
         User user = User.builder()
                 .company(company)
                 .fullName(request.getFullName())
+                .username(normalizeUsername(request.getUsername()))
                 .mobileNumber(normalizeMobile(request.getMobileNumber()))
                 .email(normalizeEmail(request.getEmail()))
                 .password(passwordEncoder.encode(request.getPassword()))
@@ -101,7 +103,7 @@ public class UserService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         Map<String, Object> oldData = snapshot(user);
 
-        validateUniqueUser(request.getMobileNumber(), request.getEmail(), user.getId());
+        validateUniqueUser(company, request.getUsername(), request.getMobileNumber(), request.getEmail(), user.getId());
         RoleName role = resolveRole(request.getRole());
         if (user.getRole() == RoleName.OWNER && user.isActive() && role != RoleName.OWNER) {
             ensureAnotherOwnerExists(company, user.getId());
@@ -111,6 +113,7 @@ public class UserService {
         }
 
         user.setFullName(request.getFullName());
+        user.setUsername(normalizeUsername(request.getUsername()));
         user.setMobileNumber(normalizeMobile(request.getMobileNumber()));
         user.setEmail(normalizeEmail(request.getEmail()));
         if (request.getPassword() != null && !request.getPassword().isBlank()) {
@@ -146,18 +149,23 @@ public class UserService {
         }
     }
 
-    private void validateUniqueUser(String mobileNumber, String email, Long currentUserId) {
+    private void validateUniqueUser(Company company, String username, String mobileNumber, String email, Long currentUserId) {
+        String normalizedUsername = normalizeUsername(username);
         String normalizedMobile = normalizeMobile(mobileNumber);
         String normalizedEmail = normalizeEmail(email);
         List<String> messages = new ArrayList<>();
 
-        userRepository.findByMobileNumber(normalizedMobile)
+        userRepository.findByCompanyAndUsernameIgnoreCase(company, normalizedUsername)
                 .filter(existing -> currentUserId == null || !existing.getId().equals(currentUserId))
-                .ifPresent(existing -> messages.add("Mobile Number already exists."));
+                .ifPresent(existing -> messages.add("Username already exists in this company."));
 
-        userRepository.findByEmailIgnoreCase(normalizedEmail)
+        userRepository.findByCompanyAndMobileNumber(company, normalizedMobile)
                 .filter(existing -> currentUserId == null || !existing.getId().equals(currentUserId))
-                .ifPresent(existing -> messages.add("Email ID already exists."));
+                .ifPresent(existing -> messages.add("Mobile number already exists in this company."));
+
+        userRepository.findByCompanyAndEmailIgnoreCase(company, normalizedEmail)
+                .filter(existing -> currentUserId == null || !existing.getId().equals(currentUserId))
+                .ifPresent(existing -> messages.add("Email already exists in this company."));
 
         if (!messages.isEmpty()) {
             throw new BadRequestException(String.join(" ", messages));
@@ -172,6 +180,10 @@ public class UserService {
         return value == null ? null : value.trim();
     }
 
+    private String normalizeUsername(String value) {
+        return value == null ? null : value.trim();
+    }
+
     private String blankToNull(String value) {
         if (value == null || value.isBlank()) {
             return null;
@@ -180,12 +192,17 @@ public class UserService {
     }
 
     private RoleName resolveRole(RoleName role) {
-        return role == null ? RoleName.USER : role;
+        RoleName resolved = role == null ? RoleName.USER : role;
+        if (resolved == RoleName.SUPER_ADMIN) {
+            throw new BadRequestException("SUPER_ADMIN cannot be assigned from user management");
+        }
+        return resolved;
     }
 
     private Map<String, Object> snapshot(User user) {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("fullName", user.getFullName());
+        data.put("username", user.getUsername());
         data.put("mobileNumber", user.getMobileNumber());
         data.put("email", user.getEmail());
         data.put("role", user.getRole() != null ? user.getRole().name() : null);

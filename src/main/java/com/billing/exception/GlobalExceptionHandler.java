@@ -52,6 +52,11 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(ApiResponse.error(ex.getMessage()));
     }
 
+    @ExceptionHandler(CompanyInactiveException.class)
+    public ResponseEntity<ApiResponse<Void>> handleCompanyInactive(CompanyInactiveException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(ApiResponse.error(ex.getMessage()));
+    }
+
     @ExceptionHandler(BadCredentialsException.class)
     public ResponseEntity<ApiResponse<Void>> handleBadCredentials(BadCredentialsException ex) {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(ApiResponse.error("Invalid Mobile Number/Email ID or Password."));
@@ -113,11 +118,14 @@ public class GlobalExceptionHandler {
         }
 
         if (normalized.contains("duplicate entry")) {
-            if (normalized.contains("uk_users_mobile_number") || normalized.contains("mobile_number")) {
-                return "Mobile Number already exists.";
+            if (normalized.contains("uk_users_company_email") || normalized.contains("email_id")) {
+                return "Email already exists in this company.";
             }
-            if (normalized.contains("uk_users_email_id") || normalized.contains("email_id")) {
-                return "Email ID already exists.";
+            if (normalized.contains("uk_users_company_mobile") || normalized.contains("mobile_number")) {
+                return "Mobile number already exists in this company.";
+            }
+            if (normalized.contains("uk_users_company_username") || normalized.contains("username")) {
+                return "Username already exists in this company.";
             }
             if (normalized.contains("uk_customer_company_email") || normalized.contains("email")) {
                 return "This email address is already registered.";

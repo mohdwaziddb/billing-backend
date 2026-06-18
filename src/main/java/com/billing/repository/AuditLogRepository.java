@@ -13,7 +13,11 @@ import java.util.List;
 
 public interface AuditLogRepository extends JpaRepository<AuditLog, Long>, JpaSpecificationExecutor<AuditLog> {
     Page<AuditLog> findByCompanyAndModuleNameAndEntityIdOrderByCreatedAtDescIdDesc(Company company, String moduleName, Long entityId, Pageable pageable);
+    long countByCompany(Company company);
 
     @Query("select distinct log.userId, log.userName from AuditLog log where log.company = :company and log.userId is not null order by log.userName asc")
     List<Object[]> findDistinctUsersByCompany(@Param("company") Company company);
+
+    @Query("select distinct log.userId, log.userName from AuditLog log where log.userId is not null order by log.userName asc")
+    List<Object[]> findDistinctUsers();
 }

@@ -39,7 +39,7 @@ public class JwtService {
 
         return Jwts.builder()
                 .claims(claims)
-                .subject(userDetails.getUsername())
+                .subject(String.valueOf(userDetails.getId()))
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + accessTokenExpiration))
                 .signWith(getSigningKey())
@@ -47,12 +47,31 @@ public class JwtService {
     }
 
     public boolean isTokenValid(String token, UserDetails userDetails) {
+        Long tokenUserId = extractUserId(token);
+        if (tokenUserId != null && userDetails instanceof CustomUserDetails customUserDetails) {
+            return customUserDetails.getId().equals(tokenUserId) && !isTokenExpired(token);
+        }
         String username = extractUsername(token);
         return username.equals(userDetails.getUsername()) && !isTokenExpired(token);
     }
 
     public String extractUsername(String token) {
         return extractClaim(token, Claims::getSubject);
+    }
+
+    public Long extractUserId(String token) {
+        Object userId = extractClaim(token, claims -> claims.get("userId"));
+        if (userId instanceof Number number) {
+            return number.longValue();
+        }
+        if (userId instanceof String value && !value.isBlank()) {
+            return Long.parseLong(value);
+        }
+        String subject = extractUsername(token);
+        if (subject != null && subject.chars().allMatch(Character::isDigit)) {
+            return Long.parseLong(subject);
+        }
+        return null;
     }
 
     public <T> T extractClaim(String token, Function<Claims, T> resolver) {

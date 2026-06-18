@@ -12,6 +12,7 @@ public class UserProfileResponse {
     private String fullName;
     private String mobileNumber;
     private String email;
+    private String username;
     private String role;
     private boolean active;
     private LocalDateTime createdAt;

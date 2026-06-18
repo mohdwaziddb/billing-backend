@@ -9,6 +9,7 @@ import com.billing.entity.Payment;
 import com.billing.entity.Customer;
 import com.billing.entity.Invoice;
 import com.billing.entity.InvoiceItem;
+import com.billing.entity.User;
 import com.billing.repository.CustomerRepository;
 import com.billing.repository.ExpenseRepository;
 import com.billing.repository.InvoiceRepository;
@@ -45,13 +46,14 @@ public class DashboardService {
 
     @Transactional(readOnly = true)
     public DashboardSummaryResponse summary(String email, LocalDate startDate, LocalDate endDate) {
-        Company company = accessControlService.getCurrentCompany(email);
-        List<Invoice> allInvoices = invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company);
-        List<Payment> allPayments = paymentRepository.findByCompanyOrderByPaymentDateDescIdDesc(company);
-        List<Customer> allCustomers = customerRepository.findByCompanyOrderByCreatedAtDesc(company);
+        User user = accessControlService.getCurrentUser(email);
+        Company company = accessControlService.isSuperAdmin(user) ? null : accessControlService.requireCompany(user);
+        List<Invoice> allInvoices = invoicesFor(company);
+        List<Payment> allPayments = paymentsFor(company);
+        List<Customer> allCustomers = customersFor(company);
         LocalDate safeStart = startDate;
         LocalDate safeEnd = endDate;
-        BigDecimal totalExpense = expenseRepository.findByCompanyOrderByExpenseDateDescIdDesc(company).stream()
+        BigDecimal totalExpense = expensesFor(company).stream()
                 .filter(expense -> isWithinRange(expense.getExpenseDate(), safeStart, safeEnd))
                 .map(com.billing.entity.Expense::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -169,11 +171,12 @@ public class DashboardService {
                                            String sortBy,
                                            String sortDirection,
                                            String search) {
-        Company company = accessControlService.getCurrentCompany(email);
-        List<Invoice> allInvoices = invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company);
-        List<Payment> allPayments = paymentRepository.findByCompanyOrderByPaymentDateDescIdDesc(company);
-        List<Customer> allCustomers = customerRepository.findByCompanyOrderByCreatedAtDesc(company);
-        List<Expense> allExpenses = expenseRepository.findByCompanyOrderByExpenseDateDescIdDesc(company);
+        User user = accessControlService.getCurrentUser(email);
+        Company company = accessControlService.isSuperAdmin(user) ? null : accessControlService.requireCompany(user);
+        List<Invoice> allInvoices = invoicesFor(company);
+        List<Payment> allPayments = paymentsFor(company);
+        List<Customer> allCustomers = customersFor(company);
+        List<Expense> allExpenses = expensesFor(company);
         Map<Long, Customer> customersById = allCustomers.stream()
                 .collect(Collectors.toMap(Customer::getId, Function.identity()));
         Map<Long, LocalDate> firstPurchaseDates = firstPurchaseDates(allInvoices);
@@ -232,6 +235,22 @@ public class DashboardService {
             return false;
         }
         return endDate == null || !value.isAfter(endDate);
+    }
+
+    private List<Invoice> invoicesFor(Company company) {
+        return company == null ? invoiceRepository.findAllByOrderByInvoiceDateDescIdDesc() : invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company);
+    }
+
+    private List<Payment> paymentsFor(Company company) {
+        return company == null ? paymentRepository.findAllByOrderByPaymentDateDescIdDesc() : paymentRepository.findByCompanyOrderByPaymentDateDescIdDesc(company);
+    }
+
+    private List<Customer> customersFor(Company company) {
+        return company == null ? customerRepository.findAll() : customerRepository.findByCompanyOrderByCreatedAtDesc(company);
+    }
+
+    private List<Expense> expensesFor(Company company) {
+        return company == null ? expenseRepository.findAllByOrderByExpenseDateDescIdDesc() : expenseRepository.findByCompanyOrderByExpenseDateDescIdDesc(company);
     }
 
     private boolean isBeforeStart(LocalDate value, LocalDate startDate) {

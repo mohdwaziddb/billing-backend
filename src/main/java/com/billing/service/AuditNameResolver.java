@@ -26,7 +26,7 @@ public class AuditNameResolver {
             }
         }
 
-        return userRepository.findByEmailIgnoreCase(normalized)
+        return userRepository.findAllByEmailIgnoreCase(normalized).stream().findFirst()
                 .map(this::userDisplayName)
                 .orElse(normalized);
     }

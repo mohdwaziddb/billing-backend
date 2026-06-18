@@ -76,4 +76,8 @@ public class Company extends BaseEntity {
     @Column(name = "website_url")
     private String websiteUrl;
 
+    @Builder.Default
+    @Column(name = "is_active", nullable = false)
+    private boolean active = true;
+
 }

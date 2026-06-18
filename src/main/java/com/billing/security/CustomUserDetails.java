@@ -17,6 +17,7 @@ public class CustomUserDetails implements UserDetails {
     private final String email;
     private final String password;
     private final boolean active;
+    private final boolean companyActive;
     private final String role;
     private final Long companyId;
 
@@ -25,6 +26,7 @@ public class CustomUserDetails implements UserDetails {
         this.email = user.getEmail();
         this.password = user.getPassword();
         this.active = user.isActive();
+        this.companyActive = user.getCompany() == null || user.getCompany().isActive();
         this.role = (user.getRole() == null ? RoleName.USER : user.getRole()).name();
         this.companyId = user.getCompany() != null ? user.getCompany().getId() : null;
     }

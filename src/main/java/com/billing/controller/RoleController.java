@@ -22,6 +22,9 @@ public class RoleController {
     @RequirePermission(menu = "ROLE_PERMISSIONS", action = "VIEW")
     public ResponseEntity<ApiResponse<List<String>>> roles() {
         return ResponseEntity.ok(ApiResponse.success("Roles fetched successfully",
-                roleMasterRepository.findAll().stream().map(role -> role.getRoleCode()).toList()));
+                roleMasterRepository.findAll().stream()
+                        .map(role -> role.getRoleCode())
+                        .filter(role -> !"SUPER_ADMIN".equals(role))
+                        .toList()));
     }
 }

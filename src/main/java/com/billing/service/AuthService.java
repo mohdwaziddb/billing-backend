@@ -11,6 +11,7 @@ import com.billing.dto.auth.RefreshTokenRequest;
 import com.billing.dto.auth.RegisterCompanyRequest;
 import com.billing.dto.user.UserProfileResponse;
 import com.billing.exception.BadRequestException;
+import com.billing.exception.CompanyInactiveException;
 import com.billing.exception.UnauthorizedException;
 import com.billing.repository.CompanyRepository;
 import com.billing.repository.RefreshTokenRepository;
@@ -20,15 +21,15 @@ import com.billing.security.JwtService;
 import com.billing.config.PermissionDataInitializer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -39,7 +40,6 @@ public class AuthService {
     private final UserRepository userRepository;
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordEncoder passwordEncoder;
-    private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
     private final UserMapper userMapper;
     private final PermissionDataInitializer permissionDataInitializer;
@@ -61,16 +61,7 @@ public class AuthService {
         }
         String adminMobileNumber = normalizeMobile(request.getAdminMobileNumber());
         String adminEmail = normalizeEmail(request.getAdminEmail());
-        List<String> validationMessages = new ArrayList<>();
-        if (userRepository.existsByMobileNumber(adminMobileNumber)) {
-            validationMessages.add("Mobile Number already exists.");
-        }
-        if (userRepository.existsByEmailIgnoreCase(adminEmail)) {
-            validationMessages.add("Email ID already exists.");
-        }
-        if (!validationMessages.isEmpty()) {
-            throw new BadRequestException(String.join(" ", validationMessages));
-        }
+        String adminUsername = normalizeUsername(request.getAdminUsername());
 
         Company company = Company.builder()
                 .name(request.getCompanyName())
@@ -80,14 +71,18 @@ public class AuthService {
                 .phone(request.getCompanyPhone())
                 .address(request.getCompanyAddress())
                 .taxId(request.getTaxId())
+                .active(true)
                 .build();
         companyRepository.save(company);
         permissionDataInitializer.seedPermissionsForCompany(company);
+
+        validateUniqueUser(company, adminUsername, adminMobileNumber, adminEmail, null);
 
         User user = User.builder()
                 .fullName(request.getAdminFullName())
                 .mobileNumber(adminMobileNumber)
                 .email(adminEmail)
+                .username(adminUsername)
                 .password(passwordEncoder.encode(request.getAdminPassword()))
                 .role(RoleName.OWNER)
                 .active(true)
@@ -101,12 +96,9 @@ public class AuthService {
     @Transactional
     public AuthResponse login(LoginRequest request) {
         String loginIdentifier = request.getLoginIdentifier();
-        authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(loginIdentifier, request.getPassword())
-        );
-
-        User user = findByLoginIdentifier(loginIdentifier)
+        User user = findAuthenticatedUser(loginIdentifier, request.getPassword())
                 .orElseThrow(() -> new UnauthorizedException("Invalid Mobile Number/Email ID or Password."));
+        validateCompanyActiveForLogin(user);
         return buildAuthResponse(user);
     }
 
@@ -120,6 +112,7 @@ public class AuthService {
             throw new UnauthorizedException("Refresh token has expired");
         }
 
+        validateCompanyActiveForApi(token.getUser());
         return buildAuthResponse(token.getUser());
     }
 
@@ -135,6 +128,7 @@ public class AuthService {
         if (!user.isActive()) {
             throw new BadRequestException("This user account is inactive.");
         }
+        validateCompanyActiveForLogin(user);
 
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
@@ -142,6 +136,7 @@ public class AuthService {
     }
 
     private AuthResponse buildAuthResponse(User user) {
+        validateCompanyActiveForApi(user);
         refreshTokenRepository.deleteByUser(user);
 
         CustomUserDetails userDetails = new CustomUserDetails(user);
@@ -180,10 +175,68 @@ public class AuthService {
     }
 
     private java.util.Optional<User> findByLoginIdentifier(String loginIdentifier) {
-        if (loginIdentifier != null && loginIdentifier.contains("@")) {
-            return userRepository.findByEmailIgnoreCase(normalizeEmail(loginIdentifier));
+        String normalized = normalizeIdentifier(loginIdentifier);
+        List<User> candidates = new ArrayList<>();
+        candidates.addAll(userRepository.findAllByUsernameIgnoreCase(normalized));
+        candidates.addAll(userRepository.findAllByEmailIgnoreCase(normalized));
+        candidates.addAll(userRepository.findAllByMobileNumber(normalized));
+        List<User> uniqueCandidates = uniqueById(candidates);
+        if (uniqueCandidates.size() > 1) {
+            throw new BadRequestException("Multiple companies use this identifier. Please contact administrator.");
         }
-        return userRepository.findByMobileNumber(normalizeMobile(loginIdentifier));
+        return uniqueCandidates.stream().findFirst();
+    }
+
+    private java.util.Optional<User> findAuthenticatedUser(String loginIdentifier, String password) {
+        String normalized = normalizeIdentifier(loginIdentifier);
+        List<User> candidates = new ArrayList<>();
+        candidates.addAll(userRepository.findAllByUsernameIgnoreCase(normalized));
+        candidates.addAll(userRepository.findAllByEmailIgnoreCase(normalized));
+        candidates.addAll(userRepository.findAllByMobileNumber(normalized));
+        List<User> matches = uniqueById(candidates).stream()
+                .filter(user -> passwordEncoder.matches(password, user.getPassword()))
+                .toList();
+        if (matches.size() > 1) {
+            throw new UnauthorizedException("Multiple companies use these credentials. Please contact administrator.");
+        }
+        return matches.stream().findFirst();
+    }
+
+    private void validateUniqueUser(Company company, String username, String mobileNumber, String email, Long currentUserId) {
+        String normalizedUsername = normalizeUsername(username);
+        List<String> validationMessages = new ArrayList<>();
+        userRepository.findByCompanyAndUsernameIgnoreCase(company, normalizedUsername)
+                .filter(existing -> currentUserId == null || !existing.getId().equals(currentUserId))
+                .ifPresent(existing -> validationMessages.add("Username already exists in this company."));
+        userRepository.findByCompanyAndMobileNumber(company, mobileNumber)
+                .filter(existing -> currentUserId == null || !existing.getId().equals(currentUserId))
+                .ifPresent(existing -> validationMessages.add("Mobile number already exists in this company."));
+        userRepository.findByCompanyAndEmailIgnoreCase(company, email)
+                .filter(existing -> currentUserId == null || !existing.getId().equals(currentUserId))
+                .ifPresent(existing -> validationMessages.add("Email already exists in this company."));
+        if (!validationMessages.isEmpty()) {
+            throw new BadRequestException(String.join(" ", validationMessages));
+        }
+    }
+
+    private void validateCompanyActiveForLogin(User user) {
+        if (user.getCompany() != null && !user.getCompany().isActive()) {
+            throw new CompanyInactiveException("Company is inactive. Please contact administrator.");
+        }
+    }
+
+    private void validateCompanyActiveForApi(User user) {
+        if (user.getCompany() != null && !user.getCompany().isActive()) {
+            throw new CompanyInactiveException("Company is inactive");
+        }
+    }
+
+    private List<User> uniqueById(List<User> candidates) {
+        Map<Long, User> byId = new LinkedHashMap<>();
+        for (User candidate : candidates) {
+            byId.putIfAbsent(candidate.getId(), candidate);
+        }
+        return new ArrayList<>(byId.values());
     }
 
     private String normalizeEmail(String value) {
@@ -191,6 +244,14 @@ public class AuthService {
     }
 
     private String normalizeMobile(String value) {
+        return value == null ? null : value.trim();
+    }
+
+    private String normalizeUsername(String value) {
+        return value == null ? null : value.trim();
+    }
+
+    private String normalizeIdentifier(String value) {
         return value == null ? null : value.trim();
     }
 }

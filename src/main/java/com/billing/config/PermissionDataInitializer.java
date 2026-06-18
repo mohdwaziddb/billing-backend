@@ -68,7 +68,12 @@ public class PermissionDataInitializer implements ApplicationRunner {
             new MenuSeed("Email Settings", "EMAIL_SETTINGS", "Mail", "/setup/email-settings", 23, "SETUP"),
             new MenuSeed("SMS Settings", "SMS_SETTINGS", "Mail", "/setup/sms-settings", 24, "SETUP"),
             new MenuSeed("Role Permissions", "ROLE_PERMISSIONS", "ShieldCheck", "/setup/role-permissions", 25, "SETUP"),
-            new MenuSeed("Payment Hierarchy", "PAYMENT_HIERARCHY", "CreditCard", "/reports/payment-hierarchy", 26, "REPORTS")
+            new MenuSeed("Payment Hierarchy", "PAYMENT_HIERARCHY", "CreditCard", "/reports/payment-hierarchy", 26, "REPORTS"),
+            new MenuSeed("Platform Administration", "SUPER_ADMIN", "ShieldCheck", "/super-admin", 100, null),
+            new MenuSeed("Dashboard", "SUPER_ADMIN_DASHBOARD", "LayoutDashboard", "/super-admin/dashboard", 101, "SUPER_ADMIN"),
+            new MenuSeed("Companies", "SUPER_ADMIN_COMPANIES", "Building2", "/super-admin/companies", 102, "SUPER_ADMIN"),
+            new MenuSeed("Users", "SUPER_ADMIN_USERS", "Users", "/super-admin/users", 103, "SUPER_ADMIN"),
+            new MenuSeed("Company Details", "SUPER_ADMIN_COMPANY_DETAILS", "Building2", "/super-admin/company-details", 104, "SUPER_ADMIN")
     );
 
     private static final List<ActionSeed> ACTIONS = List.of(
@@ -101,6 +106,7 @@ public class PermissionDataInitializer implements ApplicationRunner {
         saveRole("Owner", "OWNER");
         saveRole("Admin", "ADMIN");
         saveRole("User", "USER");
+        saveRole("Super Admin", "SUPER_ADMIN");
     }
 
     private void saveRole(String name, String code) {
@@ -166,12 +172,14 @@ public class PermissionDataInitializer implements ApplicationRunner {
         Map<String, Set<String>> visibleMenusByRole = Map.of(
                 "OWNER", Set.of("DASHBOARD", "CUSTOMERS", "PRODUCTS", "CREATE_INVOICE", "INVOICES", "PAYMENTS", "EXPENSES", "OUTSTANDING", "ANALYTICS", "DATA_PORT", "PRODUCT_DATAPORT", "REPORTS", "PROFIT_LOSS", "SETUP", "USERS", "PRODUCT_CATEGORY", "EXPENSE_CATEGORIES", "PAYMENT_MODES", "THEME_SETTINGS", "ABOUT_COMPANY", "EMAIL_TEMPLATES", "SMS_TEMPLATES", "EMAIL_SETTINGS", "SMS_SETTINGS", "ROLE_PERMISSIONS", "PAYMENT_HIERARCHY"),
                 "ADMIN", Set.of("DASHBOARD", "CUSTOMERS", "PRODUCTS", "CREATE_INVOICE", "INVOICES", "PAYMENTS", "EXPENSES", "OUTSTANDING", "ANALYTICS", "DATA_PORT", "PRODUCT_DATAPORT", "REPORTS", "PROFIT_LOSS", "SETUP", "PRODUCT_CATEGORY", "EXPENSE_CATEGORIES", "PAYMENT_MODES", "ABOUT_COMPANY", "EMAIL_TEMPLATES", "SMS_TEMPLATES"),
-                "USER", Set.of("DASHBOARD", "CUSTOMERS", "PRODUCTS", "CREATE_INVOICE", "INVOICES", "OUTSTANDING", "ANALYTICS", "ABOUT_COMPANY")
+                "USER", Set.of("DASHBOARD", "CUSTOMERS", "PRODUCTS", "CREATE_INVOICE", "INVOICES", "OUTSTANDING", "ANALYTICS", "ABOUT_COMPANY"),
+                "SUPER_ADMIN", Set.of("SUPER_ADMIN", "SUPER_ADMIN_DASHBOARD", "SUPER_ADMIN_COMPANIES", "SUPER_ADMIN_USERS", "SUPER_ADMIN_COMPANY_DETAILS")
         );
         Map<String, Set<String>> actionCodesByRole = Map.of(
                 "OWNER", Set.of("VIEW", "ADD", "EDIT", "DELETE", "EXPORT", "LOGS", "VIEW_LOGS", "EMAIL_SEND", "SMS_SEND"),
                 "ADMIN", Set.of("VIEW", "ADD", "EDIT", "DELETE", "EXPORT", "LOGS", "VIEW_LOGS", "EMAIL_SEND", "SMS_SEND"),
-                "USER", Set.of("VIEW")
+                "USER", Set.of("VIEW"),
+                "SUPER_ADMIN", Set.of("VIEW", "ADD", "EDIT", "DELETE", "EXPORT", "LOGS", "VIEW_LOGS")
         );
 
         for (RoleMaster role : roleMasterRepository.findAll()) {

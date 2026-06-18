@@ -18,7 +18,7 @@ public class ForgotPasswordRequest {
     @Size(min = 6, message = "New password must be at least 6 characters")
     private String newPassword;
 
-    @AssertTrue(message = "Mobile Number/Email ID is required")
+    @AssertTrue(message = "Email / Mobile / Username is required")
     public boolean isUsernameProvided() {
         return getLoginIdentifier() != null;
     }

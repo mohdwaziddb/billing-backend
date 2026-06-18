@@ -19,7 +19,7 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
     @Query("""
             SELECT c
             FROM Customer c
-            WHERE c.company = :company
+            WHERE (:company IS NULL OR c.company = :company)
               AND (:active IS NULL OR c.active = :active)
               AND (:search IS NULL OR TRIM(:search) = '' OR LOWER(c.name) LIKE LOWER(CONCAT('%', :search, '%')))
             ORDER BY c.createdAt DESC
@@ -30,7 +30,7 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
     @Query("""
             SELECT c
             FROM Customer c
-            WHERE c.company = :company
+            WHERE (:company IS NULL OR c.company = :company)
               AND (:active IS NULL OR c.active = :active)
               AND (:search IS NULL OR TRIM(:search) = '' OR LOWER(c.name) LIKE LOWER(CONCAT('%', :search, '%')))
             ORDER BY c.createdAt DESC
@@ -45,7 +45,7 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
     @Query("""
             SELECT c
             FROM Customer c
-            WHERE c.company = :company
+            WHERE (:company IS NULL OR c.company = :company)
               AND c.currentBalance > 0
               AND (:minBalance IS NULL OR c.currentBalance >= :minBalance)
               AND (:search IS NULL OR TRIM(:search) = ''

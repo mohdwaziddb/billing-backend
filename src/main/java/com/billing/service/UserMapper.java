@@ -16,6 +16,7 @@ public class UserMapper {
                 .fullName(user.getFullName())
                 .mobileNumber(user.getMobileNumber())
                 .email(user.getEmail())
+                .username(user.getUsername())
                 .role((user.getRole() == null ? RoleName.USER : user.getRole()).name())
                 .active(user.isActive())
                 .createdAt(user.getCreatedAt())

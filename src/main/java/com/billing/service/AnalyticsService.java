@@ -18,6 +18,7 @@ import com.billing.entity.InvoiceItem;
 import com.billing.entity.Payment;
 import com.billing.entity.Product;
 import com.billing.entity.ProductCategory;
+import com.billing.entity.User;
 import com.billing.repository.CustomerRepository;
 import com.billing.repository.ExpenseRepository;
 import com.billing.repository.InvoiceRepository;
@@ -57,10 +58,11 @@ public class AnalyticsService {
 
     @Transactional(readOnly = true)
     public AnalyticsSummaryResponse summary(String email, LocalDate startDate, LocalDate endDate) {
-        Company company = accessControlService.getCurrentCompany(email);
-        List<Invoice> invoices = invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company);
-        List<Payment> payments = paymentRepository.findByCompanyOrderByPaymentDateDescIdDesc(company);
-        List<Customer> customers = customerRepository.findByCompanyOrderByCreatedAtDesc(company);
+        User user = accessControlService.getCurrentUser(email);
+        Company company = accessControlService.isSuperAdmin(user) ? null : accessControlService.requireCompany(user);
+        List<Invoice> invoices = invoicesFor(company);
+        List<Payment> payments = paymentsFor(company);
+        List<Customer> customers = customersFor(company);
 
         LocalDate today = LocalDate.now();
         LocalDate yesterday = today.minusDays(1);
@@ -79,11 +81,11 @@ public class AnalyticsService {
         BigDecimal thisMonthSales = sumInvoiceSalesForMonth(invoices, thisMonth);
         BigDecimal lastMonthSales = sumInvoiceSalesForMonth(invoices, lastMonth);
         BigDecimal outstanding = calculateOutstandingAsOf(customers, invoices, payments, endDate);
-        long lowStockCount = productRepository.findByCompanyOrderByCreatedAtDesc(company).stream()
+        long lowStockCount = productsFor(company).stream()
                 .filter(Product::isActive)
                 .filter(product -> product.getStockQty() <= product.getMinStockQty())
                 .count();
-        long dueCustomers = customerRepository.findByCompanyAndCurrentBalanceGreaterThanOrderByCurrentBalanceDesc(company, BigDecimal.ZERO).size();
+        long dueCustomers = customers.stream().filter(customer -> scale(customer.getCurrentBalance()).compareTo(BigDecimal.ZERO) > 0).count();
         long newCustomers = customers.stream()
                 .filter(customer -> customer.getCreatedAt() != null && isWithinRange(customer.getCreatedAt().toLocalDate(), startDate, endDate))
                 .count();
@@ -116,8 +118,7 @@ public class AnalyticsService {
 
     @Transactional(readOnly = true)
     public List<SalesChartPointResponse> dayWiseSales(String email, int year, int month) {
-        Company company = accessControlService.getCurrentCompany(email);
-        List<Invoice> invoices = invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company);
+        List<Invoice> invoices = invoicesForCurrentUser(email);
         YearMonth selectedMonth = YearMonth.of(year, month);
         List<SalesChartPointResponse> points = new ArrayList<>();
 
@@ -140,8 +141,7 @@ public class AnalyticsService {
 
     @Transactional(readOnly = true)
     public List<SalesChartPointResponse> monthWiseSales(String email, int year) {
-        Company company = accessControlService.getCurrentCompany(email);
-        List<Invoice> invoices = invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company);
+        List<Invoice> invoices = invoicesForCurrentUser(email);
         List<SalesChartPointResponse> points = new ArrayList<>();
 
         for (int month = 1; month <= 12; month++) {
@@ -159,10 +159,9 @@ public class AnalyticsService {
 
     @Transactional(readOnly = true)
     public PageResponse<TopSellingProductResponse> topSellingProducts(String email, LocalDate startDate, LocalDate endDate, String search, int page, int size) {
-        Company company = accessControlService.getCurrentCompany(email);
         Pageable pageable = pageRequest(page, size);
         String normalizedSearch = blankToNull(search);
-        List<Invoice> invoices = invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company).stream()
+        List<Invoice> invoices = invoicesForCurrentUser(email).stream()
                 .filter(invoice -> isWithinRange(invoice.getInvoiceDate(), startDate, endDate))
                 .toList();
         Map<Long, ProductSalesAggregate> aggregates = new HashMap<>();
@@ -211,10 +210,11 @@ public class AnalyticsService {
     }
 
     private List<SalesByCategoryResponse> salesByCategoryRecords(String email, LocalDate startDate, LocalDate endDate, String search) {
-        Company company = accessControlService.getCurrentCompany(email);
+        User user = accessControlService.getCurrentUser(email);
+        Company company = accessControlService.isSuperAdmin(user) ? null : accessControlService.requireCompany(user);
         String normalizedSearch = blankToNull(search);
-        List<ProductCategory> categories = productCategoryRepository.findAllByCompanyWithFilters(company, true, null);
-        List<Invoice> invoices = invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company).stream()
+        List<ProductCategory> categories = categoriesFor(company);
+        List<Invoice> invoices = invoicesFor(company).stream()
                 .filter(invoice -> isWithinRange(invoice.getInvoiceDate(), startDate, endDate))
                 .toList();
         Map<Long, CategorySalesAggregate> aggregates = new HashMap<>();
@@ -258,9 +258,10 @@ public class AnalyticsService {
 
     @Transactional(readOnly = true)
     public PageResponse<LowStockProductResponse> lowStockProducts(String email, int page, int size) {
-        Company company = accessControlService.getCurrentCompany(email);
+        User user = accessControlService.getCurrentUser(email);
+        Company company = accessControlService.isSuperAdmin(user) ? null : accessControlService.requireCompany(user);
         Pageable pageable = pageRequest(page, size);
-        List<LowStockProductResponse> allRecords = productRepository.findByCompanyOrderByCreatedAtDesc(company).stream()
+        List<LowStockProductResponse> allRecords = productsFor(company).stream()
                 .filter(Product::isActive)
                 .filter(product -> product.getStockQty() <= product.getMinStockQty())
                 .sorted(Comparator.comparing(Product::getStockQty).thenComparing(Product::getName))
@@ -278,24 +279,45 @@ public class AnalyticsService {
 
     @Transactional(readOnly = true)
     public PageResponse<CustomerDueResponse> customerDueList(String email, String search, int page, int size) {
-        Company company = accessControlService.getCurrentCompany(email);
-        return PageResponse.from(customerRepository.findOutstandingPageByCompanyWithFilters(company, blankToNull(search), null, pageRequest(page, size))
+        User user = accessControlService.getCurrentUser(email);
+        if (!accessControlService.isSuperAdmin(user)) {
+            Company company = accessControlService.requireCompany(user);
+            return PageResponse.from(customerRepository.findOutstandingPageByCompanyWithFilters(company, blankToNull(search), null, pageRequest(page, size))
+                    .map(customer -> CustomerDueResponse.builder()
+                            .customerId(customer.getId())
+                            .customerName(customer.getName())
+                            .mobile(customer.getMobile())
+                            .email(customer.getEmail())
+                            .currentBalance(scale(customer.getCurrentBalance()))
+                            .build()));
+        }
+        String normalizedSearch = blankToNull(search);
+        List<CustomerDueResponse> records = customersFor(null).stream()
+                .filter(customer -> scale(customer.getCurrentBalance()).compareTo(BigDecimal.ZERO) > 0)
+                .filter(customer -> normalizedSearch == null
+                        || containsIgnoreCase(customer.getName(), normalizedSearch)
+                        || containsIgnoreCase(customer.getMobile(), normalizedSearch)
+                        || containsIgnoreCase(customer.getEmail(), normalizedSearch))
+                .sorted(Comparator.comparing(Customer::getCurrentBalance, Comparator.reverseOrder()))
                 .map(customer -> CustomerDueResponse.builder()
                         .customerId(customer.getId())
                         .customerName(customer.getName())
                         .mobile(customer.getMobile())
                         .email(customer.getEmail())
                         .currentBalance(scale(customer.getCurrentBalance()))
-                        .build()));
+                        .build())
+                .toList();
+        return page(records, pageRequest(page, size));
     }
 
     @Transactional(readOnly = true)
     public OwnerAnalyticsResponse ownerOverview(String email, LocalDate startDate, LocalDate endDate) {
-        Company company = accessControlService.getCurrentCompany(email);
-        List<Invoice> invoices = invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company);
-        List<Payment> payments = paymentRepository.findByCompanyOrderByPaymentDateDescIdDesc(company);
-        List<Customer> customers = customerRepository.findByCompanyOrderByCreatedAtDesc(company);
-        List<Expense> expenses = expenseRepository.findByCompanyOrderByExpenseDateDescIdDesc(company);
+        User user = accessControlService.getCurrentUser(email);
+        Company company = accessControlService.isSuperAdmin(user) ? null : accessControlService.requireCompany(user);
+        List<Invoice> invoices = invoicesFor(company);
+        List<Payment> payments = paymentsFor(company);
+        List<Customer> customers = customersFor(company);
+        List<Expense> expenses = expensesFor(company);
 
         LocalDate safeEnd = endDate != null ? endDate : LocalDate.now();
         LocalDate safeStart = startDate != null ? startDate : safeEnd.minusDays(29);
@@ -577,6 +599,38 @@ public class AnalyticsService {
 
     private boolean containsIgnoreCase(String value, String search) {
         return value != null && value.toLowerCase(Locale.ENGLISH).contains(search.toLowerCase(Locale.ENGLISH));
+    }
+
+    private List<Invoice> invoicesForCurrentUser(String email) {
+        User user = accessControlService.getCurrentUser(email);
+        Company company = accessControlService.isSuperAdmin(user) ? null : accessControlService.requireCompany(user);
+        return invoicesFor(company);
+    }
+
+    private List<Invoice> invoicesFor(Company company) {
+        return company == null ? invoiceRepository.findAllByOrderByInvoiceDateDescIdDesc() : invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company);
+    }
+
+    private List<Payment> paymentsFor(Company company) {
+        return company == null ? paymentRepository.findAllByOrderByPaymentDateDescIdDesc() : paymentRepository.findByCompanyOrderByPaymentDateDescIdDesc(company);
+    }
+
+    private List<Customer> customersFor(Company company) {
+        return company == null ? customerRepository.findAll() : customerRepository.findByCompanyOrderByCreatedAtDesc(company);
+    }
+
+    private List<Product> productsFor(Company company) {
+        return company == null ? productRepository.findAll() : productRepository.findByCompanyOrderByCreatedAtDesc(company);
+    }
+
+    private List<ProductCategory> categoriesFor(Company company) {
+        return company == null
+                ? productCategoryRepository.findAll().stream().filter(ProductCategory::isActive).toList()
+                : productCategoryRepository.findAllByCompanyWithFilters(company, true, null);
+    }
+
+    private List<Expense> expensesFor(Company company) {
+        return company == null ? expenseRepository.findAllByOrderByExpenseDateDescIdDesc() : expenseRepository.findByCompanyOrderByExpenseDateDescIdDesc(company);
     }
 
     private <T> PageResponse<T> page(List<T> allRecords, Pageable pageable) {

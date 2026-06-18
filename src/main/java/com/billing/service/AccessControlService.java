@@ -29,12 +29,8 @@ public class AccessControlService {
     }
 
     @Transactional(readOnly = true)
-    public User getCurrentUser(String email) {
-        User currentUser = getCurrentUser();
-        if (email != null && !currentUser.getEmail().equalsIgnoreCase(email.trim())) {
-            throw new AccessDeniedException("Authenticated user does not match supplied email");
-        }
-        return currentUser;
+    public User getCurrentUser(String ignoredIdentifier) {
+        return getCurrentUser();
     }
 
     @Transactional(readOnly = true)
@@ -51,6 +47,15 @@ public class AccessControlService {
     public boolean isCompanyOwner(User user) {
         requireCompany(user);
         return user.isActive() && user.getRole() == RoleName.OWNER;
+    }
+
+    public boolean isSuperAdmin(User user) {
+        return user != null && user.isActive() && user.getRole() == RoleName.SUPER_ADMIN;
+    }
+
+    @Transactional(readOnly = true)
+    public boolean isSuperAdmin() {
+        return isSuperAdmin(getCurrentUser());
     }
 
     @Transactional(readOnly = true)
@@ -96,7 +101,20 @@ public class AccessControlService {
             return customUserDetails;
         }
         if (principal instanceof String username) {
-            return userRepository.findByEmailIgnoreCase(username.trim())
+            String normalized = username.trim();
+            java.util.List<User> candidates = new java.util.ArrayList<>();
+            candidates.addAll(userRepository.findAllByUsernameIgnoreCase(normalized));
+            candidates.addAll(userRepository.findAllByEmailIgnoreCase(normalized));
+            candidates.addAll(userRepository.findAllByMobileNumber(normalized));
+            java.util.Map<Long, User> byId = new java.util.LinkedHashMap<>();
+            for (User candidate : candidates) {
+                byId.putIfAbsent(candidate.getId(), candidate);
+            }
+            java.util.List<User> uniqueCandidates = new java.util.ArrayList<>(byId.values());
+            if (uniqueCandidates.size() != 1) {
+                throw new AccessDeniedException("Unable to resolve authenticated user");
+            }
+            return uniqueCandidates.stream().findFirst()
                     .map(CustomUserDetails::new)
                     .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         }

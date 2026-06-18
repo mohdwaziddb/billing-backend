@@ -7,6 +7,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -15,6 +16,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 
 @Component
 @RequiredArgsConstructor
@@ -34,8 +36,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             }
 
             String token = authHeader.substring(7);
+            Long userId;
             String username;
             try {
+                userId = jwtService.extractUserId(token);
                 username = jwtService.extractUsername(token);
             } catch (Exception ex) {
                 SecurityContextHolder.clearContext();
@@ -44,8 +48,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             }
 
             if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-                UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+                UserDetails userDetails = userId != null
+                        ? userDetailsService.loadUserById(userId)
+                        : userDetailsService.loadUserByUsername(username);
                 if (jwtService.isTokenValid(token, userDetails)) {
+                    if (userDetails instanceof CustomUserDetails customUserDetails
+                            && !"SUPER_ADMIN".equals(customUserDetails.getRole())
+                            && (customUserDetails.getCompanyId() == null || !customUserDetails.isCompanyActive())) {
+                        SecurityContextHolder.clearContext();
+                        writeCompanyInactiveResponse(response);
+                        return;
+                    }
                     UsernamePasswordAuthenticationToken authenticationToken = new UsernamePasswordAuthenticationToken(
                             userDetails,
                             null,
@@ -54,7 +67,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     authenticationToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                     SecurityContextHolder.getContext().setAuthentication(authenticationToken);
                     if (userDetails instanceof CustomUserDetails customUserDetails) {
-                        TenantContext.setCompanyId(customUserDetails.getCompanyId());
+                        if ("SUPER_ADMIN".equals(customUserDetails.getRole())) {
+                            TenantContext.clear();
+                        } else {
+                            TenantContext.setCompanyId(customUserDetails.getCompanyId());
+                        }
                     }
                 }
             }
@@ -63,5 +80,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         } finally {
             TenantContext.clear();
         }
+    }
+
+    private void writeCompanyInactiveResponse(HttpServletResponse response) throws IOException {
+        response.setStatus(HttpStatus.FORBIDDEN.value());
+        response.setContentType("application/json");
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        response.getWriter().write("{\"success\":false,\"message\":\"Company is inactive\"}");
     }
 }

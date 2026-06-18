@@ -21,6 +21,8 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     @EntityGraph(attributePaths = {"customer", "invoice"})
     List<Payment> findByCompanyOrderByPaymentDateDescIdDesc(Company company);
     @EntityGraph(attributePaths = {"customer", "invoice"})
+    List<Payment> findAllByOrderByPaymentDateDescIdDesc();
+    @EntityGraph(attributePaths = {"customer", "invoice"})
     Page<Payment> findByCompany(Company company, Pageable pageable);
     Optional<Payment> findByIdAndCompany(Long id, Company company);
     List<Payment> findByCompanyAndCustomerOrderByPaymentDateDescIdDesc(Company company, Customer customer);
@@ -31,7 +33,7 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
             value = """
                     select p from Payment p
                     left join p.invoice invoice
-                    where p.company = :company
+                    where (:company is null or p.company = :company)
                       and (:search is null
                         or str(p.id) like concat('%', :search, '%')
                         or lower(coalesce(invoice.invoiceNo, '')) like lower(concat('%', :search, '%'))
@@ -55,7 +57,7 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
             countQuery = """
                     select count(p) from Payment p
                     left join p.invoice invoice
-                    where p.company = :company
+                    where (:company is null or p.company = :company)
                       and (:search is null
                         or str(p.id) like concat('%', :search, '%')
                         or lower(coalesce(invoice.invoiceNo, '')) like lower(concat('%', :search, '%'))

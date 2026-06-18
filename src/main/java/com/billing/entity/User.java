@@ -27,8 +27,9 @@ import org.hibernate.annotations.Filter;
 @AllArgsConstructor
 @Entity
 @Table(name = "users", uniqueConstraints = {
-        @UniqueConstraint(name = "uk_users_mobile_number", columnNames = "mobile_number"),
-        @UniqueConstraint(name = "uk_users_email_id", columnNames = "email_id")
+        @UniqueConstraint(name = "uk_users_company_mobile", columnNames = {"company_id", "mobile_number"}),
+        @UniqueConstraint(name = "uk_users_company_email", columnNames = {"company_id", "email_id"}),
+        @UniqueConstraint(name = "uk_users_company_username", columnNames = {"company_id", "username"})
 })
 @Filter(name = "tenantFilter", condition = "company_id = :companyId")
 public class User extends BaseEntity {
@@ -40,11 +41,14 @@ public class User extends BaseEntity {
     @Column(nullable = false)
     private String fullName;
 
-    @Column(name = "mobile_number", nullable = false, unique = true)
+    @Column(name = "mobile_number", nullable = false)
     private String mobileNumber;
 
-    @Column(name = "email_id", nullable = false, unique = true)
+    @Column(name = "email_id", nullable = false)
     private String email;
+
+    @Column(nullable = false)
+    private String username;
 
     @Column(nullable = false)
     private String password;
@@ -58,6 +62,6 @@ public class User extends BaseEntity {
     private boolean active = true;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "company_id", nullable = false)
+    @JoinColumn(name = "company_id")
     private Company company;
 }

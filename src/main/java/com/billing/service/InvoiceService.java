@@ -14,6 +14,7 @@ import com.billing.entity.Invoice;
 import com.billing.entity.InvoiceItem;
 import com.billing.entity.Payment;
 import com.billing.entity.Product;
+import com.billing.entity.User;
 import com.billing.exception.BadRequestException;
 import com.billing.repository.InvoiceRepository;
 import com.billing.repository.PaymentRepository;
@@ -77,7 +78,14 @@ public class InvoiceService {
 
     @Transactional(readOnly = true)
     public List<InvoiceResponse> list(String email, Long customerId) {
-        Company company = accessControlService.getCurrentCompany(email);
+        User user = accessControlService.getCurrentUser(email);
+        if (accessControlService.isSuperAdmin(user)) {
+            return invoiceRepository.findAllByOrderByInvoiceDateDescIdDesc().stream()
+                    .filter(invoice -> customerId == null || invoice.getCustomer().getId().equals(customerId))
+                    .map(this::toResponse)
+                    .toList();
+        }
+        Company company = accessControlService.requireCompany(user);
         List<Invoice> invoices = customerId == null
                 ? invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company)
                 : invoiceRepository.findByCompanyAndCustomerOrderByInvoiceDateDescIdDesc(
@@ -110,7 +118,8 @@ public class InvoiceService {
                                               RoleName createdByRole,
                                               int page,
                                               int size) {
-        Company company = accessControlService.getCurrentCompany(email);
+        User user = accessControlService.getCurrentUser(email);
+        Company company = accessControlService.isSuperAdmin(user) ? null : accessControlService.requireCompany(user);
         int safeSize = Math.max(1, Math.min(size, 1000));
         PageRequest pageable = PageRequest.of(Math.max(0, page), safeSize, Sort.by(Sort.Direction.DESC, "invoiceDate").and(Sort.by(Sort.Direction.DESC, "id")));
         InvoiceStatus resolvedStatus = resolveFilterStatus(invoiceStatus, paymentStatus);
@@ -123,10 +132,11 @@ public class InvoiceService {
                     .totalPages(0)
                     .build();
         }
-        Customer customer = customerId == null ? null : customerService.getCustomerOrThrow(company, customerId);
+        Customer customer = company == null || customerId == null ? null : customerService.getCustomerOrThrow(company, customerId);
         Page<Invoice> invoices = invoiceRepository.searchInvoices(
                 company,
                 customer,
+                customerId,
                 blankToNull(search),
                 resolvedStatus,
                 startDate,
@@ -143,7 +153,13 @@ public class InvoiceService {
 
     @Transactional(readOnly = true)
     public InvoiceResponse get(String email, Long invoiceId) {
-        Company company = accessControlService.getCurrentCompany(email);
+        User user = accessControlService.getCurrentUser(email);
+        if (accessControlService.isSuperAdmin(user)) {
+            return invoiceRepository.findById(invoiceId)
+                    .map(this::toResponse)
+                    .orElseThrow(() -> new ResourceNotFoundException("Invoice not found"));
+        }
+        Company company = accessControlService.requireCompany(user);
         return toResponse(getInvoiceOrThrow(company, invoiceId));
     }
 

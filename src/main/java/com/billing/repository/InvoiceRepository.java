@@ -21,6 +21,8 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
     @EntityGraph(attributePaths = {"customer", "items", "items.product"})
     List<Invoice> findByCompanyOrderByInvoiceDateDescIdDesc(Company company);
     @EntityGraph(attributePaths = {"customer", "items", "items.product"})
+    List<Invoice> findAllByOrderByInvoiceDateDescIdDesc();
+    @EntityGraph(attributePaths = {"customer", "items", "items.product"})
     Page<Invoice> findByCompany(Company company, Pageable pageable);
     Optional<Invoice> findByIdAndCompany(Long id, Company company);
     Optional<Invoice> findTopByCompanyOrderByIdDesc(Company company);
@@ -30,14 +32,26 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
     long countByCompanyAndInvoiceDate(Company company, LocalDate invoiceDate);
     long countByCompany(Company company);
 
+    @Query("select coalesce(sum(i.totalAmount), 0) from Invoice i")
+    BigDecimal sumTotalAmount();
+
+    @Query("""
+            select i.company.id, i.company.name, coalesce(sum(i.totalAmount), 0), count(i)
+            from Invoice i
+            group by i.company.id, i.company.name
+            order by coalesce(sum(i.totalAmount), 0) desc
+            """)
+    List<Object[]> revenueByCompany();
+
     @Query(
             value = """
                     select distinct i from Invoice i
                     left join i.items item
                     left join item.product product
                     left join product.productCategory category
-                    where i.company = :company
+                    where (:company is null or i.company = :company)
                       and (:customer is null or i.customer = :customer)
+                      and (:customerId is null or i.customer.id = :customerId)
                       and (:search is null
                         or lower(i.invoiceNo) like lower(concat('%', :search, '%'))
                         or lower(i.customer.name) like lower(concat('%', :search, '%'))
@@ -64,8 +78,9 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
                     left join i.items item
                     left join item.product product
                     left join product.productCategory category
-                    where i.company = :company
+                    where (:company is null or i.company = :company)
                       and (:customer is null or i.customer = :customer)
+                      and (:customerId is null or i.customer.id = :customerId)
                       and (:search is null
                         or lower(i.invoiceNo) like lower(concat('%', :search, '%'))
                         or lower(i.customer.name) like lower(concat('%', :search, '%'))
@@ -90,6 +105,7 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
     )
     Page<Invoice> searchInvoices(@Param("company") Company company,
                                  @Param("customer") Customer customer,
+                                 @Param("customerId") Long customerId,
                                  @Param("search") String search,
                                  @Param("paymentStatus") InvoiceStatus paymentStatus,
                                  @Param("startDate") LocalDate startDate,
