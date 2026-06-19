@@ -41,6 +41,7 @@ import java.util.stream.Collectors;
 @Service("permissionChecker")
 @RequiredArgsConstructor
 public class PermissionService {
+    private static final String LEGACY_PLATFORM_ADMIN_MENU_CODE_PREFIX = "SUPER" + "_ADMIN_";
 
     private final AppMenuRepository appMenuRepository;
     private final AppMenuActionRepository appMenuActionRepository;
@@ -75,7 +76,7 @@ public class PermissionService {
         }
 
         AppMenu menu = appMenuRepository.findByMenuCode(menuCode).orElse(null);
-        if (menu == null || !menu.isActive()) {
+        if (menu == null || !menu.isActive() || isLegacySuperAdminMenu(menu)) {
             return false;
         }
         AppMenuAction action = appMenuActionRepository.findByAppMenuAndActionCode(menu, actionCode).orElse(null);
@@ -163,6 +164,9 @@ public class PermissionService {
         Map<Long, AppMenuAction> actions = appMenuActionRepository.findAll().stream().collect(Collectors.toMap(AppMenuAction::getId, Function.identity()));
         for (MenuPermissionRequest menuRequest : request.getMenus()) {
             AppMenu menu = requireMenu(menus, menuRequest.getMenuId());
+            if (isLegacySuperAdminMenu(menu)) {
+                continue;
+            }
             RoleMenuPermission menuPermission = roleMenuPermissionRepository.findByCompanyAndRoleAndAppMenu(company, role, menu)
                     .orElse(RoleMenuPermission.builder().company(company).role(role).appMenu(menu).build());
             menuPermission.setCanView(menuRequest.isCanView());
@@ -190,6 +194,9 @@ public class PermissionService {
         Map<Long, AppMenuAction> actions = appMenuActionRepository.findAll().stream().collect(Collectors.toMap(AppMenuAction::getId, Function.identity()));
         for (MenuPermissionRequest menuRequest : request.getMenus()) {
             AppMenu menu = requireMenu(menus, menuRequest.getMenuId());
+            if (isLegacySuperAdminMenu(menu)) {
+                continue;
+            }
             for (ActionPermissionRequest actionRequest : menuRequest.getActions()) {
                 AppMenuAction action = requireAction(actions, actionRequest.getActionId(), menu);
                 if (actionRequest.getOverrideAllowed() == null) {
@@ -209,10 +216,12 @@ public class PermissionService {
     private List<MenuPermissionResponse> allMenus(boolean allowAll, User user, RoleMaster role, Company company, boolean onlyVisible) {
         if (allowAll) {
             return appMenuRepository.findByActiveTrueOrderByDisplayOrderAscIdAsc().stream()
+                    .filter(menu -> !isLegacySuperAdminMenu(menu))
                     .map(menu -> toMenuResponse(menu, true, appMenuActionRepository.findByAppMenuAndActiveTrueOrderByIdAsc(menu), null, true))
                     .toList();
         }
         return appMenuRepository.findByActiveTrueOrderByDisplayOrderAscIdAsc().stream()
+                .filter(menu -> !isLegacySuperAdminMenu(menu))
                 .map(menu -> effectiveMenuResponse(company, user, role, menu))
                 .filter(menu -> !onlyVisible || menu.isCanView())
                 .toList();
@@ -220,6 +229,7 @@ public class PermissionService {
 
     private List<MenuPermissionResponse> roleMenus(Company company, RoleMaster role) {
         return appMenuRepository.findByActiveTrueOrderByDisplayOrderAscIdAsc().stream()
+                .filter(menu -> !isLegacySuperAdminMenu(menu))
                 .map(menu -> {
                     boolean canView = "OWNER".equals(role.getRoleCode()) || roleMenuPermissionRepository.findByCompanyAndRoleAndAppMenu(company, role, menu).map(RoleMenuPermission::isCanView).orElse(false);
                     List<AppMenuAction> actions = appMenuActionRepository.findByAppMenuAndActiveTrueOrderByIdAsc(menu);
@@ -230,6 +240,7 @@ public class PermissionService {
 
     private List<MenuPermissionResponse> userMenus(Company company, User user, RoleMaster role) {
         return appMenuRepository.findByActiveTrueOrderByDisplayOrderAscIdAsc().stream()
+                .filter(menu -> !isLegacySuperAdminMenu(menu))
                 .map(menu -> effectiveMenuResponse(company, user, role, menu))
                 .toList();
     }
@@ -331,6 +342,11 @@ public class PermissionService {
     private String roleCode(User user) {
         return (user.getRole() == null ? RoleName.USER : user.getRole()).name();
     }
+
+    private boolean isLegacySuperAdminMenu(AppMenu menu) {
+        return menu != null && menu.getMenuCode() != null && menu.getMenuCode().startsWith(LEGACY_PLATFORM_ADMIN_MENU_CODE_PREFIX);
+    }
+
     private AppMenu requireMenu(Map<Long, AppMenu> menus, Long menuId) {
         AppMenu menu = menus.get(menuId);
         if (menu == null) {
