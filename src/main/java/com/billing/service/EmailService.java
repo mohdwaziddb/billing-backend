@@ -159,8 +159,9 @@ public class EmailService {
         sender.setPassword(secretEncryptionService.decrypt(settings.getSmtpPassword()));
         Properties properties = sender.getJavaMailProperties();
         properties.put("mail.smtp.auth", "true");
-        properties.put("mail.smtp.starttls.enable", String.valueOf(settings.isSmtpTlsEnabled()));
-        properties.put("mail.smtp.starttls.required", String.valueOf(settings.isSmtpTlsEnabled()));
+        boolean smtpTlsEnabled = !Boolean.FALSE.equals(settings.getSmtpTlsEnabled());
+        properties.put("mail.smtp.starttls.enable", String.valueOf(smtpTlsEnabled));
+        properties.put("mail.smtp.starttls.required", String.valueOf(smtpTlsEnabled));
         properties.put("mail.smtp.connectiontimeout", "10000");
         properties.put("mail.smtp.timeout", "10000");
         properties.put("mail.smtp.writetimeout", "10000");

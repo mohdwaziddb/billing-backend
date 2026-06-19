@@ -133,7 +133,7 @@ public class NotificationSettingsService {
                 .smtpHost(setting.getSmtpHost())
                 .smtpPort(setting.getSmtpPort())
                 .smtpUsername(setting.getSmtpUsername())
-                .smtpTlsEnabled(setting.isSmtpTlsEnabled())
+                .smtpTlsEnabled(!Boolean.FALSE.equals(setting.getSmtpTlsEnabled()))
                 .awsAccessKey(mask(setting.getAwsAccessKey()))
                 .awsRegion(setting.getAwsRegion())
                 .active(setting.isActive())

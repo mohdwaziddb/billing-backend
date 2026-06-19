@@ -52,7 +52,7 @@ public class EmailProviderSetting extends BaseEntity {
     private String smtpPassword;
 
     @Column(name = "smtp_tls_enabled")
-    private boolean smtpTlsEnabled;
+    private Boolean smtpTlsEnabled;
 
     @Column(name = "aws_access_key")
     private String awsAccessKey;
