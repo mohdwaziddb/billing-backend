@@ -10,6 +10,15 @@ import com.billing.entity.EmailProviderSetting;
 import com.billing.entity.EmailTemplate;
 import com.billing.repository.EmailLogRepository;
 import com.billing.repository.EmailProviderSettingRepository;
+import com.sendgrid.Method;
+import com.sendgrid.Request;
+import com.sendgrid.Response;
+import com.sendgrid.SendGrid;
+import com.sendgrid.helpers.mail.Mail;
+import com.sendgrid.helpers.mail.objects.Attachments;
+import com.sendgrid.helpers.mail.objects.Content;
+import com.sendgrid.helpers.mail.objects.Email;
+import com.sendgrid.helpers.mail.objects.Personalization;
 import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.ByteArrayResource;
@@ -76,6 +85,9 @@ public class EmailService {
             String providerName = normalizeProvider(settings.getProviderName());
             if ("AWS_SES".equals(providerName)) {
                 return sendWithSes(settings, subject, htmlBody, toEmails, ccEmails, bccEmails, attachments);
+            }
+            if ("SENDGRID".equals(providerName)) {
+                return sendWithSendGrid(settings, subject, htmlBody, toEmails, ccEmails, bccEmails, attachments);
             }
             if ("GMAIL_SMTP".equals(providerName)) {
                 return sendWithSmtp(settings, subject, htmlBody, toEmails, ccEmails, bccEmails, attachments);
@@ -151,6 +163,42 @@ public class EmailService {
         return new EmailDeliveryResult(NotificationStatus.SENT, "Gmail SMTP email sent successfully", LocalDateTime.now());
     }
 
+    private EmailDeliveryResult sendWithSendGrid(EmailProviderSetting settings,
+                                                 String subject,
+                                                 String htmlBody,
+                                                 List<String> toEmails,
+                                                 List<String> ccEmails,
+                                                 List<String> bccEmails,
+                                                 List<NotificationAttachmentRequest> attachments) throws Exception {
+        validateSendGridSettings(settings);
+
+        Mail mail = new Mail();
+        mail.setFrom(new Email(settings.getSenderEmail().trim()));
+        mail.setSubject(subject);
+        mail.addContent(new Content("text/plain", stripHtml(htmlBody)));
+        mail.addContent(new Content("text/html", htmlBody == null ? "" : htmlBody));
+
+        Personalization personalization = new Personalization();
+        addSendGridRecipients(personalization::addTo, toEmails);
+        addSendGridRecipients(personalization::addCc, ccEmails);
+        addSendGridRecipients(personalization::addBcc, bccEmails);
+        mail.addPersonalization(personalization);
+        addSendGridAttachments(mail, attachments);
+
+        SendGrid sendGrid = new SendGrid(secretEncryptionService.decrypt(settings.getSendgridApiKey()));
+        Request request = new Request();
+        request.setMethod(Method.POST);
+        request.setEndpoint("mail/send");
+        request.setBody(mail.build());
+
+        Response response = sendGrid.api(request);
+        int statusCode = response.getStatusCode();
+        if (statusCode >= 200 && statusCode < 300) {
+            return new EmailDeliveryResult(NotificationStatus.SENT, "SendGrid email sent successfully", LocalDateTime.now());
+        }
+        throw new IllegalStateException("SendGrid returned status " + statusCode + (hasText(response.getBody()) ? ": " + response.getBody() : ""));
+    }
+
     private JavaMailSender buildSmtpSender(EmailProviderSetting settings) {
         JavaMailSenderImpl sender = new JavaMailSenderImpl();
         sender.setHost(settings.getSmtpHost());
@@ -186,6 +234,15 @@ public class EmailService {
         }
     }
 
+    private void validateSendGridSettings(EmailProviderSetting settings) {
+        if (!hasText(settings.getSenderEmail()) || !hasText(settings.getSendgridApiKey())) {
+            throw new IllegalStateException("SendGrid provider is missing sender email or API key");
+        }
+        if (!hasText(secretEncryptionService.decrypt(settings.getSendgridApiKey()))) {
+            throw new IllegalStateException("SendGrid API key is unavailable");
+        }
+    }
+
     private String normalizeProvider(String value) {
         if (value == null) {
             return "";
@@ -195,6 +252,17 @@ public class EmailService {
 
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
+    }
+
+    private void addSendGridRecipients(java.util.function.Consumer<Email> consumer, List<String> recipients) {
+        if (recipients == null) {
+            return;
+        }
+        recipients.stream()
+                .map(value -> value == null ? "" : value.trim())
+                .filter(this::hasText)
+                .map(Email::new)
+                .forEach(consumer);
     }
 
     private void addAttachments(MimeMessageHelper helper, List<NotificationAttachmentRequest> attachments) throws Exception {
@@ -208,6 +276,49 @@ public class EmailService {
             byte[] content = Base64.getDecoder().decode(attachment.getBase64Content());
             helper.addAttachment(attachment.getFileName().trim(), new ByteArrayResource(content));
         }
+    }
+
+    private void addSendGridAttachments(Mail mail, List<NotificationAttachmentRequest> attachments) {
+        if (attachments == null) {
+            return;
+        }
+        for (NotificationAttachmentRequest attachment : attachments) {
+            if (attachment.getFileName() == null || attachment.getFileName().isBlank() || attachment.getBase64Content() == null || attachment.getBase64Content().isBlank()) {
+                continue;
+            }
+            Attachments sendGridAttachment = new Attachments();
+            sendGridAttachment.setFilename(attachment.getFileName().trim());
+            sendGridAttachment.setContent(attachment.getBase64Content().trim());
+            sendGridAttachment.setDisposition("attachment");
+            sendGridAttachment.setType(detectContentType(attachment.getFileName()));
+            mail.addAttachments(sendGridAttachment);
+        }
+    }
+
+    private String detectContentType(String fileName) {
+        if (!hasText(fileName)) {
+            return "application/octet-stream";
+        }
+        String lowerCaseFileName = fileName.trim().toLowerCase();
+        if (lowerCaseFileName.endsWith(".pdf")) {
+            return "application/pdf";
+        }
+        if (lowerCaseFileName.endsWith(".png")) {
+            return "image/png";
+        }
+        if (lowerCaseFileName.endsWith(".jpg") || lowerCaseFileName.endsWith(".jpeg")) {
+            return "image/jpeg";
+        }
+        if (lowerCaseFileName.endsWith(".txt")) {
+            return "text/plain; charset=UTF-8";
+        }
+        if (lowerCaseFileName.endsWith(".csv")) {
+            return "text/csv; charset=UTF-8";
+        }
+        if (lowerCaseFileName.endsWith(".html")) {
+            return "text/html; charset=UTF-8";
+        }
+        return "application/octet-stream";
     }
 
     public EmailLogResponse toResponse(EmailLog log) {

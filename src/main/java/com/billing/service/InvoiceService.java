@@ -406,6 +406,7 @@ public class InvoiceService {
                 .customerId(invoice.getCustomer().getId())
                 .customerName(invoice.getCustomer().getName())
                 .customerMobile(invoice.getCustomer().getMobile())
+                .customerEmail(invoice.getCustomer().getEmail())
                 .customerAddress(invoice.getCustomer().getAddress())
                 .subtotal(scale(invoice.getSubtotal()))
                 .taxAmount(scale(invoice.getTaxAmount()))

@@ -13,6 +13,10 @@ import com.billing.exception.ResourceNotFoundException;
 import com.billing.repository.EmailTemplateRepository;
 import com.billing.repository.NotificationLogRepository;
 import com.billing.repository.SmsTemplateRepository;
+import com.billing.service.sms.CommonSmsService;
+import com.billing.service.sms.SmsSendResult;
+import com.billing.service.whatsapp.CommonWhatsAppService;
+import com.billing.service.whatsapp.WhatsAppSendResult;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -33,8 +37,8 @@ public class NotificationService {
     private final NotificationLogRepository notificationLogRepository;
     private final EmailTemplateVariableService variableService;
     private final EmailService emailService;
-    private final SmsService smsService;
-    private final WhatsAppService whatsAppService;
+    private final CommonSmsService commonSmsService;
+    private final CommonWhatsAppService commonWhatsAppService;
     private final AuditLogService auditLogService;
 
     @Transactional
@@ -51,40 +55,85 @@ public class NotificationService {
     }
 
     private List<NotificationLogResponse> sendEmail(String email, Company company, NotificationSendRequest request) {
-        EmailTemplate template = emailTemplateRepository.findByIdAndCompanyAndActiveTrue(request.getTemplateId(), company)
-                .orElseThrow(() -> new ResourceNotFoundException("Active email template not found"));
-        String subject = variableService.render(template.getSubject(), company, request.getVariables());
-        String body = variableService.render(template.getEmailBody(), company, request.getVariables());
         List<String> toEmails = request.getToEmails() == null ? List.of() : request.getToEmails();
         if (toEmails.isEmpty()) {
             throw new BadRequestException("At least one recipient email is required");
         }
+        Long templateId = request.getTemplateId();
+        String subject;
+        String body;
+        if (templateId != null) {
+            EmailTemplate template = emailTemplateRepository.findByIdAndCompanyAndActiveTrue(templateId, company)
+                    .orElseThrow(() -> new ResourceNotFoundException("Active email template not found"));
+            subject = variableService.render(template.getSubject(), company, request.getVariables());
+            body = variableService.render(template.getEmailBody(), company, request.getVariables());
+        } else {
+            subject = request.getSubject() == null || request.getSubject().isBlank()
+                    ? "Notification from " + company.getName()
+                    : request.getSubject().trim();
+            body = renderEmailBody(request.getMessage());
+        }
         EmailService.EmailDeliveryResult result = emailService.sendEmail(company, subject, body, toEmails, safeList(request.getCcEmails()), safeList(request.getBccEmails()), request.getAttachments(), email);
         String recipient = String.join(",", toEmails);
-        NotificationLog saved = saveLog(company, NotificationChannelType.EMAIL, template.getId(), recipient, subject, body, result.providerResponse(), result.status(), email, result.sentAt());
+        NotificationLog saved = saveLog(company, NotificationChannelType.EMAIL, templateId, recipient, subject, body, result.providerResponse(), result.status(), email, result.sentAt());
         writeAudit(email, company, saved, result.status() == NotificationStatus.SENT ? "EMAIL_SENT" : result.status() == NotificationStatus.FAILED ? "EMAIL_FAILED" : "EMAIL_PENDING");
         return List.of(toResponse(saved));
     }
 
     private List<NotificationLogResponse> sendSms(String email, Company company, NotificationSendRequest request) {
-        SmsTemplate template = smsTemplateRepository.findByIdAndCompanyAndActiveTrue(request.getTemplateId(), company)
-                .orElseThrow(() -> new ResourceNotFoundException("Active SMS template not found"));
-        String message = variableService.render(template.getTemplateBody(), company, request.getVariables());
-        List<SmsService.SmsDeliveryResult> results = smsService.sendSms(company, request.getMobileNumbers(), message);
+        Long templateId = request.getTemplateId();
+        String message;
+        if (templateId != null) {
+            SmsTemplate template = smsTemplateRepository.findByIdAndCompanyAndActiveTrue(templateId, company)
+                    .orElseThrow(() -> new ResourceNotFoundException("Active SMS template not found"));
+            message = variableService.render(template.getTemplateBody(), company, request.getVariables());
+        } else {
+            message = requireMessage(request.getMessage(), "SMS message is required");
+        }
+        List<SmsSendResult> results = commonSmsService.sendSms(company, request.getMobileNumbers(), message);
         if (results.isEmpty()) {
             throw new BadRequestException("At least one valid mobile number is required");
         }
         return results.stream().map(result -> {
-            NotificationLog saved = saveLog(company, NotificationChannelType.SMS, template.getId(), result.mobileNumber(), null, message, result.providerResponse(), result.status(), email, result.sentAt());
+            NotificationLog saved = saveLog(company, NotificationChannelType.SMS, templateId, result.mobileNumber(), null, message, result.providerResponse(), result.status(), email, result.sentAt());
             writeAudit(email, company, saved, result.status() == NotificationStatus.SENT ? "SMS_SENT" : result.status() == NotificationStatus.FAILED ? "SMS_FAILED" : "SMS_PENDING");
             return toResponse(saved);
         }).toList();
     }
 
     private List<NotificationLogResponse> sendWhatsApp(String email, Company company, NotificationSendRequest request) {
-        WhatsAppService.WhatsAppDeliveryResult result = whatsAppService.sendWhatsApp();
-        NotificationLog saved = saveLog(company, NotificationChannelType.WHATSAPP, request.getTemplateId(), "", null, "", result.providerResponse(), result.status(), email, result.sentAt());
-        return List.of(toResponse(saved));
+        String message = requireMessage(request.getMessage(), "WhatsApp message is required");
+        List<WhatsAppSendResult> results;
+        if (request.getAttachments() == null || request.getAttachments().isEmpty()) {
+            results = commonWhatsAppService.sendMessage(company, request.getMobileNumbers(), message);
+        } else if (request.getAttachments().stream().anyMatch(attachment -> attachment.getContentType() != null && attachment.getContentType().toLowerCase().contains("pdf"))) {
+            results = commonWhatsAppService.sendDocument(company, request.getMobileNumbers(), message, request.getAttachments());
+        } else {
+            results = commonWhatsAppService.sendMedia(company, request.getMobileNumbers(), message, request.getAttachments());
+        }
+        if (results.isEmpty()) {
+            throw new BadRequestException("At least one valid mobile number is required");
+        }
+        return results.stream().map(result -> {
+            NotificationLog saved = saveLog(company, NotificationChannelType.WHATSAPP, request.getTemplateId(), result.mobileNumber(), null, message, result.providerResponse(), result.status(), email, result.sentAt());
+            writeAudit(email, company, saved, result.status() == NotificationStatus.SENT ? "WHATSAPP_SENT" : result.status() == NotificationStatus.FAILED ? "WHATSAPP_FAILED" : "WHATSAPP_PENDING");
+            return toResponse(saved);
+        }).toList();
+    }
+
+    private String renderEmailBody(String message) {
+        String value = requireMessage(message, "Email body is required");
+        if (value.contains("<") && value.contains(">")) {
+            return value;
+        }
+        return "<p>" + value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br/>") + "</p>";
+    }
+
+    private String requireMessage(String message, String errorMessage) {
+        if (message == null || message.isBlank()) {
+            throw new BadRequestException(errorMessage);
+        }
+        return message.trim();
     }
 
     @Transactional(readOnly = true)

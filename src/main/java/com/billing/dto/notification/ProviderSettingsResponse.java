@@ -15,9 +15,13 @@ public class ProviderSettingsResponse {
     private boolean smtpTlsEnabled;
     private String awsAccessKey;
     private String awsRegion;
+    private String sendgridApiKey;
     private String apiUrl;
-    private String username;
+    private String providerType;
+    private String authKey;
     private String senderId;
-    private String channelName;
+    private String templateId;
+    private String whatsappNumber;
+    private String senderName;
     private boolean active;
 }

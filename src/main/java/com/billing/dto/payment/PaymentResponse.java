@@ -14,6 +14,7 @@ public class PaymentResponse {
     private Long customerId;
     private String customerName;
     private String customerMobile;
+    private String customerEmail;
     private Long invoiceId;
     private String invoiceNo;
     private BigDecimal amount;

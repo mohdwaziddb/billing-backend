@@ -63,6 +63,9 @@ public class EmailProviderSetting extends BaseEntity {
     @Column(name = "aws_region")
     private String awsRegion;
 
+    @Column(name = "sendgrid_api_key")
+    private String sendgridApiKey;
+
     @Column(name = "is_active", nullable = false)
     private boolean active;
 }

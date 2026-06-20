@@ -67,10 +67,9 @@ public class PermissionDataInitializer implements ApplicationRunner {
             new MenuSeed("About Company", "ABOUT_COMPANY", "Building2", "/setup/about-company", 20, "SETUP"),
             new MenuSeed("Email Templates", "EMAIL_TEMPLATES", "Mail", "/setup/email-templates", 21, "SETUP"),
             new MenuSeed("SMS Templates", "SMS_TEMPLATES", "Mail", "/setup/sms-templates", 22, "SETUP"),
-            new MenuSeed("Email Settings", "EMAIL_SETTINGS", "Mail", "/setup/email-settings", 23, "SETUP"),
-            new MenuSeed("SMS Settings", "SMS_SETTINGS", "Mail", "/setup/sms-settings", 24, "SETUP"),
-            new MenuSeed("Role Permissions", "ROLE_PERMISSIONS", "ShieldCheck", "/setup/role-permissions", 25, "SETUP"),
-            new MenuSeed("Payment Hierarchy", "PAYMENT_HIERARCHY", "CreditCard", "/reports/payment-hierarchy", 26, "REPORTS")
+            new MenuSeed("Communication", "COMMUNICATION", "Mail", "/setup/communication", 23, "SETUP"),
+            new MenuSeed("Role Permissions", "ROLE_PERMISSIONS", "ShieldCheck", "/setup/role-permissions", 24, "SETUP"),
+            new MenuSeed("Payment Hierarchy", "PAYMENT_HIERARCHY", "CreditCard", "/reports/payment-hierarchy", 25, "REPORTS")
     );
 
     private static final List<ActionSeed> ACTIONS = List.of(
@@ -82,7 +81,8 @@ public class PermissionDataInitializer implements ApplicationRunner {
             new ActionSeed("Show Logs", "LOGS"),
             new ActionSeed("Show Logs", "VIEW_LOGS"),
             new ActionSeed("Send Email", "EMAIL_SEND"),
-            new ActionSeed("Send SMS", "SMS_SEND")
+            new ActionSeed("Send SMS", "SMS_SEND"),
+            new ActionSeed("Send WhatsApp", "WHATSAPP_SEND")
     );
 
     @Override
@@ -163,6 +163,9 @@ public class PermissionDataInitializer implements ApplicationRunner {
         retireMenu("AUDIT_LOG_VIEW");
         retireMenu("NOTIFICATION_SETTINGS");
         retireMenu("MANAGEMENT_HIERARCHY");
+        retireMenu("EMAIL_SETTINGS");
+        retireMenu("SMS_SETTINGS");
+        retireMenu("WHATSAPP_SETTINGS");
     }
 
     private void seedActions() {
@@ -184,13 +187,13 @@ public class PermissionDataInitializer implements ApplicationRunner {
 
     public void seedPermissionsForCompany(Company company) {
         Map<String, Set<String>> visibleMenusByRole = Map.of(
-                "OWNER", Set.of("DASHBOARD", "CUSTOMERS", "PRODUCTS", "CREATE_INVOICE", "INVOICES", "PAYMENTS", "EXPENSES", "OUTSTANDING", "ANALYTICS", "DATA_PORT", "PRODUCT_DATAPORT", "REPORTS", "PROFIT_LOSS", "SETUP", "USERS", "PRODUCT_CATEGORY", "EXPENSE_CATEGORIES", "PAYMENT_MODES", "THEME_SETTINGS", "ABOUT_COMPANY", "EMAIL_TEMPLATES", "SMS_TEMPLATES", "EMAIL_SETTINGS", "SMS_SETTINGS", "ROLE_PERMISSIONS", "PAYMENT_HIERARCHY"),
-                "ADMIN", Set.of("DASHBOARD", "CUSTOMERS", "PRODUCTS", "CREATE_INVOICE", "INVOICES", "PAYMENTS", "EXPENSES", "OUTSTANDING", "ANALYTICS", "DATA_PORT", "PRODUCT_DATAPORT", "REPORTS", "PROFIT_LOSS", "SETUP", "PRODUCT_CATEGORY", "EXPENSE_CATEGORIES", "PAYMENT_MODES", "ABOUT_COMPANY", "EMAIL_TEMPLATES", "SMS_TEMPLATES"),
+                "OWNER", Set.of("DASHBOARD", "CUSTOMERS", "PRODUCTS", "CREATE_INVOICE", "INVOICES", "PAYMENTS", "EXPENSES", "OUTSTANDING", "ANALYTICS", "DATA_PORT", "PRODUCT_DATAPORT", "REPORTS", "PROFIT_LOSS", "SETUP", "USERS", "PRODUCT_CATEGORY", "EXPENSE_CATEGORIES", "PAYMENT_MODES", "THEME_SETTINGS", "ABOUT_COMPANY", "EMAIL_TEMPLATES", "SMS_TEMPLATES", "COMMUNICATION", "ROLE_PERMISSIONS", "PAYMENT_HIERARCHY"),
+                "ADMIN", Set.of("DASHBOARD", "CUSTOMERS", "PRODUCTS", "CREATE_INVOICE", "INVOICES", "PAYMENTS", "EXPENSES", "OUTSTANDING", "ANALYTICS", "DATA_PORT", "PRODUCT_DATAPORT", "REPORTS", "PROFIT_LOSS", "SETUP", "PRODUCT_CATEGORY", "EXPENSE_CATEGORIES", "PAYMENT_MODES", "ABOUT_COMPANY", "EMAIL_TEMPLATES", "SMS_TEMPLATES", "COMMUNICATION"),
                 "USER", Set.of("DASHBOARD", "CUSTOMERS", "PRODUCTS", "CREATE_INVOICE", "INVOICES", "OUTSTANDING", "ANALYTICS", "ABOUT_COMPANY")
         );
         Map<String, Set<String>> actionCodesByRole = Map.of(
-                "OWNER", Set.of("VIEW", "ADD", "EDIT", "DELETE", "EXPORT", "LOGS", "VIEW_LOGS", "EMAIL_SEND", "SMS_SEND"),
-                "ADMIN", Set.of("VIEW", "ADD", "EDIT", "DELETE", "EXPORT", "LOGS", "VIEW_LOGS", "EMAIL_SEND", "SMS_SEND"),
+                "OWNER", Set.of("VIEW", "ADD", "EDIT", "DELETE", "EXPORT", "LOGS", "VIEW_LOGS", "EMAIL_SEND", "SMS_SEND", "WHATSAPP_SEND"),
+                "ADMIN", Set.of("VIEW", "ADD", "EDIT", "DELETE", "EXPORT", "LOGS", "VIEW_LOGS", "EMAIL_SEND", "SMS_SEND", "WHATSAPP_SEND"),
                 "USER", Set.of("VIEW")
         );
 

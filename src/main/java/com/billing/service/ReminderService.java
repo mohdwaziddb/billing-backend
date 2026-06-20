@@ -116,6 +116,18 @@ public class ReminderService {
             message = log.getMessage();
             status = toReminderStatus(log.getStatus());
         }
+        if (request.getChannel() == ReminderChannel.WHATSAPP) {
+            if (customer.getMobile() == null || customer.getMobile().isBlank()) {
+                throw new BadRequestException("Customer mobile number is required to send WhatsApp reminder");
+            }
+            NotificationSendRequest notificationRequest = new NotificationSendRequest();
+            notificationRequest.setChannel(NotificationChannelType.WHATSAPP);
+            notificationRequest.setMobileNumbers(List.of(customer.getMobile()));
+            notificationRequest.setMessage(message);
+            NotificationLogResponse log = notificationService.sendNotification(email, notificationRequest).get(0);
+            message = log.getMessage();
+            status = toReminderStatus(log.getStatus());
+        }
 
         ReminderLog reminderLog = ReminderLog.builder()
                 .company(company)

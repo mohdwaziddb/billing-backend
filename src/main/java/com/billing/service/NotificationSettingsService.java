@@ -4,41 +4,77 @@ import com.billing.dto.notification.EmailProviderTestRequest;
 import com.billing.dto.notification.NotificationStatus;
 import com.billing.dto.notification.ProviderSettingsRequest;
 import com.billing.dto.notification.ProviderSettingsResponse;
+import com.billing.dto.notification.SmsProviderTestRequest;
+import com.billing.dto.notification.WhatsAppProviderTestRequest;
 import com.billing.entity.Company;
 import com.billing.entity.EmailProviderSetting;
 import com.billing.entity.SmsProviderSetting;
+import com.billing.entity.WhatsAppProviderSetting;
+import com.billing.entity.enums.SmsProviderType;
+import com.billing.entity.enums.WhatsAppProviderType;
 import com.billing.exception.BadRequestException;
+import com.billing.exception.ResourceNotFoundException;
+import com.billing.repository.CompanyRepository;
 import com.billing.repository.EmailProviderSettingRepository;
 import com.billing.repository.SmsProviderSettingRepository;
+import com.billing.repository.WhatsAppProviderSettingRepository;
+import com.billing.service.sms.CommonSmsService;
+import com.billing.service.sms.SmsSendResult;
+import com.billing.service.whatsapp.CommonWhatsAppService;
+import com.billing.service.whatsapp.WhatsAppSendResult;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
 public class NotificationSettingsService {
 
     private final AccessControlService accessControlService;
+    private final CompanyRepository companyRepository;
     private final EmailProviderSettingRepository emailProviderSettingRepository;
     private final SmsProviderSettingRepository smsProviderSettingRepository;
+    private final WhatsAppProviderSettingRepository whatsAppProviderSettingRepository;
     private final SecretEncryptionService secretEncryptionService;
     private final EmailService emailService;
+    private final CommonSmsService commonSmsService;
+    private final CommonWhatsAppService commonWhatsAppService;
+    private final AuditLogService auditLogService;
 
     @Transactional(readOnly = true)
     public List<ProviderSettingsResponse> emailSettings(String email) {
-        Company company = accessControlService.getCurrentCompany(email);
+        return emailSettingsForCompany(accessControlService.getCurrentCompany(email));
+    }
+
+    @Transactional(readOnly = true)
+    public List<ProviderSettingsResponse> emailSettingsForCompany(Long companyId) {
+        return emailSettingsForCompany(resolveCompany(companyId));
+    }
+
+    private List<ProviderSettingsResponse> emailSettingsForCompany(Company company) {
         return emailProviderSettingRepository.findByCompanyOrderByActiveDescProviderNameAsc(company).stream().map(this::toResponse).toList();
     }
 
     @Transactional
     public ProviderSettingsResponse saveEmailSettings(String email, ProviderSettingsRequest request) {
-        Company company = accessControlService.getCurrentCompany(email);
+        return saveEmailSettingsForCompany(accessControlService.getCurrentCompany(email), request, email, false);
+    }
+
+    @Transactional
+    public ProviderSettingsResponse saveEmailSettingsForCompany(Long companyId, ProviderSettingsRequest request, String actorName) {
+        return saveEmailSettingsForCompany(resolveCompany(companyId), request, actorName, true);
+    }
+
+    private ProviderSettingsResponse saveEmailSettingsForCompany(Company company, ProviderSettingsRequest request, String actorName, boolean actorScopedAudit) {
         EmailProviderSetting setting = request.getId() == null
                 ? EmailProviderSetting.builder().company(company).build()
                 : emailProviderSettingRepository.findByIdAndCompany(request.getId(), company)
                         .orElseThrow(() -> new BadRequestException("Email provider settings not found"));
+        Map<String, Object> oldData = request.getId() == null ? null : snapshot(setting);
         boolean active = request.getActive() == null || Boolean.TRUE.equals(request.getActive());
         if (active) {
             emailProviderSettingRepository.findByCompanyAndActiveTrue(company).forEach(existing -> {
@@ -60,14 +96,33 @@ public class NotificationSettingsService {
         setting.setAwsAccessKey("AWS_SES".equals(providerName) ? keepExistingSecret(request.getAwsAccessKey(), setting.getAwsAccessKey()) : null);
         setting.setAwsSecretKey("AWS_SES".equals(providerName) ? keepExistingEncryptedSecret(request.getAwsSecretKey(), setting.getAwsSecretKey()) : null);
         setting.setAwsRegion("AWS_SES".equals(providerName) ? request.getAwsRegion() : null);
+        setting.setSendgridApiKey("SENDGRID".equals(providerName) ? keepExistingEncryptedSecret(request.getSendgridApiKey(), setting.getSendgridApiKey()) : null);
         setting.setActive(active);
         EmailProviderSetting saved = emailProviderSettingRepository.save(setting);
+        if (oldData == null) {
+            logCreate(actorName, actorScopedAudit, company, "Email Provider", "EmailProviderSetting", saved.getId(), snapshot(saved));
+        } else {
+            logUpdate(actorName, actorScopedAudit, company, "Email Provider", "EmailProviderSetting", saved.getId(), oldData, snapshot(saved));
+        }
+        if (saved.isActive()) {
+            logEvent(actorName, actorScopedAudit, company, "Email Provider", "EmailProviderSetting", saved.getId(), "EMAIL_PROVIDER_ACTIVATED", snapshot(saved));
+        } else {
+            logEvent(actorName, actorScopedAudit, company, "Email Provider", "EmailProviderSetting", saved.getId(), "EMAIL_PROVIDER_DEACTIVATED", snapshot(saved));
+        }
         return toResponse(saved);
     }
 
     @Transactional(readOnly = true)
     public ProviderSettingsResponse sendTestEmail(String email, EmailProviderTestRequest request) {
-        Company company = accessControlService.getCurrentCompany(email);
+        return sendTestEmailForCompany(accessControlService.getCurrentCompany(email), request, email, false);
+    }
+
+    @Transactional(readOnly = true)
+    public ProviderSettingsResponse sendTestEmailForCompany(Long companyId, EmailProviderTestRequest request, String actorName) {
+        return sendTestEmailForCompany(resolveCompany(companyId), request, actorName, true);
+    }
+
+    private ProviderSettingsResponse sendTestEmailForCompany(Company company, EmailProviderTestRequest request, String actorName, boolean actorScopedAudit) {
         EmailProviderSetting activeProvider = emailProviderSettingRepository.findFirstByCompanyAndActiveTrueOrderByIdDesc(company)
                 .orElseThrow(() -> new BadRequestException("No active email provider configured"));
         String recipient = request == null || request.getRecipientEmail() == null || request.getRecipientEmail().isBlank()
@@ -84,27 +139,49 @@ public class NotificationSettingsService {
                 List.of(),
                 List.of(),
                 List.of(),
-                email
+                actorName
         );
         if (result.status() != NotificationStatus.SENT) {
             throw new BadRequestException("Test email failed: " + result.providerResponse());
         }
+        logEvent(actorName, actorScopedAudit, company, "Email Provider", "EmailProviderSetting", activeProvider.getId(), "EMAIL_TEST_SENT", Map.of(
+                "provider_name", activeProvider.getProviderName(),
+                "recipient_email", recipient,
+                "status", result.status().name()
+        ));
         return toResponse(activeProvider);
     }
 
     @Transactional(readOnly = true)
     public List<ProviderSettingsResponse> smsSettings(String email) {
-        Company company = accessControlService.getCurrentCompany(email);
+        return smsSettingsForCompany(accessControlService.getCurrentCompany(email));
+    }
+
+    @Transactional(readOnly = true)
+    public List<ProviderSettingsResponse> smsSettingsForCompany(Long companyId) {
+        return smsSettingsForCompany(resolveCompany(companyId));
+    }
+
+    private List<ProviderSettingsResponse> smsSettingsForCompany(Company company) {
         return smsProviderSettingRepository.findByCompanyOrderByActiveDescProviderNameAsc(company).stream().map(this::toResponse).toList();
     }
 
     @Transactional
     public ProviderSettingsResponse saveSmsSettings(String email, ProviderSettingsRequest request) {
-        Company company = accessControlService.getCurrentCompany(email);
+        return saveSmsSettingsForCompany(accessControlService.getCurrentCompany(email), request, email, false);
+    }
+
+    @Transactional
+    public ProviderSettingsResponse saveSmsSettingsForCompany(Long companyId, ProviderSettingsRequest request, String actorName) {
+        return saveSmsSettingsForCompany(resolveCompany(companyId), request, actorName, true);
+    }
+
+    private ProviderSettingsResponse saveSmsSettingsForCompany(Company company, ProviderSettingsRequest request, String actorName, boolean actorScopedAudit) {
         SmsProviderSetting setting = request.getId() == null
                 ? SmsProviderSetting.builder().company(company).build()
                 : smsProviderSettingRepository.findByIdAndCompany(request.getId(), company)
                         .orElseThrow(() -> new BadRequestException("SMS provider settings not found"));
+        Map<String, Object> oldData = request.getId() == null ? null : snapshot(setting);
         boolean active = request.getActive() == null || Boolean.TRUE.equals(request.getActive());
         if (active) {
             smsProviderSettingRepository.findByCompanyAndActiveTrue(company).forEach(existing -> {
@@ -114,15 +191,161 @@ public class NotificationSettingsService {
                 }
             });
         }
-        setting.setProviderName(blankDefault(request.getProviderName(), "HTTP_SMS"));
-        setting.setApiUrl(blankDefault(request.getApiUrl(), ""));
-        setting.setUsername(request.getUsername());
-        setting.setPassword(keepExistingEncryptedSecret(request.getPassword(), setting.getPassword()));
+        SmsProviderType providerType = normalizeSmsProviderType(request.getProviderType());
+        validateSmsSettings(providerType, request, setting);
+        setting.setProviderName(blankDefault(request.getProviderName(), providerType.name()));
+        setting.setProviderType(providerType);
+        setting.setApiUrl(blankDefault(request.getApiUrl(), "https://api.msg91.com/api/v2/sendsms"));
+        setting.setAuthKey(keepExistingEncryptedSecret(request.getAuthKey(), setting.getAuthKey()));
         setting.setSenderId(request.getSenderId());
-        setting.setChannelName(request.getChannelName());
+        setting.setTemplateId(request.getTemplateId());
         setting.setActive(active);
         SmsProviderSetting saved = smsProviderSettingRepository.save(setting);
+        if (oldData == null) {
+            logCreate(actorName, actorScopedAudit, company, "SMS Provider", "SmsProviderSetting", saved.getId(), snapshot(saved));
+        } else {
+            logUpdate(actorName, actorScopedAudit, company, "SMS Provider", "SmsProviderSetting", saved.getId(), oldData, snapshot(saved));
+        }
+        if (saved.isActive()) {
+            logEvent(actorName, actorScopedAudit, company, "SMS Provider", "SmsProviderSetting", saved.getId(), "SMS_PROVIDER_ACTIVATED", snapshot(saved));
+        } else {
+            logEvent(actorName, actorScopedAudit, company, "SMS Provider", "SmsProviderSetting", saved.getId(), "SMS_PROVIDER_DEACTIVATED", snapshot(saved));
+        }
         return toResponse(saved);
+    }
+
+    @Transactional
+    public ProviderSettingsResponse sendTestSms(String email, SmsProviderTestRequest request) {
+        return sendTestSmsForCompany(accessControlService.getCurrentCompany(email), request, email, false);
+    }
+
+    @Transactional
+    public ProviderSettingsResponse sendTestSmsForCompany(Long companyId, SmsProviderTestRequest request, String actorName) {
+        return sendTestSmsForCompany(resolveCompany(companyId), request, actorName, true);
+    }
+
+    private ProviderSettingsResponse sendTestSmsForCompany(Company company, SmsProviderTestRequest request, String actorName, boolean actorScopedAudit) {
+        SmsProviderSetting activeProvider = smsProviderSettingRepository.findFirstByCompanyAndActiveTrueOrderByIdDesc(company)
+                .orElseThrow(() -> new BadRequestException("No active SMS provider configured"));
+        String mobileNumber = request == null || request.getMobileNumber() == null || request.getMobileNumber().isBlank()
+                ? company.getPhone()
+                : request.getMobileNumber().trim();
+        if (mobileNumber == null || mobileNumber.isBlank()) {
+            throw new BadRequestException("Test mobile number is required");
+        }
+        SmsSendResult result = commonSmsService.testConnection(company, mobileNumber, "This is a test SMS from your active SMS provider.");
+        if (result.status() != NotificationStatus.SENT) {
+            throw new BadRequestException("Test SMS failed: " + result.providerResponse());
+        }
+        logEvent(actorName, actorScopedAudit, company, "SMS Provider", "SmsProviderSetting", activeProvider.getId(), "SMS_TEST_SENT", Map.of(
+                "provider_name", activeProvider.getProviderName(),
+                "provider_type", activeProvider.getProviderType().name(),
+                "mobile_number", result.mobileNumber(),
+                "status", result.status().name()
+        ));
+        return toResponse(activeProvider);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ProviderSettingsResponse> whatsAppSettings(String email) {
+        return whatsAppSettingsForCompany(accessControlService.getCurrentCompany(email));
+    }
+
+    @Transactional(readOnly = true)
+    public List<ProviderSettingsResponse> whatsAppSettingsForCompany(Long companyId) {
+        return whatsAppSettingsForCompany(resolveCompany(companyId));
+    }
+
+    private List<ProviderSettingsResponse> whatsAppSettingsForCompany(Company company) {
+        return whatsAppProviderSettingRepository.findByCompanyOrderByActiveDescProviderNameAsc(company).stream().map(this::toResponse).toList();
+    }
+
+    @Transactional
+    public ProviderSettingsResponse saveWhatsAppSettings(String email, ProviderSettingsRequest request) {
+        return saveWhatsAppSettingsForCompany(accessControlService.getCurrentCompany(email), request, email, false);
+    }
+
+    @Transactional
+    public ProviderSettingsResponse saveWhatsAppSettingsForCompany(Long companyId, ProviderSettingsRequest request, String actorName) {
+        return saveWhatsAppSettingsForCompany(resolveCompany(companyId), request, actorName, true);
+    }
+
+    private ProviderSettingsResponse saveWhatsAppSettingsForCompany(Company company, ProviderSettingsRequest request, String actorName, boolean actorScopedAudit) {
+        WhatsAppProviderSetting setting = request.getId() == null
+                ? WhatsAppProviderSetting.builder().company(company).build()
+                : whatsAppProviderSettingRepository.findByIdAndCompany(request.getId(), company)
+                .orElseThrow(() -> new BadRequestException("WhatsApp provider settings not found"));
+        Map<String, Object> oldData = request.getId() == null ? null : snapshot(setting);
+        boolean active = request.getActive() == null || Boolean.TRUE.equals(request.getActive());
+        if (active) {
+            whatsAppProviderSettingRepository.findByCompanyAndActiveTrue(company).forEach(existing -> {
+                if (setting.getId() == null || !existing.getId().equals(setting.getId())) {
+                    existing.setActive(false);
+                    whatsAppProviderSettingRepository.save(existing);
+                }
+            });
+        }
+        WhatsAppProviderType providerType = normalizeWhatsAppProviderType(request.getProviderType());
+        validateWhatsAppSettings(providerType, request, setting);
+        setting.setProviderName(blankDefault(request.getProviderName(), providerType.name()));
+        setting.setProviderType(providerType);
+        setting.setApiUrl(blankDefault(request.getApiUrl(), "https://control.msg91.com/api/v5/whatsapp/whatsapp-outbound-message"));
+        setting.setAuthKey(keepExistingEncryptedSecret(request.getAuthKey(), setting.getAuthKey()));
+        setting.setWhatsappNumber(blankDefault(request.getWhatsappNumber(), ""));
+        setting.setSenderName(blankDefault(request.getSenderName(), ""));
+        setting.setActive(active);
+        WhatsAppProviderSetting saved = whatsAppProviderSettingRepository.save(setting);
+        if (oldData == null) {
+            logCreate(actorName, actorScopedAudit, company, "WhatsApp Provider", "WhatsAppProviderSetting", saved.getId(), snapshot(saved));
+        } else {
+            logUpdate(actorName, actorScopedAudit, company, "WhatsApp Provider", "WhatsAppProviderSetting", saved.getId(), oldData, snapshot(saved));
+        }
+        if (saved.isActive()) {
+            logEvent(actorName, actorScopedAudit, company, "WhatsApp Provider", "WhatsAppProviderSetting", saved.getId(), "WHATSAPP_PROVIDER_ACTIVATED", snapshot(saved));
+        } else {
+            logEvent(actorName, actorScopedAudit, company, "WhatsApp Provider", "WhatsAppProviderSetting", saved.getId(), "WHATSAPP_PROVIDER_DEACTIVATED", snapshot(saved));
+        }
+        return toResponse(saved);
+    }
+
+    @Transactional
+    public ProviderSettingsResponse sendTestWhatsApp(String email, WhatsAppProviderTestRequest request) {
+        return sendTestWhatsAppForCompany(accessControlService.getCurrentCompany(email), request, email, false);
+    }
+
+    @Transactional
+    public ProviderSettingsResponse sendTestWhatsAppForCompany(Long companyId, WhatsAppProviderTestRequest request, String actorName) {
+        return sendTestWhatsAppForCompany(resolveCompany(companyId), request, actorName, true);
+    }
+
+    private ProviderSettingsResponse sendTestWhatsAppForCompany(Company company, WhatsAppProviderTestRequest request, String actorName, boolean actorScopedAudit) {
+        WhatsAppProviderSetting activeProvider = whatsAppProviderSettingRepository.findFirstByCompanyAndActiveTrueOrderByIdDesc(company)
+                .orElseThrow(() -> new BadRequestException("No active WhatsApp provider configured"));
+        String mobileNumber = request == null || request.getMobileNumber() == null || request.getMobileNumber().isBlank()
+                ? company.getPhone()
+                : request.getMobileNumber().trim();
+        if (mobileNumber == null || mobileNumber.isBlank()) {
+            throw new BadRequestException("Test mobile number is required");
+        }
+        String message = request == null || request.getMessage() == null || request.getMessage().isBlank()
+                ? "This is a test WhatsApp message from your active provider."
+                : request.getMessage().trim();
+        WhatsAppSendResult result = commonWhatsAppService.testConnection(company, mobileNumber, message);
+        if (result.status() != NotificationStatus.SENT) {
+            throw new BadRequestException("Test WhatsApp message failed: " + result.providerResponse());
+        }
+        logEvent(actorName, actorScopedAudit, company, "WhatsApp Provider", "WhatsAppProviderSetting", activeProvider.getId(), "WHATSAPP_TEST_SENT", Map.of(
+                "provider_name", activeProvider.getProviderName(),
+                "provider_type", activeProvider.getProviderType().name(),
+                "mobile_number", result.mobileNumber(),
+                "status", result.status().name()
+        ));
+        return toResponse(activeProvider);
+    }
+
+    private Company resolveCompany(Long companyId) {
+        return companyRepository.findById(companyId)
+                .orElseThrow(() -> new ResourceNotFoundException("Company not found"));
     }
 
     private ProviderSettingsResponse toResponse(EmailProviderSetting setting) {
@@ -136,6 +359,7 @@ public class NotificationSettingsService {
                 .smtpTlsEnabled(!Boolean.FALSE.equals(setting.getSmtpTlsEnabled()))
                 .awsAccessKey(mask(setting.getAwsAccessKey()))
                 .awsRegion(setting.getAwsRegion())
+                .sendgridApiKey(maskSecret(setting.getSendgridApiKey()))
                 .active(setting.isActive())
                 .build();
     }
@@ -145,9 +369,23 @@ public class NotificationSettingsService {
                 .id(setting.getId())
                 .providerName(setting.getProviderName())
                 .apiUrl(setting.getApiUrl())
-                .username(setting.getUsername())
+                .providerType(setting.getProviderType() != null ? setting.getProviderType().name() : null)
+                .authKey(maskSecret(setting.getAuthKey()))
                 .senderId(setting.getSenderId())
-                .channelName(setting.getChannelName())
+                .templateId(setting.getTemplateId())
+                .active(setting.isActive())
+                .build();
+    }
+
+    private ProviderSettingsResponse toResponse(WhatsAppProviderSetting setting) {
+        return ProviderSettingsResponse.builder()
+                .id(setting.getId())
+                .providerName(setting.getProviderName())
+                .providerType(setting.getProviderType() != null ? setting.getProviderType().name() : null)
+                .apiUrl(setting.getApiUrl())
+                .authKey(maskSecret(setting.getAuthKey()))
+                .whatsappNumber(setting.getWhatsappNumber())
+                .senderName(setting.getSenderName())
                 .active(setting.isActive())
                 .build();
     }
@@ -170,6 +408,22 @@ public class NotificationSettingsService {
         return secretEncryptionService.encrypt(incoming.trim());
     }
 
+    private SmsProviderType normalizeSmsProviderType(String value) {
+        String provider = blankDefault(value, "MSG91").toUpperCase().replace('-', '_').replace(' ', '_');
+        if ("MSG91".equals(provider)) {
+            return SmsProviderType.MSG91;
+        }
+        throw new BadRequestException("Unsupported SMS provider type. Use MSG91");
+    }
+
+    private WhatsAppProviderType normalizeWhatsAppProviderType(String value) {
+        String provider = blankDefault(value, "MSG91").toUpperCase().replace('-', '_').replace(' ', '_');
+        if ("MSG91".equals(provider)) {
+            return WhatsAppProviderType.MSG91;
+        }
+        throw new BadRequestException("Unsupported WhatsApp provider type. Use MSG91");
+    }
+
     private String normalizeEmailProvider(String value) {
         String provider = blankDefault(value, "GMAIL_SMTP").toUpperCase().replace('-', '_').replace(' ', '_');
         if ("GMAIL".equals(provider) || "GMAILSMTP".equals(provider)) {
@@ -178,8 +432,11 @@ public class NotificationSettingsService {
         if ("AWSSES".equals(provider) || "SES".equals(provider) || "AWS_SES".equals(provider)) {
             return "AWS_SES";
         }
+        if ("SEND_GRID".equals(provider) || "SENDGRID".equals(provider)) {
+            return "SENDGRID";
+        }
         if (!"GMAIL_SMTP".equals(provider)) {
-            throw new BadRequestException("Unsupported email provider. Use GMAIL_SMTP or AWS_SES");
+            throw new BadRequestException("Unsupported email provider. Use GMAIL_SMTP, AWS_SES, or SENDGRID");
         }
         return provider;
     }
@@ -197,6 +454,12 @@ public class NotificationSettingsService {
             }
             return;
         }
+        if ("SENDGRID".equals(providerName)) {
+            if ((request.getSendgridApiKey() == null || request.getSendgridApiKey().isBlank()) && (existing == null || existing.getSendgridApiKey() == null || existing.getSendgridApiKey().isBlank())) {
+                throw new BadRequestException("SendGrid API key is required");
+            }
+            return;
+        }
         if (blankDefault(request.getAwsAccessKey(), existing != null ? existing.getAwsAccessKey() : "").isBlank()) {
             throw new BadRequestException("AWS access key is required");
         }
@@ -208,10 +471,119 @@ public class NotificationSettingsService {
         }
     }
 
+    private void validateSmsSettings(SmsProviderType providerType, ProviderSettingsRequest request, SmsProviderSetting existing) {
+        if (blankDefault(request.getProviderName(), "").isBlank()) {
+            throw new BadRequestException("Provider name is required");
+        }
+        if (providerType != SmsProviderType.MSG91) {
+            throw new BadRequestException("Unsupported SMS provider type");
+        }
+        if ((request.getAuthKey() == null || request.getAuthKey().isBlank()) && (existing == null || existing.getAuthKey() == null || existing.getAuthKey().isBlank())) {
+            throw new BadRequestException("Auth key is required");
+        }
+        if (blankDefault(request.getSenderId(), "").isBlank()) {
+            throw new BadRequestException("Sender ID is required");
+        }
+        if (blankDefault(request.getTemplateId(), "").isBlank()) {
+            throw new BadRequestException("Template ID is required");
+        }
+    }
+
+    private void validateWhatsAppSettings(WhatsAppProviderType providerType, ProviderSettingsRequest request, WhatsAppProviderSetting existing) {
+        if (blankDefault(request.getProviderName(), "").isBlank()) {
+            throw new BadRequestException("Provider name is required");
+        }
+        if (providerType != WhatsAppProviderType.MSG91) {
+            throw new BadRequestException("Unsupported WhatsApp provider type");
+        }
+        if ((request.getAuthKey() == null || request.getAuthKey().isBlank()) && (existing == null || existing.getAuthKey() == null || existing.getAuthKey().isBlank())) {
+            throw new BadRequestException("Auth key is required");
+        }
+        if (blankDefault(request.getWhatsappNumber(), "").isBlank()) {
+            throw new BadRequestException("WhatsApp number is required");
+        }
+    }
+
     private String mask(String value) {
         if (value == null || value.length() < 4) {
             return value;
         }
         return "****" + value.substring(value.length() - 4);
+    }
+
+    private String maskSecret(String encryptedValue) {
+        if (encryptedValue == null || encryptedValue.isBlank()) {
+            return encryptedValue;
+        }
+        try {
+            return mask(secretEncryptionService.decrypt(encryptedValue));
+        } catch (Exception ignored) {
+            return "****";
+        }
+    }
+
+    private Map<String, Object> snapshot(SmsProviderSetting setting) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("provider_name", setting.getProviderName());
+        data.put("provider_type", setting.getProviderType() != null ? setting.getProviderType().name() : null);
+        data.put("api_url", setting.getApiUrl());
+        data.put("auth_key", maskSecret(setting.getAuthKey()));
+        data.put("sender_id", setting.getSenderId());
+        data.put("template_id", setting.getTemplateId());
+        data.put("active", setting.isActive());
+        return data;
+    }
+
+    private Map<String, Object> snapshot(EmailProviderSetting setting) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("provider_name", setting.getProviderName());
+        data.put("sender_email", setting.getSenderEmail());
+        data.put("smtp_host", setting.getSmtpHost());
+        data.put("smtp_port", setting.getSmtpPort());
+        data.put("smtp_username", setting.getSmtpUsername());
+        data.put("smtp_password", maskSecret(setting.getSmtpPassword()));
+        data.put("smtp_tls_enabled", setting.getSmtpTlsEnabled());
+        data.put("aws_access_key", mask(setting.getAwsAccessKey()));
+        data.put("aws_secret_key", maskSecret(setting.getAwsSecretKey()));
+        data.put("aws_region", setting.getAwsRegion());
+        data.put("sendgrid_api_key", maskSecret(setting.getSendgridApiKey()));
+        data.put("active", setting.isActive());
+        return data;
+    }
+
+    private Map<String, Object> snapshot(WhatsAppProviderSetting setting) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("provider_name", setting.getProviderName());
+        data.put("provider_type", setting.getProviderType() != null ? setting.getProviderType().name() : null);
+        data.put("api_url", setting.getApiUrl());
+        data.put("auth_key", maskSecret(setting.getAuthKey()));
+        data.put("whatsapp_number", setting.getWhatsappNumber());
+        data.put("sender_name", setting.getSenderName());
+        data.put("active", setting.isActive());
+        return data;
+    }
+
+    private void logCreate(String actorName, boolean actorScopedAudit, Company company, String moduleName, String entityName, Long entityId, Map<String, Object> newData) {
+        if (actorScopedAudit) {
+            auditLogService.logCreateAsActor(actorName, company, moduleName, entityName, entityId, newData);
+            return;
+        }
+        auditLogService.logCreate(actorName, company, moduleName, entityName, entityId, newData);
+    }
+
+    private void logUpdate(String actorName, boolean actorScopedAudit, Company company, String moduleName, String entityName, Long entityId, Map<String, Object> oldData, Map<String, Object> newData) {
+        if (actorScopedAudit) {
+            auditLogService.logUpdateAsActor(actorName, company, moduleName, entityName, entityId, oldData, newData);
+            return;
+        }
+        auditLogService.logUpdate(actorName, company, moduleName, entityName, entityId, oldData, newData);
+    }
+
+    private void logEvent(String actorName, boolean actorScopedAudit, Company company, String moduleName, String entityName, Long entityId, String actionType, Map<String, Object> data) {
+        if (actorScopedAudit) {
+            auditLogService.logEventAsActor(actorName, company, moduleName, entityName, entityId, actionType, data);
+            return;
+        }
+        auditLogService.logEvent(actorName, company, moduleName, entityName, entityId, actionType, data);
     }
 }

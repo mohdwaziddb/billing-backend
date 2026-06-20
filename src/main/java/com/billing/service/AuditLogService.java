@@ -52,6 +52,11 @@ public class AuditLogService {
     }
 
     @Transactional
+    public void logCreateAsActor(String actorName, Company company, String moduleName, String entityName, Long entityId, Map<String, Object> newData) {
+        saveWithActor(null, actorName, company, moduleName, entityName, entityId, CREATE, null, newData, newData);
+    }
+
+    @Transactional
     public void logUpdate(String email, Company company, String moduleName, String entityName, Long entityId, Map<String, Object> oldData, Map<String, Object> newData) {
         Map<String, Object> changedFields = changedFields(oldData, newData);
         if (changedFields.isEmpty()) {
@@ -62,6 +67,16 @@ public class AuditLogService {
     }
 
     @Transactional
+    public void logUpdateAsActor(String actorName, Company company, String moduleName, String entityName, Long entityId, Map<String, Object> oldData, Map<String, Object> newData) {
+        Map<String, Object> changedFields = changedFields(oldData, newData);
+        if (changedFields.isEmpty()) {
+            return;
+        }
+        String action = isStatusOnly(changedFields) ? STATUS_CHANGE : UPDATE;
+        saveWithActor(null, actorName, company, moduleName, entityName, entityId, action, oldData, newData, changedFields);
+    }
+
+    @Transactional
     public void logDelete(String email, Company company, String moduleName, String entityName, Long entityId, Map<String, Object> oldData) {
         save(email, company, moduleName, entityName, entityId, DELETE, oldData, null, oldData);
     }
@@ -69,6 +84,11 @@ public class AuditLogService {
     @Transactional
     public void logEvent(String email, Company company, String moduleName, String entityName, Long entityId, String actionType, Map<String, Object> data) {
         save(email, company, moduleName, entityName, entityId, actionType, null, data, data);
+    }
+
+    @Transactional
+    public void logEventAsActor(String actorName, Company company, String moduleName, String entityName, Long entityId, String actionType, Map<String, Object> data) {
+        saveWithActor(null, actorName, company, moduleName, entityName, entityId, actionType, null, data, data);
     }
 
     @Transactional
@@ -172,6 +192,19 @@ public class AuditLogService {
                       Map<String, Object> newData,
                       Map<String, Object> changedFields) {
         User user = accessControlService.getCurrentUser(email);
+        saveWithActor(user.getId(), user.getFullName(), company, moduleName, entityName, entityId, actionType, oldData, newData, changedFields);
+    }
+
+    private void saveWithActor(Long userId,
+                               String userName,
+                               Company company,
+                               String moduleName,
+                               String entityName,
+                               Long entityId,
+                               String actionType,
+                               Map<String, Object> oldData,
+                               Map<String, Object> newData,
+                               Map<String, Object> changedFields) {
         HttpServletRequest request = currentRequest();
         auditLogRepository.save(AuditLog.builder()
                 .company(company)
@@ -182,8 +215,8 @@ public class AuditLogService {
                 .oldData(toJson(oldData))
                 .newData(toJson(newData))
                 .changedFields(toJson(changedFields))
-                .userId(user.getId())
-                .userName(user.getFullName())
+                .userId(userId)
+                .userName(userName)
                 .ipAddress(resolveIpAddress(request))
                 .userAgent(request != null ? request.getHeader("User-Agent") : null)
                 .createdAt(LocalDateTime.now())

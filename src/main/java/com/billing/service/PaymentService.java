@@ -223,6 +223,7 @@ public class PaymentService {
                 .customerId(payment.getCustomer().getId())
                 .customerName(payment.getCustomer().getName())
                 .customerMobile(payment.getCustomer().getMobile())
+                .customerEmail(payment.getCustomer().getEmail())
                 .invoiceId(payment.getInvoice() != null ? payment.getInvoice().getId() : null)
                 .invoiceNo(payment.getInvoice() != null ? payment.getInvoice().getInvoiceNo() : null)
                 .amount(scale(payment.getAmount()))

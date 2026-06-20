@@ -17,10 +17,13 @@ public class ProviderSettingsRequest {
     private String awsAccessKey;
     private String awsSecretKey;
     private String awsRegion;
+    private String sendgridApiKey;
     private String apiUrl;
-    private String username;
-    private String password;
+    private String providerType;
+    private String authKey;
     private String senderId;
-    private String channelName;
+    private String templateId;
+    private String whatsappNumber;
+    private String senderName;
     private Boolean active;
 }

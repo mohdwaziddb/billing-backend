@@ -11,6 +11,8 @@ import java.util.Map;
 public class NotificationSendRequest {
     private NotificationChannelType channel;
     private Long templateId;
+    private String subject;
+    private String message;
     private List<String> toEmails;
     private List<String> ccEmails;
     private List<String> bccEmails;
