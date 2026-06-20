@@ -3,6 +3,7 @@ package com.billing.dto.customer;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -14,6 +15,7 @@ public class CustomerRequest {
     private String name;
 
     @NotBlank
+    @Pattern(regexp = "^\\d{10}$", message = "Enter a 10-digit mobile number")
     private String mobile;
 
     @Email

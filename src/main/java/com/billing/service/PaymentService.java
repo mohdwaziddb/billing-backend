@@ -81,7 +81,7 @@ public class PaymentService {
 
     @Transactional(readOnly = true)
     public PageResponse<PaymentResponse> page(String email, int page, int size) {
-        return page(email, null, null, null, null, null, null, null, null, null, page, size);
+        return page(email, null, null, null, null, null, null, null, null, null, "ACTIVE", page, size);
     }
 
     @Transactional(readOnly = true)
@@ -95,6 +95,7 @@ public class PaymentService {
                                               String mode,
                                               Boolean invoiceLinked,
                                               RoleName createdByRole,
+                                              String recordStatus,
                                               int page,
                                               int size) {
         User user = accessControlService.getCurrentUser(email);
@@ -112,6 +113,7 @@ public class PaymentService {
         }
         return PageResponse.from(paymentRepository.searchPayments(
                 company,
+                resolveDeletedFilter(recordStatus),
                 blankToNull(search),
                 startDate,
                 endDate,
@@ -135,6 +137,9 @@ public class PaymentService {
     public PaymentResponse update(String email, Long paymentId, PaymentRequest request) {
         Company company = accessControlService.getCurrentCompany(email);
         Payment payment = getPaymentOrThrow(company, paymentId);
+        if (payment.isDeleted()) {
+            throw new BadRequestException("Restore payment before editing it");
+        }
         Map<String, Object> oldData = snapshot(payment);
         Invoice previousInvoice = payment.getInvoice();
         BigDecimal previousAmount = scale(payment.getAmount());
@@ -178,16 +183,35 @@ public class PaymentService {
     public void delete(String email, Long paymentId) {
         Company company = accessControlService.getCurrentCompany(email);
         Payment payment = getPaymentOrThrow(company, paymentId);
+        if (payment.isDeleted()) {
+            return;
+        }
         Map<String, Object> oldData = snapshot(payment);
         Invoice invoice = payment.getInvoice();
         BigDecimal amount = scale(payment.getAmount());
         BigDecimal oldOutstanding = invoice != null ? scale(invoice.getBalanceAmount()) : null;
         revertPayment(payment);
-        paymentRepository.delete(payment);
-        auditLogService.logDelete(email, company, "Payment", "Payment", paymentId, oldData);
+        payment.setDeleted(true);
+        paymentRepository.save(payment);
+        auditLogService.logCustomUpdate(email, company, "Payment", "Payment", paymentId, "PAYMENT_DELETED", oldData, snapshot(payment));
         if (invoice != null) {
             invoiceService.logPaymentDeleted(email, company, invoice, amount, oldOutstanding, invoice.getBalanceAmount(), oldData.get("mode") != null ? String.valueOf(oldData.get("mode")) : null);
         }
+    }
+
+    @Transactional
+    public PaymentResponse restore(String email, Long paymentId) {
+        Company company = accessControlService.getCurrentCompany(email);
+        Payment payment = getPaymentOrThrow(company, paymentId);
+        if (!payment.isDeleted()) {
+            return toResponse(payment);
+        }
+        Map<String, Object> oldData = snapshot(payment);
+        reapplyPayment(payment);
+        payment.setDeleted(false);
+        Payment saved = paymentRepository.save(payment);
+        auditLogService.logCustomUpdate(email, company, "Payment", "Payment", paymentId, "PAYMENT_RESTORED", oldData, snapshot(saved));
+        return toResponse(saved);
     }
 
     private Payment getPaymentOrThrow(Company company, Long paymentId) {
@@ -203,6 +227,9 @@ public class PaymentService {
         if (!invoice.getCustomer().getId().equals(customer.getId())) {
             throw new BadRequestException("Payment customer and invoice customer must match");
         }
+        if (invoice.isDeleted()) {
+            throw new BadRequestException("Cannot add payment to deleted invoice");
+        }
         return invoice;
     }
 
@@ -214,6 +241,20 @@ public class PaymentService {
         customerService.increaseBalance(payment.getCustomer(), amount);
         if (payment.getInvoice() != null) {
             invoiceService.reversePayment(payment.getInvoice(), amount);
+        }
+    }
+
+    private void reapplyPayment(Payment payment) {
+        BigDecimal amount = scale(payment.getAmount());
+        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+            return;
+        }
+        if (!payment.getCustomer().isActive()) {
+            throw new BadRequestException("Cannot restore payment for inactive customer");
+        }
+        customerService.decreaseBalance(payment.getCustomer(), amount);
+        if (payment.getInvoice() != null) {
+            invoiceService.applyPayment(payment.getInvoice(), amount);
         }
     }
 
@@ -230,6 +271,7 @@ public class PaymentService {
                 .paymentDate(payment.getPaymentDate())
                 .mode(payment.getMode())
                 .remarks(payment.getRemarks())
+                .deleted(payment.isDeleted())
                 .createdAt(payment.getCreatedAt())
                 .createdBy(auditNameResolver.displayName(payment.getCreatedBy()))
                 .build();
@@ -245,7 +287,22 @@ public class PaymentService {
         data.put("paymentDate", payment.getPaymentDate());
         data.put("mode", payment.getMode());
         data.put("remarks", payment.getRemarks());
+        data.put("deleted", payment.isDeleted());
         return data;
+    }
+
+    private Boolean resolveDeletedFilter(String recordStatus) {
+        String value = blankToNull(recordStatus);
+        if (value == null || "ACTIVE".equalsIgnoreCase(value)) {
+            return Boolean.FALSE;
+        }
+        if ("DELETED".equalsIgnoreCase(value)) {
+            return Boolean.TRUE;
+        }
+        if ("ALL".equalsIgnoreCase(value)) {
+            return null;
+        }
+        throw new BadRequestException("Invalid record status filter");
     }
 
     private boolean isUnsupportedPaymentStatus(String status) {

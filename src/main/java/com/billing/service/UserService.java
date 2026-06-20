@@ -71,6 +71,15 @@ public class UserService {
         ).map(userMapper::toProfile));
     }
 
+    @Transactional(readOnly = true)
+    public List<UserProfileResponse> activeReferralUsers(String email) {
+        Company company = accessControlService.getCurrentCompany(email);
+        return userRepository.findByCompanyOrderByCreatedAtDesc(company).stream()
+                .filter(User::isActive)
+                .map(userMapper::toProfile)
+                .toList();
+    }
+
     @Transactional
     public UserProfileResponse createCompanyUser(String email, CompanyUserRequest request) {
         Company company = accessControlService.getCurrentCompany(email);

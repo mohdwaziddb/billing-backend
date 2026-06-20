@@ -43,6 +43,7 @@ public class DashboardService {
     private final CustomerRepository customerRepository;
     private final AccessControlService accessControlService;
     private final ExpenseRepository expenseRepository;
+    private final RevenueCalculationService revenueCalculationService;
 
     @Transactional(readOnly = true)
     public DashboardSummaryResponse summary(String email, LocalDate startDate, LocalDate endDate) {
@@ -151,7 +152,7 @@ public class DashboardService {
                 .totalProducts(soldProducts)
                 .totalRevenue(scale(totalCollection))
                 .totalExpense(scale(totalExpense))
-                .netRevenue(scale(totalSales.subtract(totalExpense)))
+                .netRevenue(revenueCalculationService.netRevenue(totalCollection, totalExpense))
                 .outstandingBalance(scale(outstanding))
                 .totalSalesTrendPercentage(calculateTrendPercentage(totalSales, previousSales))
                 .collectionTrendPercentage(calculateTrendPercentage(totalCollection, previousCollection))
@@ -197,7 +198,7 @@ public class DashboardService {
             case "collections" -> collectionRows(filteredPayments);
             case "outstanding" -> outstandingRows(allInvoices, allPayments, endDate);
             case "totalExpense" -> expenseRows(filteredExpenses);
-            case "netRevenue" -> netRevenueRows(filteredInvoices, filteredExpenses);
+            case "netRevenue" -> netRevenueRows(filteredPayments, filteredExpenses);
             case "newCustomers" -> customerRows(filteredInvoices, customersById, firstPurchaseDates, startDate, endDate, true);
             case "existingCustomers" -> customerRows(filteredInvoices, customersById, firstPurchaseDates, startDate, endDate, false);
             case "invoices" -> invoiceRows(filteredInvoices);
@@ -347,26 +348,26 @@ public class DashboardService {
         }).toList();
     }
 
-    private List<Map<String, Object>> netRevenueRows(List<Invoice> invoices, List<Expense> expenses) {
-        Map<LocalDate, BigDecimal> revenueByDate = invoices.stream()
-                .filter(invoice -> invoice.getInvoiceDate() != null)
-                .collect(Collectors.groupingBy(Invoice::getInvoiceDate,
-                        Collectors.mapping(Invoice::getTotalAmount, Collectors.reducing(BigDecimal.ZERO, BigDecimal::add))));
+    private List<Map<String, Object>> netRevenueRows(List<Payment> payments, List<Expense> expenses) {
+        Map<LocalDate, BigDecimal> collectionByDate = payments.stream()
+                .filter(payment -> payment.getPaymentDate() != null)
+                .collect(Collectors.groupingBy(Payment::getPaymentDate,
+                        Collectors.mapping(Payment::getAmount, Collectors.reducing(BigDecimal.ZERO, BigDecimal::add))));
         Map<LocalDate, BigDecimal> expenseByDate = expenses.stream()
                 .filter(expense -> expense.getExpenseDate() != null)
                 .collect(Collectors.groupingBy(Expense::getExpenseDate,
                         Collectors.mapping(Expense::getAmount, Collectors.reducing(BigDecimal.ZERO, BigDecimal::add))));
 
-        return java.util.stream.Stream.concat(revenueByDate.keySet().stream(), expenseByDate.keySet().stream())
+        return java.util.stream.Stream.concat(collectionByDate.keySet().stream(), expenseByDate.keySet().stream())
                 .distinct()
                 .map(date -> {
-                    BigDecimal revenue = scale(revenueByDate.getOrDefault(date, BigDecimal.ZERO));
+                    BigDecimal collection = scale(collectionByDate.getOrDefault(date, BigDecimal.ZERO));
                     BigDecimal expense = scale(expenseByDate.getOrDefault(date, BigDecimal.ZERO));
                     Map<String, Object> row = new LinkedHashMap<>();
                     row.put("date", date);
-                    row.put("totalRevenue", revenue);
+                    row.put("totalRevenue", collection);
                     row.put("totalExpense", expense);
-                    row.put("netRevenue", scale(revenue.subtract(expense)));
+                    row.put("netRevenue", revenueCalculationService.netRevenue(collection, expense));
                     return row;
                 }).toList();
     }

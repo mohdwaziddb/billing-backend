@@ -21,6 +21,8 @@ public class InvoiceRequest {
     @NotNull
     private LocalDate invoiceDate;
 
+    private Long referByUserId;
+
     @DecimalMin(value = "0.00")
     private BigDecimal discountAmount;
 

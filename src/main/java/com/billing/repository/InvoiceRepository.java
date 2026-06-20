@@ -18,26 +18,32 @@ import java.util.List;
 import java.util.Optional;
 
 public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
-    @EntityGraph(attributePaths = {"customer", "items", "items.product"})
-    List<Invoice> findByCompanyOrderByInvoiceDateDescIdDesc(Company company);
-    @EntityGraph(attributePaths = {"customer", "items", "items.product"})
+    @EntityGraph(attributePaths = {"customer", "referByUser", "items", "items.product"})
+    @Query("select i from Invoice i where i.company = :company and i.deleted = false order by i.invoiceDate desc, i.id desc")
+    List<Invoice> findByCompanyOrderByInvoiceDateDescIdDesc(@Param("company") Company company);
+    @EntityGraph(attributePaths = {"customer", "referByUser", "items", "items.product"})
+    @Query("select i from Invoice i where i.deleted = false order by i.invoiceDate desc, i.id desc")
     List<Invoice> findAllByOrderByInvoiceDateDescIdDesc();
-    @EntityGraph(attributePaths = {"customer", "items", "items.product"})
-    Page<Invoice> findByCompany(Company company, Pageable pageable);
+    @EntityGraph(attributePaths = {"customer", "referByUser", "items", "items.product"})
+    @Query("select i from Invoice i where i.company = :company and i.deleted = false")
+    Page<Invoice> findByCompany(@Param("company") Company company, Pageable pageable);
     Optional<Invoice> findByIdAndCompany(Long id, Company company);
     Optional<Invoice> findTopByCompanyOrderByIdDesc(Company company);
-    List<Invoice> findByCompanyAndCustomerOrderByInvoiceDateDescIdDesc(Company company, Customer customer);
-    @EntityGraph(attributePaths = {"customer", "items", "items.product"})
-    Page<Invoice> findByCompanyAndCustomer(Company company, Customer customer, Pageable pageable);
+    @Query("select i from Invoice i where i.company = :company and i.customer = :customer and i.deleted = false order by i.invoiceDate desc, i.id desc")
+    List<Invoice> findByCompanyAndCustomerOrderByInvoiceDateDescIdDesc(@Param("company") Company company, @Param("customer") Customer customer);
+    @EntityGraph(attributePaths = {"customer", "referByUser", "items", "items.product"})
+    @Query("select i from Invoice i where i.company = :company and i.customer = :customer and i.deleted = false")
+    Page<Invoice> findByCompanyAndCustomer(@Param("company") Company company, @Param("customer") Customer customer, Pageable pageable);
     long countByCompanyAndInvoiceDate(Company company, LocalDate invoiceDate);
-    long countByCompany(Company company);
+    long countByCompanyAndDeletedFalse(Company company);
 
-    @Query("select coalesce(sum(i.totalAmount), 0) from Invoice i")
+    @Query("select coalesce(sum(i.totalAmount), 0) from Invoice i where i.deleted = false")
     BigDecimal sumTotalAmount();
 
     @Query("""
             select i.company.id, i.company.name, coalesce(sum(i.totalAmount), 0), count(i)
             from Invoice i
+            where i.deleted = false
             group by i.company.id, i.company.name
             order by coalesce(sum(i.totalAmount), 0) desc
             """)
@@ -52,6 +58,7 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
                     where (:company is null or i.company = :company)
                       and (:customer is null or i.customer = :customer)
                       and (:customerId is null or i.customer.id = :customerId)
+                      and (:deleted is null or i.deleted = :deleted)
                       and (:search is null
                         or lower(i.invoiceNo) like lower(concat('%', :search, '%'))
                         or lower(i.customer.name) like lower(concat('%', :search, '%'))
@@ -81,6 +88,7 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
                     where (:company is null or i.company = :company)
                       and (:customer is null or i.customer = :customer)
                       and (:customerId is null or i.customer.id = :customerId)
+                      and (:deleted is null or i.deleted = :deleted)
                       and (:search is null
                         or lower(i.invoiceNo) like lower(concat('%', :search, '%'))
                         or lower(i.customer.name) like lower(concat('%', :search, '%'))
@@ -106,6 +114,7 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
     Page<Invoice> searchInvoices(@Param("company") Company company,
                                  @Param("customer") Customer customer,
                                  @Param("customerId") Long customerId,
+                                 @Param("deleted") Boolean deleted,
                                  @Param("search") String search,
                                  @Param("paymentStatus") InvoiceStatus paymentStatus,
                                  @Param("startDate") LocalDate startDate,

@@ -37,10 +37,11 @@ public class PaymentController {
                                                                           @RequestParam(required = false) String mode,
                                                                           @RequestParam(required = false) Boolean invoiceLinked,
                                                                           @RequestParam(required = false) RoleName createdByRole,
+                                                                          @RequestParam(required = false, defaultValue = "ACTIVE") String recordStatus,
                                                                           @RequestParam(defaultValue = "0") int page,
                                                                           @RequestParam(defaultValue = "20") int size) {
         return ResponseEntity.ok(ApiResponse.success("Payments fetched successfully", paymentService.page(authentication.getName(),
-                search, paymentStatus, startDate, endDate, minAmount, maxAmount, mode, invoiceLinked, createdByRole, page, size)));
+                search, paymentStatus, startDate, endDate, minAmount, maxAmount, mode, invoiceLinked, createdByRole, recordStatus, page, size)));
     }
 
     @GetMapping("/{paymentId}")
@@ -69,5 +70,11 @@ public class PaymentController {
     public ResponseEntity<ApiResponse<Map<String, String>>> delete(Authentication authentication, @PathVariable Long paymentId) {
         paymentService.delete(authentication.getName(), paymentId);
         return ResponseEntity.ok(ApiResponse.success("Payment deleted successfully", Map.of("status", "ok")));
+    }
+
+    @PostMapping("/{paymentId}/restore")
+    @RequirePermission(menu = "PAYMENTS", action = "RESTORE")
+    public ResponseEntity<ApiResponse<PaymentResponse>> restore(Authentication authentication, @PathVariable Long paymentId) {
+        return ResponseEntity.ok(ApiResponse.success("Payment restored successfully", paymentService.restore(authentication.getName(), paymentId)));
     }
 }

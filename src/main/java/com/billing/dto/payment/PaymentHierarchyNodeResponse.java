@@ -14,7 +14,13 @@ public class PaymentHierarchyNodeResponse {
     private String label;
     private String subtitle;
     private BigDecimal amount;
+    private BigDecimal totalAmount;
+    private BigDecimal collectedAmount;
+    private BigDecimal outstandingAmount;
     private Long count;
+    private Long invoiceCount;
+    private Long customerCount;
+    private Long collectionCount;
     private boolean hasChildren;
     private String tone;
 }

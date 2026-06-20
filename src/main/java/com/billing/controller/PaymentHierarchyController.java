@@ -25,6 +25,7 @@ public class PaymentHierarchyController {
     @RequirePermission(menu = "PAYMENT_HIERARCHY", action = "VIEW")
     public ResponseEntity<ApiResponse<PaymentHierarchyResponse>> children(Authentication authentication,
                                                                           @RequestParam(required = false) String nodeType,
+                                                                          @RequestParam(required = false) String nodeId,
                                                                           @RequestParam(required = false) String mode,
                                                                           @RequestParam(required = false) Integer year,
                                                                           @RequestParam(required = false) Integer month,
@@ -35,7 +36,7 @@ public class PaymentHierarchyController {
                                                                           @RequestParam(required = false) Long customerId,
                                                                           @RequestParam(required = false) String collectedBy) {
         return ResponseEntity.ok(ApiResponse.success("Payment hierarchy fetched successfully",
-                paymentHierarchyService.children(authentication.getName(), nodeType, mode, year, month, day, startDate, endDate, financialYear, customerId, collectedBy)));
+                paymentHierarchyService.children(authentication.getName(), nodeType, nodeId, mode, year, month, day, startDate, endDate, financialYear, customerId, collectedBy)));
     }
 
     @GetMapping("/summary")

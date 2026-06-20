@@ -54,5 +54,9 @@ public class Payment extends BaseEntity {
     @Column(nullable = false, length = 80)
     private String mode;
 
+    @Builder.Default
+    @Column(name = "is_deleted", nullable = false)
+    private boolean deleted = false;
+
     private String remarks;
 }

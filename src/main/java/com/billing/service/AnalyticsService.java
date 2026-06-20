@@ -55,6 +55,7 @@ public class AnalyticsService {
     private final CustomerRepository customerRepository;
     private final PaymentRepository paymentRepository;
     private final ExpenseRepository expenseRepository;
+    private final RevenueCalculationService revenueCalculationService;
 
     @Transactional(readOnly = true)
     public AnalyticsSummaryResponse summary(String email, LocalDate startDate, LocalDate endDate) {
@@ -366,7 +367,7 @@ public class AnalyticsService {
             salesTrend.add(point(label, index, periodSales));
             collectionTrend.add(point(label, index, periodCollection));
             expenseTrend.add(point(label, index, periodExpense));
-            netProfitTrend.add(point(label, index, periodSales.subtract(periodExpense)));
+            netProfitTrend.add(point(label, index, revenueCalculationService.netRevenue(periodCollection, periodExpense)));
             outstandingTrend.add(point(label, index, runningOutstanding));
             customerGrowthTrend.add(point(label, index, BigDecimal.valueOf(runningCustomers)));
             index++;
@@ -381,7 +382,7 @@ public class AnalyticsService {
                 .totalSales(scale(totalSales))
                 .totalCollection(scale(totalCollection))
                 .totalExpense(scale(totalExpense))
-                .netRevenue(scale(totalSales.subtract(totalExpense)))
+                .netRevenue(revenueCalculationService.netRevenue(totalCollection, totalExpense))
                 .outstandingAmount(scale(outstandingAmount))
                 .newCustomers(newCustomers)
                 .totalInvoices(filteredInvoices.size())

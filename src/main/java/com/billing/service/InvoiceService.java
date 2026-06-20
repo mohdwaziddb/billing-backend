@@ -19,6 +19,7 @@ import com.billing.exception.BadRequestException;
 import com.billing.repository.InvoiceRepository;
 import com.billing.repository.PaymentRepository;
 import com.billing.repository.ProductRepository;
+import com.billing.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -47,6 +48,7 @@ public class InvoiceService {
     private final InvoiceCalculationService invoiceCalculationService;
     private final AuditLogService auditLogService;
     private final PaymentModeMasterService paymentModeMasterService;
+    private final UserRepository userRepository;
 
     @Transactional
     public InvoiceResponse create(String email, InvoiceRequest request) {
@@ -61,6 +63,7 @@ public class InvoiceService {
         Invoice invoice = Invoice.builder()
                 .company(company)
                 .customer(customer)
+                .referByUser(resolveReferByUser(company, request.getReferByUserId()))
                 .invoiceNo(generateInvoiceNumber(company, customer, request.getInvoiceDate()))
                 .invoiceDate(request.getInvoiceDate())
                 .paidAmount(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP))
@@ -73,6 +76,9 @@ public class InvoiceService {
             createInitialPayment(email, company, customer, invoice, initialPaidAmount, initialPaymentMode, request.getInvoiceDate());
         }
         auditLogService.logCreate(email, company, "Invoice", "Invoice", invoice.getId(), snapshot(invoice));
+        if (invoice.getReferByUser() != null) {
+            auditLogService.logEvent(email, company, "Invoice", "Invoice", invoice.getId(), "INVOICE_CREATED_WITH_REFER_BY", referBySnapshot(invoice));
+        }
         return toResponse(invoice);
     }
 
@@ -94,7 +100,7 @@ public class InvoiceService {
 
     @Transactional(readOnly = true)
     public PageResponse<InvoiceResponse> page(String email, Long customerId, int page, int size) {
-        return page(email, customerId, null, null, null, null, null, null, null, null, null, null, page, size);
+        return page(email, customerId, null, null, null, null, null, null, null, null, null, null, "ACTIVE", page, size);
     }
 
     @Transactional(readOnly = true)
@@ -110,6 +116,7 @@ public class InvoiceService {
                                               BigDecimal maxAmount,
                                               Long categoryId,
                                               RoleName createdByRole,
+                                              String recordStatus,
                                               int page,
                                               int size) {
         User user = accessControlService.getCurrentUser(email);
@@ -131,6 +138,7 @@ public class InvoiceService {
                 company,
                 customer,
                 customerId,
+                resolveDeletedFilter(recordStatus),
                 blankToNull(search),
                 resolvedStatus,
                 startDate,
@@ -156,7 +164,11 @@ public class InvoiceService {
     public InvoiceResponse update(String email, Long invoiceId, InvoiceRequest request) {
         Company company = accessControlService.getCurrentCompany(email);
         Invoice invoice = getInvoiceOrThrow(company, invoiceId);
+        if (invoice.isDeleted()) {
+            throw new BadRequestException("Restore invoice before editing it");
+        }
         Map<String, Object> oldData = snapshot(invoice);
+        Long oldReferByUserId = invoice.getReferByUser() != null ? invoice.getReferByUser().getId() : null;
         Customer newCustomer = customerService.getCustomerOrThrow(company, request.getCustomerId());
         if (!newCustomer.isActive()) {
             throw new BadRequestException("Inactive customer cannot be invoiced");
@@ -164,10 +176,19 @@ public class InvoiceService {
 
         restoreInvoiceEffects(invoice);
         invoice.setCustomer(newCustomer);
+        invoice.setReferByUser(resolveReferByUser(company, request.getReferByUserId()));
         invoice.setInvoiceDate(request.getInvoiceDate());
         applyInvoiceState(invoice, request, newCustomer, false);
         invoiceRepository.save(invoice);
         auditLogService.logUpdate(email, company, "Invoice", "Invoice", invoice.getId(), oldData, snapshot(invoice));
+        Long newReferByUserId = invoice.getReferByUser() != null ? invoice.getReferByUser().getId() : null;
+        if (!java.util.Objects.equals(oldReferByUserId, newReferByUserId)) {
+            Map<String, Object> referralChange = new LinkedHashMap<>();
+            referralChange.put("oldReferByUserId", oldReferByUserId);
+            referralChange.put("newReferByUserId", newReferByUserId);
+            referralChange.putAll(referBySnapshot(invoice));
+            auditLogService.logEvent(email, company, "Invoice", "Invoice", invoice.getId(), "REFER_BY_UPDATED", referralChange);
+        }
         return toResponse(invoice);
     }
 
@@ -175,13 +196,32 @@ public class InvoiceService {
     public void delete(String email, Long invoiceId) {
         Company company = accessControlService.getCurrentCompany(email);
         Invoice invoice = getInvoiceOrThrow(company, invoiceId);
+        if (invoice.isDeleted()) {
+            return;
+        }
         Map<String, Object> oldData = snapshot(invoice);
-        if (paymentRepository.existsByInvoice(invoice) || scale(invoice.getPaidAmount()).compareTo(BigDecimal.ZERO) > 0) {
+        if (paymentRepository.existsByInvoiceAndDeletedFalse(invoice) || scale(invoice.getPaidAmount()).compareTo(BigDecimal.ZERO) > 0) {
             throw new BadRequestException("Delete linked payments before deleting this invoice");
         }
-        restoreInvoiceEffects(invoice);
-        invoiceRepository.delete(invoice);
-        auditLogService.logDelete(email, company, "Invoice", "Invoice", invoiceId, oldData);
+        removeInvoiceBusinessEffects(invoice);
+        invoice.setDeleted(true);
+        invoiceRepository.save(invoice);
+        auditLogService.logCustomUpdate(email, company, "Invoice", "Invoice", invoiceId, "INVOICE_DELETED", oldData, snapshot(invoice));
+    }
+
+    @Transactional
+    public InvoiceResponse restore(String email, Long invoiceId) {
+        Company company = accessControlService.getCurrentCompany(email);
+        Invoice invoice = getInvoiceOrThrow(company, invoiceId);
+        if (!invoice.isDeleted()) {
+            return toResponse(invoice);
+        }
+        Map<String, Object> oldData = snapshot(invoice);
+        reapplyInvoiceBusinessEffects(invoice);
+        invoice.setDeleted(false);
+        Invoice saved = invoiceRepository.save(invoice);
+        auditLogService.logCustomUpdate(email, company, "Invoice", "Invoice", invoiceId, "INVOICE_RESTORED", oldData, snapshot(saved));
+        return toResponse(saved);
     }
 
     public Invoice getInvoiceOrThrow(Company company, Long invoiceId) {
@@ -190,6 +230,9 @@ public class InvoiceService {
     }
 
     public void applyPayment(Invoice invoice, BigDecimal amount) {
+        if (invoice.isDeleted()) {
+            throw new BadRequestException("Cannot apply payment to deleted invoice");
+        }
         BigDecimal nextPaid = scale(invoice.getPaidAmount().add(amount));
         if (nextPaid.compareTo(scale(invoice.getTotalAmount())) > 0) {
             throw new BadRequestException("Payment exceeds invoice balance");
@@ -213,6 +256,9 @@ public class InvoiceService {
     }
 
     public void reversePayment(Invoice invoice, BigDecimal amount) {
+        if (invoice.isDeleted()) {
+            throw new BadRequestException("Cannot reverse payment on deleted invoice");
+        }
         BigDecimal nextPaid = scale(invoice.getPaidAmount().subtract(amount));
         if (nextPaid.compareTo(BigDecimal.ZERO) < 0) {
             throw new BadRequestException("Payment reversal would make paid amount negative");
@@ -336,6 +382,36 @@ public class InvoiceService {
         invoice.setPaymentStatus(InvoiceStatus.UNPAID);
     }
 
+    private void removeInvoiceBusinessEffects(Invoice invoice) {
+        customerService.decreaseBalance(invoice.getCustomer(), scale(invoice.getBalanceAmount()));
+        for (InvoiceItem item : invoice.getItems()) {
+            Product product = item.getProduct();
+            product.setStockQty(product.getStockQty() + item.getQty());
+            productRepository.save(product);
+        }
+    }
+
+    private void reapplyInvoiceBusinessEffects(Invoice invoice) {
+        if (!invoice.getCustomer().isActive()) {
+            throw new BadRequestException("Cannot restore invoice for inactive customer");
+        }
+        for (InvoiceItem item : invoice.getItems()) {
+            Product product = item.getProduct();
+            if (!product.isActive()) {
+                throw new BadRequestException("Cannot restore invoice with inactive product: " + product.getName());
+            }
+            if (product.getStockQty() < item.getQty()) {
+                throw new BadRequestException("Insufficient stock to restore product " + product.getName());
+            }
+        }
+        for (InvoiceItem item : invoice.getItems()) {
+            Product product = item.getProduct();
+            product.setStockQty(product.getStockQty() - item.getQty());
+            productRepository.save(product);
+        }
+        customerService.increaseBalance(invoice.getCustomer(), scale(invoice.getBalanceAmount()));
+    }
+
     private InvoiceStatus resolveStatus(BigDecimal balanceAmount, BigDecimal paidAmount) {
         if (balanceAmount.compareTo(BigDecimal.ZERO) == 0) {
             return InvoiceStatus.PAID;
@@ -384,6 +460,20 @@ public class InvoiceService {
         return value == null ? null : value.trim().toUpperCase();
     }
 
+    private Boolean resolveDeletedFilter(String recordStatus) {
+        String value = blankToNull(recordStatus);
+        if (value == null || "ACTIVE".equalsIgnoreCase(value)) {
+            return Boolean.FALSE;
+        }
+        if ("DELETED".equalsIgnoreCase(value)) {
+            return Boolean.TRUE;
+        }
+        if ("ALL".equalsIgnoreCase(value)) {
+            return null;
+        }
+        throw new BadRequestException("Invalid record status filter");
+    }
+
     private String blankToNull(String value) {
         if (value == null || value.isBlank()) {
             return null;
@@ -408,6 +498,9 @@ public class InvoiceService {
                 .customerMobile(invoice.getCustomer().getMobile())
                 .customerEmail(invoice.getCustomer().getEmail())
                 .customerAddress(invoice.getCustomer().getAddress())
+                .referByUserId(invoice.getReferByUser() != null ? invoice.getReferByUser().getId() : null)
+                .referByUserName(invoice.getReferByUser() != null ? invoice.getReferByUser().getFullName() : null)
+                .referByUsername(invoice.getReferByUser() != null ? invoice.getReferByUser().getUsername() : null)
                 .subtotal(scale(invoice.getSubtotal()))
                 .taxAmount(scale(invoice.getTaxAmount()))
                 .discountAmount(scale(invoice.getDiscountAmount()))
@@ -416,6 +509,7 @@ public class InvoiceService {
                 .balanceAmount(scale(invoice.getBalanceAmount()))
                 .paymentStatus(invoice.getPaymentStatus().name())
                 .invoiceDate(invoice.getInvoiceDate())
+                .deleted(invoice.isDeleted())
                 .createdAt(invoice.getCreatedAt())
                 .updatedAt(invoice.getUpdatedAt())
                 .createdBy(auditNameResolver.displayName(invoice.getCreatedBy()))
@@ -454,6 +548,9 @@ public class InvoiceService {
         data.put("invoiceNo", invoice.getInvoiceNo());
         data.put("customerId", invoice.getCustomer().getId());
         data.put("customerName", invoice.getCustomer().getName());
+        data.put("referByUserId", invoice.getReferByUser() != null ? invoice.getReferByUser().getId() : null);
+        data.put("referByUserName", invoice.getReferByUser() != null ? invoice.getReferByUser().getFullName() : null);
+        data.put("referByUsername", invoice.getReferByUser() != null ? invoice.getReferByUser().getUsername() : null);
         data.put("invoiceDate", invoice.getInvoiceDate());
         data.put("subtotal", scale(invoice.getSubtotal()));
         data.put("taxAmount", scale(invoice.getTaxAmount()));
@@ -462,6 +559,7 @@ public class InvoiceService {
         data.put("paidAmount", scale(invoice.getPaidAmount()));
         data.put("balanceAmount", scale(invoice.getBalanceAmount()));
         data.put("paymentStatus", invoice.getPaymentStatus() != null ? invoice.getPaymentStatus().name() : null);
+        data.put("deleted", invoice.isDeleted());
         data.put("items", invoice.getItems().stream().map(item -> {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("productId", item.getProduct().getId());
@@ -489,6 +587,15 @@ public class InvoiceService {
         return data;
     }
 
+    private Map<String, Object> referBySnapshot(Invoice invoice) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("invoiceNo", invoice.getInvoiceNo());
+        data.put("referByUserId", invoice.getReferByUser() != null ? invoice.getReferByUser().getId() : null);
+        data.put("referByUserName", invoice.getReferByUser() != null ? invoice.getReferByUser().getFullName() : null);
+        data.put("referByUsername", invoice.getReferByUser() != null ? invoice.getReferByUser().getUsername() : null);
+        return data;
+    }
+
     private Map<String, Object> paymentAuditData(Invoice invoice, BigDecimal amount, BigDecimal oldOutstanding, BigDecimal newOutstanding, String paymentMode) {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("invoiceNo", invoice.getInvoiceNo());
@@ -505,5 +612,17 @@ public class InvoiceService {
 
     private BigDecimal scale(BigDecimal value) {
         return value == null ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP) : value.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private User resolveReferByUser(Company company, Long referByUserId) {
+        if (referByUserId == null) {
+            return null;
+        }
+        User user = userRepository.findByIdAndCompany(referByUserId, company)
+                .orElseThrow(() -> new BadRequestException("Refer By user not found in this company"));
+        if (!user.isActive()) {
+            throw new BadRequestException("Refer By user must be active");
+        }
+        return user;
     }
 }

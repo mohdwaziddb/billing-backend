@@ -38,6 +38,7 @@ public class InvoiceController {
                                                                           @RequestParam(required = false) BigDecimal maxAmount,
                                                                           @RequestParam(required = false) Long categoryId,
                                                                           @RequestParam(required = false) RoleName createdByRole,
+                                                                          @RequestParam(required = false, defaultValue = "ACTIVE") String recordStatus,
                                                                           @RequestParam(defaultValue = "0") int page,
                                                                           @RequestParam(defaultValue = "20") int size) {
         return ResponseEntity.ok(ApiResponse.success("Invoices fetched successfully", invoiceService.page(
@@ -53,6 +54,7 @@ public class InvoiceController {
                 maxAmount,
                 categoryId,
                 createdByRole,
+                recordStatus,
                 page,
                 size
         )));
@@ -84,5 +86,11 @@ public class InvoiceController {
     public ResponseEntity<ApiResponse<java.util.Map<String, String>>> delete(Authentication authentication, @PathVariable Long invoiceId) {
         invoiceService.delete(authentication.getName(), invoiceId);
         return ResponseEntity.ok(ApiResponse.success("Invoice deleted successfully", java.util.Map.of("status", "ok")));
+    }
+
+    @PostMapping("/{invoiceId}/restore")
+    @RequirePermission(menu = "INVOICES", action = "RESTORE")
+    public ResponseEntity<ApiResponse<InvoiceResponse>> restore(Authentication authentication, @PathVariable Long invoiceId) {
+        return ResponseEntity.ok(ApiResponse.success("Invoice restored successfully", invoiceService.restore(authentication.getName(), invoiceId)));
     }
 }

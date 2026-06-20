@@ -18,6 +18,9 @@ public class InvoiceResponse {
     private String customerMobile;
     private String customerEmail;
     private String customerAddress;
+    private Long referByUserId;
+    private String referByUserName;
+    private String referByUsername;
     private BigDecimal subtotal;
     private BigDecimal taxAmount;
     private BigDecimal discountAmount;
@@ -26,6 +29,7 @@ public class InvoiceResponse {
     private BigDecimal balanceAmount;
     private String paymentStatus;
     private LocalDate invoiceDate;
+    private boolean deleted;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private String createdBy;

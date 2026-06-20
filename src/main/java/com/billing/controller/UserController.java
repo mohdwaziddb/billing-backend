@@ -36,6 +36,13 @@ public class UserController {
         return ResponseEntity.ok(ApiResponse.success("Profile fetched successfully", userService.getProfile(authentication.getName())));
     }
 
+    @GetMapping("/active-referrers")
+    @RequirePermission(menu = "CREATE_INVOICE", action = "ADD")
+    public ResponseEntity<ApiResponse<List<UserProfileResponse>>> activeReferrers(Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.success("Active referral users fetched successfully",
+                userService.activeReferralUsers(authentication.getName())));
+    }
+
     @GetMapping
     @RequirePermission(menu = "USERS", action = "VIEW")
     public ResponseEntity<ApiResponse<PageResponse<UserProfileResponse>>> listCompanyUsers(Authentication authentication,

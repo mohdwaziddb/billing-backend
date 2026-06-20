@@ -21,6 +21,7 @@ public class PaymentResponse {
     private LocalDate paymentDate;
     private String mode;
     private String remarks;
+    private boolean deleted;
     private LocalDateTime createdAt;
     private String createdBy;
 }
