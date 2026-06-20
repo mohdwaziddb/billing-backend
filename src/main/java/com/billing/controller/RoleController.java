@@ -16,6 +16,8 @@ import java.util.List;
 @RequiredArgsConstructor
 public class RoleController {
 
+    private static final List<String> COMPANY_ROLE_CODES = List.of("OWNER", "ADMIN", "USER");
+
     private final RoleMasterRepository roleMasterRepository;
 
     @GetMapping
@@ -24,6 +26,7 @@ public class RoleController {
         return ResponseEntity.ok(ApiResponse.success("Roles fetched successfully",
                 roleMasterRepository.findAll().stream()
                         .map(role -> role.getRoleCode())
+                        .filter(COMPANY_ROLE_CODES::contains)
                         .toList()));
     }
 }

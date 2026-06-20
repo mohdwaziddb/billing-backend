@@ -32,7 +32,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/platform-admin")
 @RequiredArgsConstructor
-@PreAuthorize("hasRole('PLATFORM_ADMIN')")
+@PreAuthorize("principal instanceof T(com.billing.security.PlatformAdminPrincipal)")
 public class PlatformAdminController {
 
     private final PlatformAdminService platformAdminService;
