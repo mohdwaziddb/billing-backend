@@ -5,7 +5,6 @@ import com.billing.dto.auth.AuthResponse;
 import com.billing.dto.auth.ForgotPasswordRequest;
 import com.billing.dto.auth.LoginRequest;
 import com.billing.dto.auth.RefreshTokenRequest;
-import com.billing.dto.auth.RegisterCompanyRequest;
 import com.billing.service.AuthService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -20,11 +19,6 @@ import java.util.Map;
 public class AuthController {
 
     private final AuthService authService;
-
-    @PostMapping("/register-company")
-    public ResponseEntity<ApiResponse<AuthResponse>> registerCompany(@Valid @RequestBody RegisterCompanyRequest request) {
-        return ResponseEntity.ok(ApiResponse.success("Company registered successfully", authService.registerCompany(request)));
-    }
 
     @PostMapping("/login")
     public ResponseEntity<ApiResponse<AuthResponse>> login(@Valid @RequestBody LoginRequest request) {
