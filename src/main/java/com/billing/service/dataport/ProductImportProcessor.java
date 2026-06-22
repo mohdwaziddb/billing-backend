@@ -4,6 +4,7 @@ import com.billing.dto.dataport.ProductDataPortRow;
 import com.billing.entity.Company;
 import com.billing.entity.Product;
 import com.billing.entity.ProductCategory;
+import com.billing.entity.ProductSubCategory;
 import com.billing.repository.ProductRepository;
 import com.billing.service.AuditLogService;
 import lombok.RequiredArgsConstructor;
@@ -44,10 +45,15 @@ public class ProductImportProcessor implements ImportProcessor<ProductDataPortRo
                              ProductDataPortRow row,
                              ProductDataPortDefinition.ProductDataPortContext context) {
         ProductCategory category = context.categoriesByName().get(ProductDataPortDefinition.normalizeKey(row.getProductCategory()));
+        ProductSubCategory subCategory = context.subCategoriesByCategoryAndName().get(ProductDataPortDefinition.buildSubCategoryKey(
+                row.getProductCategoryId() != null ? row.getProductCategoryId() : (category != null ? category.getId() : null),
+                row.getProductSubCategory()
+        ));
         return Product.builder()
                 .company(company)
                 .name(row.getProductName())
                 .productCategory(category)
+                .productSubCategory(subCategory)
                 .brand(row.getBrand())
                 .sku(row.getSku())
                 .hsnCode(row.getHsnCode())
@@ -76,6 +82,7 @@ public class ProductImportProcessor implements ImportProcessor<ProductDataPortRo
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("name", product.getName());
         data.put("category", product.getProductCategory() != null ? product.getProductCategory().getCategoryName() : null);
+        data.put("subCategory", product.getProductSubCategory() != null ? product.getProductSubCategory().getSubCategoryName() : null);
         data.put("brand", product.getBrand());
         data.put("sku", product.getSku());
         data.put("purchasePrice", product.getPurchasePrice());

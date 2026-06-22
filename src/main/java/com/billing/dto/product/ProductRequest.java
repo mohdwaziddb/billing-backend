@@ -19,6 +19,9 @@ public class ProductRequest {
     @NotNull
     private Long categoryId;
 
+    @NotNull
+    private Long subCategoryId;
+
     private String brand;
 
     @NotBlank

@@ -110,7 +110,7 @@ public class ProductCategoryService {
         return category;
     }
 
-    private ProductCategory getCategoryOrThrow(Company company, Long categoryId) {
+    ProductCategory getCategoryOrThrow(Company company, Long categoryId) {
         return productCategoryRepository.findByIdAndCompany(categoryId, company)
                 .orElseThrow(() -> new ResourceNotFoundException("Product category not found"));
     }

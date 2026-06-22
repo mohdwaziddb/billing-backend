@@ -14,6 +14,9 @@ public class ProductResponse {
     private Long categoryId;
     private String categoryName;
     private String category;
+    private Long subCategoryId;
+    private String subCategoryName;
+    private String subCategory;
     private String brand;
     private String sku;
     private String hsnCode;

@@ -7,6 +7,7 @@ import com.billing.dto.product.ProductRequest;
 import com.billing.dto.product.ProductResponse;
 import com.billing.entity.Product;
 import com.billing.entity.ProductCategory;
+import com.billing.entity.ProductSubCategory;
 import com.billing.entity.User;
 import com.billing.exception.BadRequestException;
 import com.billing.repository.ProductRepository;
@@ -28,6 +29,7 @@ public class ProductService {
     private final ProductRepository productRepository;
     private final AccessControlService accessControlService;
     private final ProductCategoryService productCategoryService;
+    private final ProductSubCategoryService productSubCategoryService;
     private final AuditLogService auditLogService;
     private final AuditNameResolver auditNameResolver;
 
@@ -36,11 +38,13 @@ public class ProductService {
         Company company = accessControlService.getCurrentCompany(email);
         validateProduct(company, request, null);
         ProductCategory productCategory = productCategoryService.getActiveByIdOrThrow(company, request.getCategoryId());
+        ProductSubCategory productSubCategory = productSubCategoryService.getActiveByIdOrThrow(company, productCategory.getId(), request.getSubCategoryId());
 
         Product product = Product.builder()
                 .company(company)
                 .name(request.getName())
                 .productCategory(productCategory)
+                .productSubCategory(productSubCategory)
                 .brand(request.getBrand())
                 .sku(request.getSku())
                 .hsnCode(request.getHsnCode())
@@ -58,17 +62,17 @@ public class ProductService {
     }
 
     @Transactional(readOnly = true)
-    public List<ProductResponse> list(String email, String search, Boolean active) {
+    public List<ProductResponse> list(String email, Long categoryId, Long subCategoryId, String search, Boolean active) {
         Company company = companyScope(email);
-        return productRepository.findAllByCompanyWithFilters(company, active, normalizeSearch(search)).stream()
+        return productRepository.findAllByCompanyWithFilters(company, active, categoryId, subCategoryId, normalizeSearch(search)).stream()
                 .map(this::toResponse)
                 .toList();
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<ProductResponse> page(String email, String search, Boolean active, int page, int size) {
+    public PageResponse<ProductResponse> page(String email, Long categoryId, Long subCategoryId, String search, Boolean active, int page, int size) {
         Company company = companyScope(email);
-        return PageResponse.from(productRepository.findPageByCompanyWithFilters(company, active, normalizeSearch(search), pageRequest(page, size))
+        return PageResponse.from(productRepository.findPageByCompanyWithFilters(company, active, categoryId, subCategoryId, normalizeSearch(search), pageRequest(page, size))
                 .map(this::toResponse));
     }
 
@@ -86,9 +90,11 @@ public class ProductService {
         Product product = getProductOrThrow(company, productId);
         Map<String, Object> oldData = snapshot(product);
         ProductCategory productCategory = productCategoryService.getActiveByIdOrThrow(company, request.getCategoryId());
+        ProductSubCategory productSubCategory = productSubCategoryService.getActiveByIdOrThrow(company, productCategory.getId(), request.getSubCategoryId());
 
         product.setName(request.getName());
         product.setProductCategory(productCategory);
+        product.setProductSubCategory(productSubCategory);
         product.setBrand(request.getBrand());
         product.setSku(request.getSku());
         product.setHsnCode(request.getHsnCode());
@@ -164,13 +170,18 @@ public class ProductService {
 
     private ProductResponse toResponse(Product product) {
         ProductCategory productCategory = product.getProductCategory();
+        ProductSubCategory productSubCategory = product.getProductSubCategory();
         String categoryName = productCategory != null ? productCategory.getCategoryName() : null;
+        String subCategoryName = productSubCategory != null ? productSubCategory.getSubCategoryName() : null;
         return ProductResponse.builder()
                 .id(product.getId())
                 .name(product.getName())
                 .categoryId(productCategory != null ? productCategory.getId() : null)
                 .categoryName(categoryName)
                 .category(categoryName)
+                .subCategoryId(productSubCategory != null ? productSubCategory.getId() : null)
+                .subCategoryName(subCategoryName)
+                .subCategory(subCategoryName)
                 .brand(product.getBrand())
                 .sku(product.getSku())
                 .hsnCode(product.getHsnCode())
@@ -207,6 +218,7 @@ public class ProductService {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("name", product.getName());
         data.put("category", product.getProductCategory() != null ? product.getProductCategory().getCategoryName() : null);
+        data.put("subCategory", product.getProductSubCategory() != null ? product.getProductSubCategory().getSubCategoryName() : null);
         data.put("brand", product.getBrand());
         data.put("sku", product.getSku());
         data.put("purchasePrice", scale(product.getPurchasePrice()));

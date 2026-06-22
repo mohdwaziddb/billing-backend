@@ -39,6 +39,10 @@ public class Product extends BaseEntity {
     @JoinColumn(name = "product_category_id", nullable = false)
     private ProductCategory productCategory;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "product_sub_category_id")
+    private ProductSubCategory productSubCategory;
+
     private String brand;
 
     @Column(nullable = false, precision = 12, scale = 2)

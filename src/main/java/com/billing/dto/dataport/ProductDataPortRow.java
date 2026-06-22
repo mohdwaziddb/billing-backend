@@ -12,6 +12,7 @@ public class ProductDataPortRow implements ValidatableImportRow {
     private Integer rowNumber;
     private String productName;
     private String productCategory;
+    private String productSubCategory;
     private String sku;
     private String active;
     private String brand;
@@ -22,6 +23,7 @@ public class ProductDataPortRow implements ValidatableImportRow {
     private String minimumStockQty;
     private String taxPercent;
     private Long productCategoryId;
+    private Long productSubCategoryId;
     private Boolean activeValue;
     private boolean valid = true;
     private Map<String, String> validationErrors = new LinkedHashMap<>();

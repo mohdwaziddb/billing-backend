@@ -293,7 +293,7 @@ public class AuditLogService {
     private String resolveRecordName(AuditLog log) {
         Map<String, Object> newData = fromJson(log.getNewData());
         Map<String, Object> oldData = fromJson(log.getOldData());
-        for (String key : List.of("product_name", "name", "customer_name", "customerName", "invoice_no", "invoiceNo", "payment_ref", "category_name", "categoryName", "expenseType", "template_name", "email", "full_name")) {
+        for (String key : List.of("product_name", "name", "customer_name", "customerName", "invoice_no", "invoiceNo", "payment_ref", "category_name", "categoryName", "subCategoryName", "sub_category_name", "expenseType", "template_name", "email", "full_name")) {
             Object value = newData.getOrDefault(key, oldData.get(key));
             if (value != null && !String.valueOf(value).isBlank()) {
                 return String.valueOf(value);
@@ -340,6 +340,7 @@ public class AuditLogService {
             case "expense" -> "EXPENSES";
             case "expense category" -> "EXPENSE_CATEGORIES";
             case "product category" -> "PRODUCT_CATEGORY";
+            case "product sub category" -> "PRODUCT_SUB_CATEGORIES";
             case "payment mode" -> "PAYMENT_MODES";
             case "user" -> "USERS";
             case "email template" -> "EMAIL_TEMPLATES";

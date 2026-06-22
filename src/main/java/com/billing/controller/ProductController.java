@@ -24,11 +24,13 @@ public class ProductController {
     @GetMapping
     @RequirePermission(menu = "PRODUCTS", action = "VIEW")
     public ResponseEntity<ApiResponse<PageResponse<ProductResponse>>> list(Authentication authentication,
+                                                                          @RequestParam(required = false) Long categoryId,
+                                                                          @RequestParam(required = false) Long subCategoryId,
                                                                           @RequestParam(required = false) String search,
                                                                           @RequestParam(required = false) Boolean active,
                                                                           @RequestParam(defaultValue = "0") int page,
                                                                           @RequestParam(defaultValue = "20") int size) {
-        return ResponseEntity.ok(ApiResponse.success("Products fetched successfully", productService.page(authentication.getName(), search, active, page, size)));
+        return ResponseEntity.ok(ApiResponse.success("Products fetched successfully", productService.page(authentication.getName(), categoryId, subCategoryId, search, active, page, size)));
     }
 
     @GetMapping("/{productId}")

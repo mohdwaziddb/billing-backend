@@ -2,6 +2,7 @@ package com.billing.service.dataport;
 
 import com.billing.dto.dataport.ProductDataPortRow;
 import com.billing.entity.ProductCategory;
+import com.billing.entity.ProductSubCategory;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -38,6 +39,7 @@ public class ProductImportValidator implements ImportValidator<ProductDataPortRo
 
         row.setProductName(trim(row.getProductName()));
         row.setProductCategory(trim(row.getProductCategory()));
+        row.setProductSubCategory(trim(row.getProductSubCategory()));
         row.setSku(trim(row.getSku()));
         row.setActive(trim(row.getActive()));
         row.setBrand(blankToNull(row.getBrand()));
@@ -48,10 +50,12 @@ public class ProductImportValidator implements ImportValidator<ProductDataPortRo
         row.setMinimumStockQty(trim(row.getMinimumStockQty()));
         row.setTaxPercent(trim(row.getTaxPercent()));
         row.setProductCategoryId(null);
+        row.setProductSubCategoryId(null);
         row.setActiveValue(null);
 
         require(row.getProductName(), "productName", "Product name is required", errors);
         require(row.getProductCategory(), "productCategory", "Product category is required", errors);
+        require(row.getProductSubCategory(), "productSubCategory", "Product sub category is required", errors);
         require(row.getSku(), "sku", "SKU is required", errors);
         require(row.getPurchasePrice(), "purchasePrice", "Purchase price is required", errors);
         require(row.getSellingPrice(), "sellingPrice", "Selling price is required", errors);
@@ -63,6 +67,15 @@ public class ProductImportValidator implements ImportValidator<ProductDataPortRo
                 errors.put("productCategory", "Product category was not found in your company");
             } else {
                 row.setProductCategoryId(category.getId());
+            }
+        }
+
+        if (row.getProductCategoryId() != null && !row.getProductSubCategory().isBlank()) {
+            ProductSubCategory subCategory = context.subCategoriesByCategoryAndName().get(ProductDataPortDefinition.buildSubCategoryKey(row.getProductCategoryId(), row.getProductSubCategory()));
+            if (subCategory == null) {
+                errors.put("productSubCategory", "Product sub category was not found under the selected category in your company");
+            } else {
+                row.setProductSubCategoryId(subCategory.getId());
             }
         }
 

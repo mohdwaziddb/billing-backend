@@ -17,48 +17,60 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     List<Product> findByCompanyOrderByCreatedAtDesc(Company company);
     List<Product> findByCompanyAndActiveTrueOrderByCreatedAtDesc(Company company);
 
-    @EntityGraph(attributePaths = "productCategory")
+    @EntityGraph(attributePaths = {"productCategory", "productSubCategory"})
     @Query("""
             SELECT p
             FROM Product p
             LEFT JOIN p.productCategory pc
+            LEFT JOIN p.productSubCategory psc
             WHERE (:company IS NULL OR p.company = :company)
               AND (:active IS NULL OR p.active = :active)
+              AND (:categoryId IS NULL OR pc.id = :categoryId)
+              AND (:subCategoryId IS NULL OR psc.id = :subCategoryId)
               AND (
                     :search IS NULL
                     OR TRIM(:search) = ''
                     OR LOWER(p.name) LIKE LOWER(CONCAT('%', :search, '%'))
                     OR LOWER(p.sku) LIKE LOWER(CONCAT('%', :search, '%'))
                     OR LOWER(pc.categoryName) LIKE LOWER(CONCAT('%', :search, '%'))
+                    OR LOWER(psc.subCategoryName) LIKE LOWER(CONCAT('%', :search, '%'))
                   )
             ORDER BY p.createdAt DESC
             """)
     List<Product> findAllByCompanyWithFilters(@Param("company") Company company,
                                               @Param("active") Boolean active,
+                                              @Param("categoryId") Long categoryId,
+                                              @Param("subCategoryId") Long subCategoryId,
                                               @Param("search") String search);
 
-    @EntityGraph(attributePaths = "productCategory")
+    @EntityGraph(attributePaths = {"productCategory", "productSubCategory"})
     @Query("""
             SELECT p
             FROM Product p
             LEFT JOIN p.productCategory pc
+            LEFT JOIN p.productSubCategory psc
             WHERE (:company IS NULL OR p.company = :company)
               AND (:active IS NULL OR p.active = :active)
+              AND (:categoryId IS NULL OR pc.id = :categoryId)
+              AND (:subCategoryId IS NULL OR psc.id = :subCategoryId)
               AND (
                     :search IS NULL
                     OR TRIM(:search) = ''
                     OR LOWER(p.name) LIKE LOWER(CONCAT('%', :search, '%'))
                     OR LOWER(p.sku) LIKE LOWER(CONCAT('%', :search, '%'))
                     OR LOWER(pc.categoryName) LIKE LOWER(CONCAT('%', :search, '%'))
+                    OR LOWER(psc.subCategoryName) LIKE LOWER(CONCAT('%', :search, '%'))
                   )
             ORDER BY p.createdAt DESC
             """)
     Page<Product> findPageByCompanyWithFilters(@Param("company") Company company,
                                                @Param("active") Boolean active,
+                                               @Param("categoryId") Long categoryId,
+                                               @Param("subCategoryId") Long subCategoryId,
                                                @Param("search") String search,
                                                Pageable pageable);
 
-    @EntityGraph(attributePaths = "productCategory")
+    @EntityGraph(attributePaths = {"productCategory", "productSubCategory"})
     Optional<Product> findByIdAndCompany(Long id, Company company);
 
     boolean existsByCompanyAndSkuIgnoreCase(Company company, String sku);

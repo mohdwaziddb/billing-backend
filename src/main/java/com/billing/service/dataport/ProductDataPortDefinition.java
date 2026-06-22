@@ -4,8 +4,10 @@ import com.billing.dto.dataport.ProductDataPortReferenceData;
 import com.billing.dto.dataport.ProductDataPortRow;
 import com.billing.entity.Company;
 import com.billing.entity.ProductCategory;
+import com.billing.entity.ProductSubCategory;
 import com.billing.repository.ProductCategoryRepository;
 import com.billing.repository.ProductRepository;
+import com.billing.repository.ProductSubCategoryRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -25,6 +27,7 @@ public class ProductDataPortDefinition implements DataPortDefinition<ProductData
     private static final List<String> COLUMNS = List.of(
             "Product Name*",
             "Product Category*",
+            "Product Sub Category*",
             "SKU*",
             "Active",
             "Brand",
@@ -37,6 +40,7 @@ public class ProductDataPortDefinition implements DataPortDefinition<ProductData
     );
 
     private final ProductCategoryRepository productCategoryRepository;
+    private final ProductSubCategoryRepository productSubCategoryRepository;
     private final ProductRepository productRepository;
     private final ProductImportValidator productImportValidator;
     private final ProductImportProcessor productImportProcessor;
@@ -66,6 +70,7 @@ public class ProductDataPortDefinition implements DataPortDefinition<ProductData
         return List.of(List.of(
                 "Premium Notebook",
                 "Stationery",
+                "Office Supplies",
                 "NOTE-001",
                 "Yes",
                 "Acme",
@@ -84,15 +89,16 @@ public class ProductDataPortDefinition implements DataPortDefinition<ProductData
         row.setRowNumber(rowNumber);
         row.setProductName(rowValues.getOrDefault(COLUMNS.get(0), ""));
         row.setProductCategory(rowValues.getOrDefault(COLUMNS.get(1), ""));
-        row.setSku(rowValues.getOrDefault(COLUMNS.get(2), ""));
-        row.setActive(rowValues.getOrDefault(COLUMNS.get(3), ""));
-        row.setBrand(rowValues.getOrDefault(COLUMNS.get(4), ""));
-        row.setHsnCode(rowValues.getOrDefault(COLUMNS.get(5), ""));
-        row.setPurchasePrice(rowValues.getOrDefault(COLUMNS.get(6), ""));
-        row.setSellingPrice(rowValues.getOrDefault(COLUMNS.get(7), ""));
-        row.setOpeningStockQty(rowValues.getOrDefault(COLUMNS.get(8), ""));
-        row.setMinimumStockQty(rowValues.getOrDefault(COLUMNS.get(9), ""));
-        row.setTaxPercent(rowValues.getOrDefault(COLUMNS.get(10), ""));
+        row.setProductSubCategory(rowValues.getOrDefault(COLUMNS.get(2), ""));
+        row.setSku(rowValues.getOrDefault(COLUMNS.get(3), ""));
+        row.setActive(rowValues.getOrDefault(COLUMNS.get(4), ""));
+        row.setBrand(rowValues.getOrDefault(COLUMNS.get(5), ""));
+        row.setHsnCode(rowValues.getOrDefault(COLUMNS.get(6), ""));
+        row.setPurchasePrice(rowValues.getOrDefault(COLUMNS.get(7), ""));
+        row.setSellingPrice(rowValues.getOrDefault(COLUMNS.get(8), ""));
+        row.setOpeningStockQty(rowValues.getOrDefault(COLUMNS.get(9), ""));
+        row.setMinimumStockQty(rowValues.getOrDefault(COLUMNS.get(10), ""));
+        row.setTaxPercent(rowValues.getOrDefault(COLUMNS.get(11), ""));
         return row;
     }
 
@@ -104,8 +110,14 @@ public class ProductDataPortDefinition implements DataPortDefinition<ProductData
                         Function.identity(),
                         (left, right) -> left
                 ));
+        Map<String, ProductSubCategory> subCategoriesByCategoryAndName = productSubCategoryRepository.findAllByCompanyWithFilters(company, null, true, null).stream()
+                .collect(Collectors.toMap(
+                        subCategory -> buildSubCategoryKey(subCategory.getProductCategory().getId(), subCategory.getSubCategoryName()),
+                        Function.identity(),
+                        (left, right) -> left
+                ));
         Set<String> existingSkus = productRepository.findNormalizedSkusByCompany(company);
-        return new ProductDataPortContext(categoriesByName, existingSkus);
+        return new ProductDataPortContext(categoriesByName, subCategoriesByCategoryAndName, existingSkus);
     }
 
     @Override
@@ -127,6 +139,14 @@ public class ProductDataPortDefinition implements DataPortDefinition<ProductData
                                 .name(category.getCategoryName())
                                 .build())
                         .toList())
+                .subCategories(context.subCategoriesByCategoryAndName().values().stream()
+                        .map(subCategory -> ProductDataPortReferenceData.SubCategoryOption.builder()
+                                .id(subCategory.getId())
+                                .categoryId(subCategory.getProductCategory().getId())
+                                .categoryName(subCategory.getProductCategory().getCategoryName())
+                                .name(subCategory.getSubCategoryName())
+                                .build())
+                        .toList())
                 .existingSkus(context.existingSkus().stream().sorted().toList())
                 .build();
     }
@@ -135,6 +155,12 @@ public class ProductDataPortDefinition implements DataPortDefinition<ProductData
         return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
     }
 
-    public record ProductDataPortContext(Map<String, ProductCategory> categoriesByName, Set<String> existingSkus) {
+    static String buildSubCategoryKey(Long categoryId, String subCategoryName) {
+        return (categoryId == null ? "" : categoryId) + "::" + normalizeKey(subCategoryName);
+    }
+
+    public record ProductDataPortContext(Map<String, ProductCategory> categoriesByName,
+                                         Map<String, ProductSubCategory> subCategoriesByCategoryAndName,
+                                         Set<String> existingSkus) {
     }
 }
