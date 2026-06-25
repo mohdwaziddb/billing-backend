@@ -184,6 +184,7 @@ public class CompanyService {
                 .cinNumber(company.getCinNumber())
                 .logoUrl(company.getLogoUrl())
                 .websiteUrl(company.getWebsiteUrl())
+                .chatbotEnabled(company.isChatbotEnabled())
                 .build();
     }
 

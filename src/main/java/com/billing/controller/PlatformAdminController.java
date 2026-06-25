@@ -80,6 +80,18 @@ public class PlatformAdminController {
                 platformAdminService.deactivateCompany(companyId)));
     }
 
+    @PostMapping("/companies/{companyId}/chatbot/enable")
+    public ResponseEntity<ApiResponse<PlatformAdminCompanyResponse>> enableCompanyChatbot(@PathVariable Long companyId) {
+        return ResponseEntity.ok(ApiResponse.success("Company chatbot enabled successfully",
+                platformAdminService.setCompanyChatbotEnabled(companyId, true)));
+    }
+
+    @PostMapping("/companies/{companyId}/chatbot/disable")
+    public ResponseEntity<ApiResponse<PlatformAdminCompanyResponse>> disableCompanyChatbot(@PathVariable Long companyId) {
+        return ResponseEntity.ok(ApiResponse.success("Company chatbot disabled successfully",
+                platformAdminService.setCompanyChatbotEnabled(companyId, false)));
+    }
+
     @GetMapping("/companies/{companyId}")
     public ResponseEntity<ApiResponse<PlatformAdminCompanyDetailsResponse>> companyDetails(@PathVariable Long companyId) {
         return ResponseEntity.ok(ApiResponse.success("Company details fetched successfully",

@@ -9,6 +9,7 @@ public interface PlatformAdminCompanySummaryView {
     String getEmail();
     String getMobile();
     Boolean getActive();
+    Boolean getChatbotEnabled();
     LocalDateTime getCreatedAt();
     Long getOwnerCount();
     Long getAdminCount();

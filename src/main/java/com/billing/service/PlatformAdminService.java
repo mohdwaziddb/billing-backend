@@ -135,6 +135,13 @@ public class PlatformAdminService {
         return toCompanyResponse(companyRepository.save(company));
     }
 
+    @Transactional
+    public PlatformAdminCompanyResponse setCompanyChatbotEnabled(Long companyId, boolean enabled) {
+        Company company = requireCompany(companyId);
+        company.setChatbotEnabled(enabled);
+        return toCompanyResponse(companyRepository.save(company));
+    }
+
     @Transactional(readOnly = true)
     public PlatformAdminCompanyDetailsResponse companyDetails(Long companyId) {
         Company company = requireCompany(companyId);
@@ -210,6 +217,7 @@ public class PlatformAdminService {
                 .email(company.getEmail())
                 .mobile(company.getPhone())
                 .active(company.isActive())
+                .chatbotEnabled(company.isChatbotEnabled())
                 .createdAt(company.getCreatedAt())
                 .totalUsers(users.size())
                 .build();
@@ -226,6 +234,7 @@ public class PlatformAdminService {
                 .email(company.getEmail())
                 .mobile(company.getMobile())
                 .active(Boolean.TRUE.equals(company.getActive()))
+                .chatbotEnabled(Boolean.TRUE.equals(company.getChatbotEnabled()))
                 .createdAt(company.getCreatedAt())
                 .ownerCount(ownerCount)
                 .adminCount(adminCount)

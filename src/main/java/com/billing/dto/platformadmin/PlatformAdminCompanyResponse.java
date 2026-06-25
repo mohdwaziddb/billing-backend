@@ -1,5 +1,6 @@
 package com.billing.dto.platformadmin;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -14,6 +15,8 @@ public class PlatformAdminCompanyResponse {
     private String email;
     private String mobile;
     private boolean active;
+    @JsonProperty("isChatbotEnabled")
+    private boolean chatbotEnabled;
     private LocalDateTime createdAt;
     private long ownerCount;
     private long adminCount;

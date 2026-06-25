@@ -1,0 +1,2 @@
+ALTER TABLE companies
+    ADD COLUMN is_chatbot_enabled BOOLEAN NOT NULL DEFAULT FALSE;

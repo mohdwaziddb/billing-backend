@@ -25,6 +25,7 @@ public interface CompanyRepository extends JpaRepository<Company, Long> {
                 c.email as email,
                 c.phone as mobile,
                 c.is_active as active,
+                c.is_chatbot_enabled as chatbotEnabled,
                 c.created_at as createdAt,
                 coalesce(sum(case when u.role = 'OWNER' then 1 else 0 end), 0) as ownerCount,
                 coalesce(sum(case when u.role = 'ADMIN' then 1 else 0 end), 0) as adminCount,
@@ -38,7 +39,7 @@ public interface CompanyRepository extends JpaRepository<Company, Long> {
                 or lower(coalesce(c.phone, '')) like lower(concat('%', :search, '%'))
                 or lower(coalesce(c.tax_id, '')) like lower(concat('%', :search, '%'))
                 or lower(c.code) like lower(concat('%', :search, '%')))
-            group by c.id, c.name, c.email, c.phone, c.is_active, c.created_at
+            group by c.id, c.name, c.email, c.phone, c.is_active, c.is_chatbot_enabled, c.created_at
             order by c.created_at desc, c.id desc
             """,
             countQuery = """

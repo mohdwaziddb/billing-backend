@@ -1,5 +1,6 @@
 package com.billing.dto.user;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -26,4 +27,6 @@ public class CompanySummary {
     private String cinNumber;
     private String logoUrl;
     private String websiteUrl;
+    @JsonProperty("isChatbotEnabled")
+    private boolean chatbotEnabled;
 }

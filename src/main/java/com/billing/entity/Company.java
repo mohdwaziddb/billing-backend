@@ -80,4 +80,8 @@ public class Company extends BaseEntity {
     @Column(name = "is_active", nullable = false)
     private boolean active = true;
 
+    @Builder.Default
+    @Column(name = "is_chatbot_enabled", nullable = false)
+    private boolean chatbotEnabled = false;
+
 }
