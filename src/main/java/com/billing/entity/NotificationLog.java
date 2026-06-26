@@ -54,6 +54,15 @@ public class NotificationLog extends BaseEntity {
     @Column(columnDefinition = "TEXT")
     private String message;
 
+    @Column(name = "provider_name")
+    private String providerName;
+
+    @Column(name = "message_id")
+    private String messageId;
+
+    @Column(name = "failure_reason", columnDefinition = "TEXT")
+    private String failureReason;
+
     @Column(name = "provider_response", columnDefinition = "TEXT")
     private String providerResponse;
 

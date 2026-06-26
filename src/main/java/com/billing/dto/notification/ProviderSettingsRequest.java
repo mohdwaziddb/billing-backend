@@ -3,6 +3,8 @@ package com.billing.dto.notification;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.util.Map;
+
 @Getter
 @Setter
 public class ProviderSettingsRequest {
@@ -25,5 +27,6 @@ public class ProviderSettingsRequest {
     private String templateId;
     private String whatsappNumber;
     private String senderName;
+    private Map<String, String> configValues;
     private Boolean active;
 }

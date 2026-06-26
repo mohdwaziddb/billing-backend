@@ -1,5 +1,6 @@
 package com.billing.entity.enums;
 
 public enum WhatsAppProviderType {
-    MSG91
+    MSG91,
+    PINNACLE
 }

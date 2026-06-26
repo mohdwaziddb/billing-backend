@@ -55,6 +55,9 @@ public class SmsProviderSetting extends BaseEntity {
     @Column(name = "template_id")
     private String templateId;
 
+    @Column(name = "provider_config", columnDefinition = "LONGTEXT")
+    private String providerConfig;
+
     @Column(name = "is_active", nullable = false)
     private boolean active;
 }

@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
@@ -65,6 +66,29 @@ public class OllamaClient {
         }
     }
 
+    public OllamaStatus status() {
+        String resolvedBaseUrl = normalizeBaseUrl(baseUrl);
+        if (!enabled) {
+            return new OllamaStatus(false, false, null, model, "Disabled in configuration");
+        }
+        if (resolvedBaseUrl == null) {
+            return new OllamaStatus(true, false, null, model, "Base URL not configured");
+        }
+
+        try {
+            ResponseEntity<Map> response = restTemplate.exchange(
+                    resolvedBaseUrl + "/api/tags",
+                    HttpMethod.GET,
+                    HttpEntity.EMPTY,
+                    Map.class
+            );
+            boolean active = response.getStatusCode().is2xxSuccessful();
+            return new OllamaStatus(true, active, resolvedBaseUrl, model, active ? "Connected" : "Unavailable");
+        } catch (RestClientException ex) {
+            return new OllamaStatus(true, false, resolvedBaseUrl, model, "Unavailable");
+        }
+    }
+
     private String normalizeBaseUrl(String value) {
         if (value == null || value.isBlank()) {
             return null;
@@ -77,5 +101,22 @@ public class OllamaClient {
     @JsonIgnoreProperties(ignoreUnknown = true)
     private static class OllamaGenerateResponse {
         private String response;
+    }
+
+    @Getter
+    public static class OllamaStatus {
+        private final boolean enabled;
+        private final boolean active;
+        private final String baseUrl;
+        private final String model;
+        private final String message;
+
+        public OllamaStatus(boolean enabled, boolean active, String baseUrl, String model, String message) {
+            this.enabled = enabled;
+            this.active = active;
+            this.baseUrl = baseUrl;
+            this.model = model;
+            this.message = message;
+        }
     }
 }

@@ -71,7 +71,8 @@ public class PermissionDataInitializer implements ApplicationRunner {
             new MenuSeed("Communication", "COMMUNICATION", "Mail", "/setup/communication", 24, "SETUP"),
             new MenuSeed("Role Permissions", "ROLE_PERMISSIONS", "ShieldCheck", "/setup/role-permissions", 25, "SETUP"),
             new MenuSeed("Payment Hierarchy", "PAYMENT_HIERARCHY", "CreditCard", "/reports/payment-hierarchy", 26, "REPORTS"),
-            new MenuSeed("Sales Referrals", "SALES_REFERRALS", "TrendingUp", "/reports/sales-referrals", 27, "REPORTS")
+            new MenuSeed("Sales Referrals", "SALES_REFERRALS", "TrendingUp", "/reports/sales-referrals", 27, "REPORTS"),
+            new MenuSeed("AI Assistant", "AI_ASSISTANT", "Bot", "", 28, null)
     );
 
     private static final List<ActionSeed> ACTIONS = List.of(
@@ -190,9 +191,9 @@ public class PermissionDataInitializer implements ApplicationRunner {
 
     public void seedPermissionsForCompany(Company company) {
         Map<String, Set<String>> visibleMenusByRole = Map.of(
-                "OWNER", Set.of("DASHBOARD", "CUSTOMERS", "PRODUCTS", "CREATE_INVOICE", "INVOICES", "PAYMENTS", "EXPENSES", "OUTSTANDING", "ANALYTICS", "DATA_PORT", "PRODUCT_DATAPORT", "REPORTS", "PROFIT_LOSS", "SETUP", "USERS", "PRODUCT_CATEGORY", "PRODUCT_SUB_CATEGORIES", "EXPENSE_CATEGORIES", "PAYMENT_MODES", "THEME_SETTINGS", "ABOUT_COMPANY", "EMAIL_TEMPLATES", "SMS_TEMPLATES", "COMMUNICATION", "ROLE_PERMISSIONS", "PAYMENT_HIERARCHY", "SALES_REFERRALS"),
-                "ADMIN", Set.of("DASHBOARD", "CUSTOMERS", "PRODUCTS", "CREATE_INVOICE", "INVOICES", "PAYMENTS", "EXPENSES", "OUTSTANDING", "ANALYTICS", "DATA_PORT", "PRODUCT_DATAPORT", "REPORTS", "PROFIT_LOSS", "SETUP", "PRODUCT_CATEGORY", "PRODUCT_SUB_CATEGORIES", "EXPENSE_CATEGORIES", "PAYMENT_MODES", "ABOUT_COMPANY", "EMAIL_TEMPLATES", "SMS_TEMPLATES", "COMMUNICATION"),
-                "USER", Set.of("DASHBOARD", "CUSTOMERS", "PRODUCTS", "CREATE_INVOICE", "INVOICES", "OUTSTANDING", "ANALYTICS", "ABOUT_COMPANY")
+                "OWNER", Set.of("DASHBOARD", "CUSTOMERS", "PRODUCTS", "CREATE_INVOICE", "INVOICES", "PAYMENTS", "EXPENSES", "OUTSTANDING", "ANALYTICS", "DATA_PORT", "PRODUCT_DATAPORT", "REPORTS", "PROFIT_LOSS", "SETUP", "USERS", "PRODUCT_CATEGORY", "PRODUCT_SUB_CATEGORIES", "EXPENSE_CATEGORIES", "PAYMENT_MODES", "THEME_SETTINGS", "ABOUT_COMPANY", "EMAIL_TEMPLATES", "SMS_TEMPLATES", "COMMUNICATION", "ROLE_PERMISSIONS", "PAYMENT_HIERARCHY", "SALES_REFERRALS", "AI_ASSISTANT"),
+                "ADMIN", Set.of("DASHBOARD", "CUSTOMERS", "PRODUCTS", "CREATE_INVOICE", "INVOICES", "PAYMENTS", "EXPENSES", "OUTSTANDING", "ANALYTICS", "DATA_PORT", "PRODUCT_DATAPORT", "REPORTS", "PROFIT_LOSS", "SETUP", "PRODUCT_CATEGORY", "PRODUCT_SUB_CATEGORIES", "EXPENSE_CATEGORIES", "PAYMENT_MODES", "ABOUT_COMPANY", "EMAIL_TEMPLATES", "SMS_TEMPLATES", "COMMUNICATION", "AI_ASSISTANT"),
+                "USER", Set.of("DASHBOARD", "CUSTOMERS", "PRODUCTS", "CREATE_INVOICE", "INVOICES", "OUTSTANDING", "ANALYTICS", "ABOUT_COMPANY", "AI_ASSISTANT")
         );
         Map<String, Set<String>> actionCodesByRole = Map.of(
                 "OWNER", Set.of("VIEW", "ADD", "EDIT", "DELETE", "RESTORE", "EXPORT", "LOGS", "VIEW_LOGS", "EMAIL_SEND", "SMS_SEND", "WHATSAPP_SEND"),

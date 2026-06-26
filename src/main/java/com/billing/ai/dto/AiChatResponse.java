@@ -17,5 +17,6 @@ public class AiChatResponse {
     private String action;
     private boolean requiresConfirmation;
     private AiDraftAction draft;
+    private AiChart chart;
     private Object data;
 }

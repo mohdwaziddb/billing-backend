@@ -7,8 +7,10 @@ import com.billing.dto.notification.NotificationLogResponse;
 import com.billing.dto.notification.NotificationSendRequest;
 import com.billing.dto.notification.ProviderSettingsRequest;
 import com.billing.dto.notification.ProviderSettingsResponse;
+import com.billing.dto.notification.SmsProviderMetadataResponse;
 import com.billing.dto.notification.SmsProviderTestRequest;
 import com.billing.dto.notification.WhatsAppProviderTestRequest;
+import com.billing.dto.notification.WhatsAppProviderMetadataResponse;
 import com.billing.security.RequirePermission;
 import com.billing.service.NotificationService;
 import com.billing.service.NotificationSettingsService;
@@ -107,6 +109,13 @@ public class NotificationController {
         return ResponseEntity.ok(ApiResponse.success("SMS settings fetched successfully", notificationSettingsService.smsSettings(authentication.getName())));
     }
 
+    @GetMapping("/sms-settings/providers")
+    @RequirePermission(menu = "COMMUNICATION", action = "VIEW")
+    @PreAuthorize("denyAll()")
+    public ResponseEntity<ApiResponse<List<SmsProviderMetadataResponse>>> smsProviders(Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.success("SMS providers fetched successfully", notificationSettingsService.smsProviderMetadata()));
+    }
+
     @PostMapping("/sms-settings")
     @RequirePermission(menu = "COMMUNICATION", action = "ADD")
     @PreAuthorize("denyAll()")
@@ -135,6 +144,13 @@ public class NotificationController {
     @PreAuthorize("denyAll()")
     public ResponseEntity<ApiResponse<List<ProviderSettingsResponse>>> whatsAppSettings(Authentication authentication) {
         return ResponseEntity.ok(ApiResponse.success("WhatsApp settings fetched successfully", notificationSettingsService.whatsAppSettings(authentication.getName())));
+    }
+
+    @GetMapping("/whatsapp-settings/providers")
+    @RequirePermission(menu = "COMMUNICATION", action = "VIEW")
+    @PreAuthorize("denyAll()")
+    public ResponseEntity<ApiResponse<List<WhatsAppProviderMetadataResponse>>> whatsAppProviders(Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.success("WhatsApp providers fetched successfully", notificationSettingsService.whatsAppProviderMetadata()));
     }
 
     @PostMapping("/whatsapp-settings")

@@ -13,8 +13,10 @@ import com.billing.service.PlatformAdminService;
 import com.billing.dto.notification.EmailProviderTestRequest;
 import com.billing.dto.notification.ProviderSettingsRequest;
 import com.billing.dto.notification.ProviderSettingsResponse;
+import com.billing.dto.notification.SmsProviderMetadataResponse;
 import com.billing.dto.notification.SmsProviderTestRequest;
 import com.billing.dto.notification.WhatsAppProviderTestRequest;
+import com.billing.dto.notification.WhatsAppProviderMetadataResponse;
 import com.billing.service.NotificationSettingsService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -137,6 +139,12 @@ public class PlatformAdminController {
                 notificationSettingsService.smsSettingsForCompany(companyId)));
     }
 
+    @GetMapping("/companies/{companyId}/communication/sms-settings/providers")
+    public ResponseEntity<ApiResponse<java.util.List<SmsProviderMetadataResponse>>> smsProviders(@PathVariable Long companyId) {
+        return ResponseEntity.ok(ApiResponse.success("SMS providers fetched successfully",
+                notificationSettingsService.smsProviderMetadata()));
+    }
+
     @PostMapping("/companies/{companyId}/communication/sms-settings")
     public ResponseEntity<ApiResponse<ProviderSettingsResponse>> createSmsSettings(@PathVariable Long companyId,
                                                                                    @RequestBody ProviderSettingsRequest request,
@@ -168,6 +176,12 @@ public class PlatformAdminController {
     public ResponseEntity<ApiResponse<java.util.List<ProviderSettingsResponse>>> whatsAppSettings(@PathVariable Long companyId) {
         return ResponseEntity.ok(ApiResponse.success("WhatsApp settings fetched successfully",
                 notificationSettingsService.whatsAppSettingsForCompany(companyId)));
+    }
+
+    @GetMapping("/companies/{companyId}/communication/whatsapp-settings/providers")
+    public ResponseEntity<ApiResponse<java.util.List<WhatsAppProviderMetadataResponse>>> whatsAppProviders(@PathVariable Long companyId) {
+        return ResponseEntity.ok(ApiResponse.success("WhatsApp providers fetched successfully",
+                notificationSettingsService.whatsAppProviderMetadata()));
     }
 
     @PostMapping("/companies/{companyId}/communication/whatsapp-settings")

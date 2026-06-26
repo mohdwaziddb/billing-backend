@@ -3,6 +3,8 @@ package com.billing.ai.service;
 import com.billing.ai.audit.AiAuditService;
 import com.billing.ai.context.AiSecurityContext;
 import com.billing.ai.context.AiUserContext;
+import com.billing.ai.dto.AiChart;
+import com.billing.ai.dto.AiChartSeries;
 import com.billing.ai.dto.AiCancelRequest;
 import com.billing.ai.dto.AiChatRequest;
 import com.billing.ai.dto.AiChatResponse;
@@ -17,9 +19,12 @@ import com.billing.ai.security.AiPermissionValidator;
 import com.billing.ai.security.AiRateLimiter;
 import com.billing.dto.PageResponse;
 import com.billing.dto.analytics.LowStockProductResponse;
+import com.billing.dto.analytics.MetricPointResponse;
+import com.billing.dto.analytics.SalesByCategoryResponse;
 import com.billing.dto.customer.CustomerRequest;
 import com.billing.dto.customer.CustomerResponse;
 import com.billing.dto.dashboard.DashboardSummaryResponse;
+import com.billing.dto.expense.ProfitLossPointResponse;
 import com.billing.dto.expense.ProfitLossReportResponse;
 import com.billing.dto.invoice.InvoiceItemRequest;
 import com.billing.dto.invoice.InvoiceRequest;
@@ -34,6 +39,7 @@ import com.billing.exception.BadRequestException;
 import com.billing.exception.ChatbotDisabledException;
 import com.billing.exception.ResourceNotFoundException;
 import com.billing.service.AnalyticsService;
+import com.billing.service.AuditLogService;
 import com.billing.service.CustomerService;
 import com.billing.service.DashboardService;
 import com.billing.service.ExpenseService;
@@ -50,7 +56,10 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
+import jakarta.servlet.http.HttpServletRequest;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
@@ -93,6 +102,10 @@ public class AiChatService {
             aiAuditService.log(context, prompt, AiOperation.UNKNOWN.name(), AiAuditService.AI_CHAT, "DENIED_DISABLED");
             throw new ChatbotDisabledException("Company Disabled Chatbot");
         }
+        if (!hasAssistantAccess(context)) {
+            aiAuditService.log(context, prompt, AiOperation.UNKNOWN.name(), AiAuditService.AI_CHAT, "DENIED_ASSISTANT_ACCESS");
+            return message("You do not have permission to use AI assistant.", AiOperation.UNKNOWN);
+        }
 
         aiRateLimiter.check(context);
         AiIntent intent = aiIntentParser.parse(prompt);
@@ -129,6 +142,10 @@ public class AiChatService {
     @Transactional
     public AiChatResponse confirm(Authentication authentication, AiConfirmRequest request) {
         AiUserContext context = aiSecurityContext.current(authentication, true);
+        if (!hasAssistantAccess(context)) {
+            aiAuditService.log(context, "CONFIRM", AiOperation.UNKNOWN.name(), AiAuditService.AI_ACTION, "DENIED_ASSISTANT_ACCESS");
+            return message("You do not have permission to use AI assistant.", AiOperation.UNKNOWN);
+        }
         aiRateLimiter.check(context);
         AiDraftTokenPayload draft = aiDraftTokenService.parse(request.getDraftId());
         validateDraftContext(context, draft);
@@ -142,7 +159,7 @@ public class AiChatService {
             return message(denied.get(), operation);
         }
         try {
-            Object result = executeWrite(context, operation, draft.getPayload());
+            Object result = executeWriteWithChatbotAudit(context, operation, draft.getPayload());
             aiAuditService.log(context, "CONFIRM", operation.name(), AiAuditService.AI_ACTION, "SUCCESS");
             return AiChatResponse.builder()
                     .message(successMessage(operation, result))
@@ -162,6 +179,10 @@ public class AiChatService {
     @Transactional
     public AiChatResponse cancel(Authentication authentication, AiCancelRequest request) {
         AiUserContext context = aiSecurityContext.current(authentication, true);
+        if (!hasAssistantAccess(context)) {
+            aiAuditService.log(context, "CANCEL", AiOperation.UNKNOWN.name(), AiAuditService.AI_ACTION, "DENIED_ASSISTANT_ACCESS");
+            return message("You do not have permission to use AI assistant.", AiOperation.UNKNOWN);
+        }
         AiDraftTokenPayload draft = aiDraftTokenService.parse(request.getDraftId());
         validateDraftContext(context, draft);
         AiOperation operation = draft.getOperation() == null ? AiOperation.UNKNOWN : draft.getOperation();
@@ -176,16 +197,17 @@ public class AiChatService {
     private AiChatResponse executeRead(AiUserContext context, AiOperation operation, Map<String, Object> slots) {
         String email = context.getEmail();
         String search = text(slots, "search");
+        boolean chartRequested = text(slots, "chartType") != null;
         return switch (operation) {
             case CUSTOMER_SEARCH -> customerSearch(email, search);
-            case PRODUCT_SEARCH, CURRENT_STOCK -> productSearch(email, search, operation == AiOperation.CURRENT_STOCK);
+            case PRODUCT_SEARCH, CURRENT_STOCK -> productSearch(email, search, operation == AiOperation.CURRENT_STOCK, chartRequested);
             case OUTSTANDING_CUSTOMERS -> outstandingCustomers(email);
             case INVOICE_SEARCH -> invoiceSearch(email, search);
             case PAYMENT_SEARCH -> paymentSearch(email, search);
             case SALES_SUMMARY -> salesSummary(email, slots);
             case COLLECTION_SUMMARY -> collectionSummary(email, slots);
             case EXPENSE_SUMMARY -> expenseSummary(email, slots);
-            case INVENTORY_SUMMARY -> inventorySummary(email);
+            case INVENTORY_SUMMARY -> inventorySummary(email, chartRequested);
             case PROFIT_SUMMARY -> profitSummary(email, slots);
             default -> message("This operation is not supported yet.", operation);
         };
@@ -198,17 +220,19 @@ public class AiChatService {
                 : "Found " + customers.getRecords().size() + " customer(s):\n" + customers.getRecords().stream()
                         .map(customer -> "- " + customer.getName() + " | Mobile: " + customer.getMobile() + " | Outstanding: " + money(customer.getCurrentBalance()))
                         .collect(Collectors.joining("\n"));
-        return response(text, AiOperation.CUSTOMER_SEARCH, customers);
+        return response(text, AiOperation.CUSTOMER_SEARCH, customers, null);
     }
 
-    private AiChatResponse productSearch(String email, String search, boolean stockOnly) {
+    private AiChatResponse productSearch(String email, String search, boolean stockOnly, boolean chartRequested) {
         PageResponse<ProductResponse> products = productService.page(email, null, null, search, true, 0, 10);
         String text = products.getRecords().isEmpty()
                 ? "Product Not Found"
                 : products.getRecords().stream()
                         .map(product -> "- " + product.getName() + " | SKU: " + product.getSku() + " | Stock: " + product.getStockQty() + " | Rate: " + money(product.getSellingPrice()))
                         .collect(Collectors.joining("\n"));
-        return response(stockOnly ? "Current stock:\n" + text : "Found product(s):\n" + text, stockOnly ? AiOperation.CURRENT_STOCK : AiOperation.PRODUCT_SEARCH, products);
+        AiOperation operation = stockOnly ? AiOperation.CURRENT_STOCK : AiOperation.PRODUCT_SEARCH;
+        return response(stockOnly ? "Current stock:\n" + text : "Found product(s):\n" + text, operation, products,
+                chartRequested ? stockChart(operation, products) : null);
     }
 
     private AiChatResponse outstandingCustomers(String email) {
@@ -219,7 +243,7 @@ public class AiChatService {
                         .limit(15)
                         .map(customer -> "- " + customer.getName() + " | Mobile: " + customer.getMobile() + " | Outstanding: " + money(customer.getCurrentBalance()))
                         .collect(Collectors.joining("\n"));
-        return response(text, AiOperation.OUTSTANDING_CUSTOMERS, customers);
+        return response(text, AiOperation.OUTSTANDING_CUSTOMERS, customers, null);
     }
 
     private AiChatResponse invoiceSearch(String email, String search) {
@@ -229,7 +253,7 @@ public class AiChatService {
                 : "Found invoice(s):\n" + invoices.getRecords().stream()
                         .map(invoice -> "- " + invoice.getInvoiceNo() + " | " + invoice.getCustomerName() + " | Total: " + money(invoice.getTotalAmount()) + " | Balance: " + money(invoice.getBalanceAmount()))
                         .collect(Collectors.joining("\n"));
-        return response(text, AiOperation.INVOICE_SEARCH, invoices);
+        return response(text, AiOperation.INVOICE_SEARCH, invoices, null);
     }
 
     private AiChatResponse paymentSearch(String email, String search) {
@@ -239,7 +263,7 @@ public class AiChatService {
                 : "Found payment(s):\n" + payments.getRecords().stream()
                         .map(payment -> "- " + payment.getCustomerName() + " | " + money(payment.getAmount()) + " | " + payment.getMode() + " | " + payment.getPaymentDate())
                         .collect(Collectors.joining("\n"));
-        return response(text, AiOperation.PAYMENT_SEARCH, payments);
+        return response(text, AiOperation.PAYMENT_SEARCH, payments, null);
     }
 
     private AiChatResponse salesSummary(String email, Map<String, Object> slots) {
@@ -250,7 +274,7 @@ public class AiChatService {
                 + "- Total invoices: " + summary.getTotalInvoices() + "\n"
                 + "- Total collection: " + money(summary.getTotalCollection()) + "\n"
                 + "- Outstanding: " + money(summary.getOutstandingAmount());
-        return response(text, AiOperation.SALES_SUMMARY, summary);
+        return response(text, AiOperation.SALES_SUMMARY, summary, buildChart(email, AiOperation.SALES_SUMMARY, range));
     }
 
     private AiChatResponse collectionSummary(String email, Map<String, Object> slots) {
@@ -259,7 +283,7 @@ public class AiChatService {
         String text = "Collection summary" + range.label() + ":\n"
                 + "- Total collection: " + money(summary.getTotalCollection()) + "\n"
                 + "- Outstanding: " + money(summary.getOutstandingAmount());
-        return response(text, AiOperation.COLLECTION_SUMMARY, summary);
+        return response(text, AiOperation.COLLECTION_SUMMARY, summary, buildChart(email, AiOperation.COLLECTION_SUMMARY, range));
     }
 
     private AiChatResponse expenseSummary(String email, Map<String, Object> slots) {
@@ -269,10 +293,10 @@ public class AiChatService {
                 + "- Total expense: " + money(summary.getExpense()) + "\n"
                 + "- Revenue: " + money(summary.getRevenue()) + "\n"
                 + "- Net profit: " + money(summary.getNetProfit());
-        return response(text, AiOperation.EXPENSE_SUMMARY, summary);
+        return response(text, AiOperation.EXPENSE_SUMMARY, summary, buildChart(email, AiOperation.EXPENSE_SUMMARY, range));
     }
 
-    private AiChatResponse inventorySummary(String email) {
+    private AiChatResponse inventorySummary(String email, boolean chartRequested) {
         PageResponse<ProductResponse> products = productService.page(email, null, null, null, true, 0, 100);
         PageResponse<LowStockProductResponse> lowStock = analyticsService.lowStockProducts(email, 0, 100);
         int totalUnits = products.getRecords().stream().map(ProductResponse::getStockQty).filter(Objects::nonNull).reduce(0, Integer::sum);
@@ -284,7 +308,7 @@ public class AiChatService {
                 + "- Active products loaded: " + products.getRecords().size() + "\n"
                 + "- Total stock units: " + totalUnits + "\n"
                 + "- Low stock products: " + lowStock.getTotalRecords();
-        return response(text, AiOperation.INVENTORY_SUMMARY, data);
+        return response(text, AiOperation.INVENTORY_SUMMARY, data, chartRequested ? inventoryChart(lowStock) : null);
     }
 
     private AiChatResponse profitSummary(String email, Map<String, Object> slots) {
@@ -294,7 +318,7 @@ public class AiChatService {
                 + "- Revenue: " + money(summary.getRevenue()) + "\n"
                 + "- Expense: " + money(summary.getExpense()) + "\n"
                 + "- Net profit: " + money(summary.getNetProfit());
-        return response(text, AiOperation.PROFIT_SUMMARY, summary);
+        return response(text, AiOperation.PROFIT_SUMMARY, summary, buildChart(email, AiOperation.PROFIT_SUMMARY, range));
     }
 
     private AiChatResponse createDraft(AiUserContext context, AiOperation operation, Map<String, Object> slots) {
@@ -472,6 +496,25 @@ public class AiChatService {
         };
     }
 
+    private Object executeWriteWithChatbotAudit(AiUserContext context, AiOperation operation, Map<String, Object> payload) {
+        HttpServletRequest request = currentRequest();
+        Object previousSuffix = request == null ? null : request.getAttribute(AuditLogService.AUDIT_ACTOR_SUFFIX_REQUEST_ATTRIBUTE);
+        try {
+            if (request != null) {
+                request.setAttribute(AuditLogService.AUDIT_ACTOR_SUFFIX_REQUEST_ATTRIBUTE, AiAuditService.CHATBOT_ACTOR_SUFFIX);
+            }
+            return executeWrite(context, operation, payload);
+        } finally {
+            if (request != null) {
+                if (previousSuffix == null) {
+                    request.removeAttribute(AuditLogService.AUDIT_ACTOR_SUFFIX_REQUEST_ATTRIBUTE);
+                } else {
+                    request.setAttribute(AuditLogService.AUDIT_ACTOR_SUFFIX_REQUEST_ATTRIBUTE, previousSuffix);
+                }
+            }
+        }
+    }
+
     private InvoiceRequest invoiceRequest(Map<String, Object> payload) {
         InvoiceRequest request = new InvoiceRequest();
         request.setCustomerId(longValue(payload.get("customerId")));
@@ -611,28 +654,136 @@ public class AiChatService {
 
     private DateRange dateRange(Map<String, Object> slots) {
         String dateRange = text(slots, "dateRange");
+        String chartType = text(slots, "chartType");
         LocalDate today = LocalDate.now();
         if ("TODAY".equalsIgnoreCase(dateRange)) {
-            return new DateRange(today, today, " for today");
+            return new DateRange(today, today, " for today", chartType);
         }
         if ("THIS_MONTH".equalsIgnoreCase(dateRange) || "MONTHLY".equalsIgnoreCase(dateRange)) {
             YearMonth month = YearMonth.from(today);
-            return new DateRange(month.atDay(1), month.atEndOfMonth(), " for " + month);
+            return new DateRange(month.atDay(1), month.atEndOfMonth(), " for " + month, chartType);
         }
-        return new DateRange(null, null, "");
+        return new DateRange(null, null, "", chartType);
     }
 
-    private AiChatResponse response(String message, AiOperation operation, Object data) {
+    private AiChatResponse response(String message, AiOperation operation, Object data, AiChart chart) {
         return AiChatResponse.builder()
                 .message(message)
                 .intent(operation.name())
                 .action(AiAuditService.AI_CHAT)
+                .chart(chart)
                 .data(data)
                 .build();
     }
 
     private AiChatResponse message(String message, AiOperation operation) {
-        return response(message, operation, null);
+        return response(message, operation, null, null);
+    }
+
+    private boolean hasAssistantAccess(AiUserContext context) {
+        return context.hasPermission("AI_ASSISTANT", "VIEW");
+    }
+
+    private AiChart buildChart(String email, AiOperation operation, DateRange range) {
+        if (range == null || range.chartType() == null) {
+            return null;
+        }
+        String chartType = range.chartType();
+        return switch (operation) {
+            case SALES_SUMMARY -> "PIE".equals(chartType)
+                    ? salesCategoryChart(email, range)
+                    : trendChart(chartType, "Sales chart" + range.label(), analyticsService.ownerOverview(email, range.startDate(), range.endDate()).getSalesTrend(), "Sales");
+            case COLLECTION_SUMMARY -> "PIE".equals(chartType)
+                    ? trendChart("PIE", "Collection chart" + range.label(), analyticsService.ownerOverview(email, range.startDate(), range.endDate()).getCollectionTrend(), "Collection")
+                    : trendChart(chartType, "Collection chart" + range.label(), analyticsService.ownerOverview(email, range.startDate(), range.endDate()).getCollectionTrend(), "Collection");
+            case EXPENSE_SUMMARY -> "PIE".equals(chartType)
+                    ? expenseCategoryChart("Expense chart" + range.label(), expenseService.profitLossReport(email, null, null, null, null, range.startDate(), range.endDate(), null).getExpenseByCategory())
+                    : trendChart(chartType, "Expense chart" + range.label(), analyticsService.ownerOverview(email, range.startDate(), range.endDate()).getExpenseTrend(), "Expense");
+            case PROFIT_SUMMARY -> "PIE".equals(chartType)
+                    ? trendChart("PIE", "Profit chart" + range.label(), analyticsService.ownerOverview(email, range.startDate(), range.endDate()).getNetProfitTrend(), "Net Profit")
+                    : trendChart(chartType, "Profit chart" + range.label(), analyticsService.ownerOverview(email, range.startDate(), range.endDate()).getNetProfitTrend(), "Net Profit");
+            default -> null;
+        };
+    }
+
+    private AiChart salesCategoryChart(String email, DateRange range) {
+        List<SalesByCategoryResponse> rows = analyticsService.salesByCategory(email, range.startDate(), range.endDate(), 7);
+        List<Map<String, Object>> data = rows.stream()
+                .map(row -> chartRow(
+                        "label", row.getCategoryName(),
+                        "value", row.getTotalAmount(),
+                        "percentage", row.getPercentage()))
+                .toList();
+        return chart("PIE", "Sales by category" + range.label(), data, "label", "value", "Sales");
+    }
+
+    private AiChart expenseCategoryChart(String title, List<ProfitLossPointResponse> rows) {
+        List<Map<String, Object>> data = rows == null ? List.of() : rows.stream()
+                .map(row -> chartRow(
+                        "label", row.getLabel(),
+                        "value", row.getValue() == null ? BigDecimal.ZERO : row.getValue()))
+                .toList();
+        return chart("PIE", title, data, "label", "value", "Expense");
+    }
+
+    private AiChart trendChart(String type, String title, List<MetricPointResponse> rows, String label) {
+        List<Map<String, Object>> data = rows == null ? List.of() : rows.stream()
+                .map(row -> chartRow(
+                        "label", row.getLabel(),
+                        "value", row.getValue() == null ? BigDecimal.ZERO : row.getValue()))
+                .toList();
+        return chart(type, title, data, "label", "value", label);
+    }
+
+    private AiChart inventoryChart(PageResponse<LowStockProductResponse> lowStock) {
+        List<Map<String, Object>> data = lowStock.getRecords().stream()
+                .limit(8)
+                .map(product -> chartRow(
+                        "label", product.getProductName(),
+                        "value", product.getStockQty() == null ? 0 : product.getStockQty(),
+                        "minStock", product.getMinStockQty() == null ? 0 : product.getMinStockQty()))
+                .toList();
+        return data.isEmpty() ? null : chart("BAR", "Low stock products", data, "label", "value", "Stock");
+    }
+
+    private AiChart stockChart(AiOperation operation, PageResponse<ProductResponse> products) {
+        if (operation != AiOperation.CURRENT_STOCK || products.getRecords().isEmpty()) {
+            return null;
+        }
+        List<Map<String, Object>> data = products.getRecords().stream()
+                .limit(8)
+                .map(product -> chartRow(
+                        "label", product.getName(),
+                        "value", product.getStockQty() == null ? 0 : product.getStockQty(),
+                        "rate", product.getSellingPrice() == null ? BigDecimal.ZERO : product.getSellingPrice()))
+                .toList();
+        return chart("BAR", "Current stock", data, "label", "value", "Stock");
+    }
+
+    private AiChart chart(String type, String title, List<Map<String, Object>> data, String labelKey, String valueKey, String seriesLabel) {
+        if (data == null || data.isEmpty()) {
+            return null;
+        }
+        return AiChart.builder()
+                .type(type)
+                .title(title)
+                .labelKey(labelKey)
+                .valueKey(valueKey)
+                .series(List.of(AiChartSeries.builder()
+                        .key(valueKey)
+                        .label(seriesLabel)
+                        .color("#0EA5E9")
+                        .build()))
+                .data(data)
+                .build();
+    }
+
+    private Map<String, Object> chartRow(Object... values) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        for (int index = 0; index + 1 < values.length; index += 2) {
+            row.put(String.valueOf(values[index]), values[index + 1]);
+        }
+        return row;
     }
 
     private String successMessage(AiOperation operation, Object result) {
@@ -727,6 +878,13 @@ public class AiChatService {
         return "INR " + (value == null ? BigDecimal.ZERO : value).setScale(2, RoundingMode.HALF_UP);
     }
 
-    private record DateRange(LocalDate startDate, LocalDate endDate, String label) {
+    private HttpServletRequest currentRequest() {
+        if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes) {
+            return attributes.getRequest();
+        }
+        return null;
+    }
+
+    private record DateRange(LocalDate startDate, LocalDate endDate, String label, String chartType) {
     }
 }

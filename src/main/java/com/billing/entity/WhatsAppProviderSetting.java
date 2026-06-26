@@ -55,6 +55,9 @@ public class WhatsAppProviderSetting extends BaseEntity {
     @Column(name = "api_url", nullable = false, columnDefinition = "TEXT")
     private String apiUrl;
 
+    @Column(name = "provider_config", columnDefinition = "LONGTEXT")
+    private String providerConfig;
+
     @Column(name = "is_active", nullable = false)
     private boolean active;
 }

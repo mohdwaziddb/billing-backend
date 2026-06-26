@@ -15,6 +15,7 @@ public class AiAuditService {
 
     public static final String AI_CHAT = "AI_CHAT";
     public static final String AI_ACTION = "AI_ACTION";
+    public static final String CHATBOT_ACTOR_SUFFIX = " (Chatbot)";
 
     private final AuditLogService auditLogService;
 

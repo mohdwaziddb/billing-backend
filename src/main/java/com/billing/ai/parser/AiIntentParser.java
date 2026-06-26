@@ -81,6 +81,7 @@ public class AiIntentParser {
         }
         if (lower.contains("stock") || lower.contains("inventory of")) {
             slots.put("search", cleanupSearch(text.replaceAll("(?i)show|current|stock|of|inventory", " ")));
+            fillChartSlots(lower, slots);
             return intent(AiOperation.CURRENT_STOCK, slots);
         }
         if (lower.contains("outstanding")) {
@@ -89,18 +90,22 @@ public class AiIntentParser {
         }
         if (lower.contains("collection")) {
             fillDateRangeSlots(lower, slots);
+            fillChartSlots(lower, slots);
             return intent(AiOperation.COLLECTION_SUMMARY, slots);
         }
         if (lower.contains("expense")) {
             fillDateRangeSlots(lower, slots);
+            fillChartSlots(lower, slots);
             return intent(AiOperation.EXPENSE_SUMMARY, slots);
         }
         if (lower.contains("profit")) {
             fillDateRangeSlots(lower, slots);
+            fillChartSlots(lower, slots);
             return intent(AiOperation.PROFIT_SUMMARY, slots);
         }
         if (lower.contains("sales")) {
             fillDateRangeSlots(lower, slots);
+            fillChartSlots(lower, slots);
             return intent(AiOperation.SALES_SUMMARY, slots);
         }
         if (lower.contains("invoice")) {
@@ -120,6 +125,7 @@ public class AiIntentParser {
             return intent(AiOperation.CUSTOMER_SEARCH, slots);
         }
         if (lower.contains("inventory")) {
+            fillChartSlots(lower, slots);
             return intent(AiOperation.INVENTORY_SUMMARY, slots);
         }
         return intent(AiOperation.UNKNOWN, slots);
@@ -192,6 +198,25 @@ public class AiIntentParser {
         if (lower.contains("today")) {
             slots.put("dateRange", "TODAY");
         }
+    }
+
+    private void fillChartSlots(String lower, Map<String, Object> slots) {
+        if (!(lower.contains("graph") || lower.contains("chart"))) {
+            return;
+        }
+        if (lower.contains("pie")) {
+            slots.put("chartType", "PIE");
+            return;
+        }
+        if (lower.contains("bar")) {
+            slots.put("chartType", "BAR");
+            return;
+        }
+        if (lower.contains("line")) {
+            slots.put("chartType", "LINE");
+            return;
+        }
+        slots.put("chartType", "LINE");
     }
 
     private void putRegex(String text, Map<String, Object> slots, String key, String regex) {

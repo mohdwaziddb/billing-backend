@@ -40,6 +40,7 @@ public class AuditLogService {
     public static final String UPDATE = "UPDATE";
     public static final String DELETE = "DELETE";
     public static final String STATUS_CHANGE = "STATUS_CHANGE";
+    public static final String AUDIT_ACTOR_SUFFIX_REQUEST_ATTRIBUTE = "billing.audit.actorSuffix";
 
     private final AuditLogRepository auditLogRepository;
     private final AccessControlService accessControlService;
@@ -206,6 +207,7 @@ public class AuditLogService {
                                Map<String, Object> newData,
                                Map<String, Object> changedFields) {
         HttpServletRequest request = currentRequest();
+        String actorName = applyActorSuffix(userName, request);
         auditLogRepository.save(AuditLog.builder()
                 .company(company)
                 .moduleName(moduleName)
@@ -216,7 +218,7 @@ public class AuditLogService {
                 .newData(toJson(newData))
                 .changedFields(toJson(changedFields))
                 .userId(userId)
-                .userName(userName)
+                .userName(actorName)
                 .ipAddress(resolveIpAddress(request))
                 .userAgent(request != null ? request.getHeader("User-Agent") : null)
                 .createdAt(LocalDateTime.now())
@@ -228,6 +230,24 @@ public class AuditLogService {
             return attributes.getRequest();
         }
         return null;
+    }
+
+    private String applyActorSuffix(String userName, HttpServletRequest request) {
+        if (request == null) {
+            return userName;
+        }
+        Object suffixValue = request.getAttribute(AUDIT_ACTOR_SUFFIX_REQUEST_ATTRIBUTE);
+        if (suffixValue == null) {
+            return userName;
+        }
+        String suffix = String.valueOf(suffixValue).trim();
+        if (suffix.isBlank()) {
+            return userName;
+        }
+        if (userName == null || userName.isBlank()) {
+            return suffix;
+        }
+        return userName.endsWith(suffix) ? userName : userName + suffix;
     }
 
     private String resolveIpAddress(HttpServletRequest request) {

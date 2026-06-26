@@ -1,5 +1,6 @@
 package com.billing.service;
 
+import com.billing.ai.service.OllamaClient;
 import com.billing.config.PermissionDataInitializer;
 import com.billing.dto.PageResponse;
 import com.billing.dto.platformadmin.PlatformAdminCompanyCreateRequest;
@@ -44,15 +45,24 @@ public class PlatformAdminService {
     private final AuditLogRepository auditLogRepository;
     private final PasswordEncoder passwordEncoder;
     private final PermissionDataInitializer permissionDataInitializer;
+    private final OllamaClient ollamaClient;
 
     @Transactional(readOnly = true)
     public PlatformAdminDashboardResponse dashboard() {
         List<Company> companies = companyRepository.findAll();
+        OllamaClient.OllamaStatus ollamaStatus = ollamaClient.status();
 
         return PlatformAdminDashboardResponse.builder()
                 .totalCompanies(companies.size())
                 .activeCompanies(companies.stream().filter(Company::isActive).count())
                 .inactiveCompanies(companies.stream().filter(company -> !company.isActive()).count())
+                .ollama(PlatformAdminDashboardResponse.OllamaStatus.builder()
+                        .enabled(ollamaStatus.isEnabled())
+                        .active(ollamaStatus.isActive())
+                        .baseUrl(ollamaStatus.getBaseUrl())
+                        .model(ollamaStatus.getModel())
+                        .message(ollamaStatus.getMessage())
+                        .build())
                 .build();
     }
 

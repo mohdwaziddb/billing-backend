@@ -12,6 +12,7 @@ import com.billing.exception.BadRequestException;
 import com.billing.exception.ResourceNotFoundException;
 import com.billing.repository.EmailTemplateRepository;
 import com.billing.repository.NotificationLogRepository;
+import com.billing.repository.SmsProviderSettingRepository;
 import com.billing.repository.SmsTemplateRepository;
 import com.billing.service.sms.CommonSmsService;
 import com.billing.service.sms.SmsSendResult;
@@ -35,6 +36,7 @@ public class NotificationService {
     private final EmailTemplateRepository emailTemplateRepository;
     private final SmsTemplateRepository smsTemplateRepository;
     private final NotificationLogRepository notificationLogRepository;
+    private final SmsProviderSettingRepository smsProviderSettingRepository;
     private final EmailTemplateVariableService variableService;
     private final EmailService emailService;
     private final CommonSmsService commonSmsService;
@@ -75,7 +77,7 @@ public class NotificationService {
         }
         EmailService.EmailDeliveryResult result = emailService.sendEmail(company, subject, body, toEmails, safeList(request.getCcEmails()), safeList(request.getBccEmails()), request.getAttachments(), email);
         String recipient = String.join(",", toEmails);
-        NotificationLog saved = saveLog(company, NotificationChannelType.EMAIL, templateId, recipient, subject, body, result.providerResponse(), result.status(), email, result.sentAt());
+        NotificationLog saved = saveLog(company, NotificationChannelType.EMAIL, templateId, recipient, subject, body, "EMAIL", null, null, result.providerResponse(), result.status(), email, result.sentAt());
         writeAudit(email, company, saved, result.status() == NotificationStatus.SENT ? "EMAIL_SENT" : result.status() == NotificationStatus.FAILED ? "EMAIL_FAILED" : "EMAIL_PENDING");
         return List.of(toResponse(saved));
     }
@@ -94,8 +96,11 @@ public class NotificationService {
         if (results.isEmpty()) {
             throw new BadRequestException("At least one valid mobile number is required");
         }
+        String providerName = smsProviderSettingRepository.findFirstByCompanyAndActiveTrueOrderByIdDesc(company)
+                .map(setting -> setting.getProviderName() == null || setting.getProviderName().isBlank() ? setting.getProviderType().name() : setting.getProviderName())
+                .orElse("SMS");
         return results.stream().map(result -> {
-            NotificationLog saved = saveLog(company, NotificationChannelType.SMS, templateId, result.mobileNumber(), null, message, result.providerResponse(), result.status(), email, result.sentAt());
+            NotificationLog saved = saveLog(company, NotificationChannelType.SMS, templateId, result.mobileNumber(), null, message, providerName, null, result.status() == NotificationStatus.FAILED ? result.providerResponse() : null, result.providerResponse(), result.status(), email, result.sentAt());
             writeAudit(email, company, saved, result.status() == NotificationStatus.SENT ? "SMS_SENT" : result.status() == NotificationStatus.FAILED ? "SMS_FAILED" : "SMS_PENDING");
             return toResponse(saved);
         }).toList();
@@ -115,7 +120,7 @@ public class NotificationService {
             throw new BadRequestException("At least one valid mobile number is required");
         }
         return results.stream().map(result -> {
-            NotificationLog saved = saveLog(company, NotificationChannelType.WHATSAPP, request.getTemplateId(), result.mobileNumber(), null, message, result.providerResponse(), result.status(), email, result.sentAt());
+            NotificationLog saved = saveLog(company, NotificationChannelType.WHATSAPP, request.getTemplateId(), result.mobileNumber(), null, message, result.providerName(), result.messageId(), result.failureReason(), result.providerResponse(), result.status(), email, result.sentAt());
             writeAudit(email, company, saved, result.status() == NotificationStatus.SENT ? "WHATSAPP_SENT" : result.status() == NotificationStatus.FAILED ? "WHATSAPP_FAILED" : "WHATSAPP_PENDING");
             return toResponse(saved);
         }).toList();
@@ -149,6 +154,9 @@ public class NotificationService {
                                     String recipient,
                                     String subject,
                                     String message,
+                                    String providerName,
+                                    String messageId,
+                                    String failureReason,
                                     String providerResponse,
                                     NotificationStatus status,
                                     String sentBy,
@@ -160,6 +168,9 @@ public class NotificationService {
                 .recipient(recipient == null ? "" : recipient)
                 .subject(subject)
                 .message(message)
+                .providerName(providerName)
+                .messageId(messageId)
+                .failureReason(failureReason)
                 .providerResponse(providerResponse)
                 .status(status.name())
                 .sentBy(sentBy)
@@ -173,6 +184,9 @@ public class NotificationService {
         data.put("template_id", log.getTemplateId());
         data.put("recipient", log.getRecipient());
         data.put("status", log.getStatus());
+        data.put("provider_name", log.getProviderName());
+        data.put("message_id", log.getMessageId());
+        data.put("failure_reason", log.getFailureReason());
         auditLogService.logEvent(email, company, "Notification", "NotificationLog", log.getId(), action, data);
     }
 
@@ -188,6 +202,9 @@ public class NotificationService {
                 .recipient(log.getRecipient())
                 .subject(log.getSubject())
                 .message(log.getMessage())
+                .providerName(log.getProviderName())
+                .messageId(log.getMessageId())
+                .failureReason(log.getFailureReason())
                 .providerResponse(log.getProviderResponse())
                 .status(log.getStatus())
                 .sentBy(log.getSentBy())
