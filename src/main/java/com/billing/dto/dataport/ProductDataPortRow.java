@@ -17,9 +17,6 @@ public class ProductDataPortRow implements ValidatableImportRow {
     private String active;
     private String brand;
     private String hsnCode;
-    private String purchasePrice;
-    private String sellingPrice;
-    private String openingStockQty;
     private String minimumStockQty;
     private String taxPercent;
     private Long productCategoryId;

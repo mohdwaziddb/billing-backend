@@ -44,9 +44,6 @@ public class ProductImportValidator implements ImportValidator<ProductDataPortRo
         row.setActive(trim(row.getActive()));
         row.setBrand(blankToNull(row.getBrand()));
         row.setHsnCode(blankToNull(row.getHsnCode()));
-        row.setPurchasePrice(trim(row.getPurchasePrice()));
-        row.setSellingPrice(trim(row.getSellingPrice()));
-        row.setOpeningStockQty(trim(row.getOpeningStockQty()));
         row.setMinimumStockQty(trim(row.getMinimumStockQty()));
         row.setTaxPercent(trim(row.getTaxPercent()));
         row.setProductCategoryId(null);
@@ -57,8 +54,6 @@ public class ProductImportValidator implements ImportValidator<ProductDataPortRo
         require(row.getProductCategory(), "productCategory", "Product category is required", errors);
         require(row.getProductSubCategory(), "productSubCategory", "Product sub category is required", errors);
         require(row.getSku(), "sku", "SKU is required", errors);
-        require(row.getPurchasePrice(), "purchasePrice", "Purchase price is required", errors);
-        require(row.getSellingPrice(), "sellingPrice", "Selling price is required", errors);
         require(row.getTaxPercent(), "taxPercent", "Tax percent is required", errors);
 
         if (!row.getProductCategory().isBlank()) {
@@ -86,26 +81,11 @@ public class ProductImportValidator implements ImportValidator<ProductDataPortRo
             errors.put("sku", "SKU is duplicated in the uploaded file");
         }
 
-        BigDecimal purchasePrice = parseDecimal(row.getPurchasePrice(), "purchasePrice", "Purchase price must be a valid number", errors);
-        BigDecimal sellingPrice = parseDecimal(row.getSellingPrice(), "sellingPrice", "Selling price must be a valid number", errors);
         BigDecimal taxPercent = parseDecimal(row.getTaxPercent(), "taxPercent", "Tax percent must be a valid number", errors);
-        Integer openingStockQty = parseInteger(defaultIfBlank(row.getOpeningStockQty(), "0"), "openingStockQty", "Opening stock qty must be a whole number", errors);
         Integer minimumStockQty = parseInteger(defaultIfBlank(row.getMinimumStockQty(), "0"), "minimumStockQty", "Minimum stock qty must be a whole number", errors);
 
-        if (purchasePrice != null && purchasePrice.compareTo(BigDecimal.ZERO) < 0) {
-            errors.put("purchasePrice", "Purchase price must be 0 or more");
-        }
-        if (sellingPrice != null && sellingPrice.compareTo(BigDecimal.ZERO) < 0) {
-            errors.put("sellingPrice", "Selling price must be 0 or more");
-        }
-        if (purchasePrice != null && sellingPrice != null && sellingPrice.compareTo(purchasePrice) < 0) {
-            errors.put("sellingPrice", "Selling price cannot be less than purchase price");
-        }
         if (taxPercent != null && taxPercent.compareTo(BigDecimal.ZERO) < 0) {
             errors.put("taxPercent", "Tax percent must be 0 or more");
-        }
-        if (openingStockQty != null && openingStockQty < 0) {
-            errors.put("openingStockQty", "Opening stock qty must be 0 or more");
         }
         if (minimumStockQty != null && minimumStockQty < 0) {
             errors.put("minimumStockQty", "Minimum stock qty must be 0 or more");

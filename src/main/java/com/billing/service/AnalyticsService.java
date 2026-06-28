@@ -56,6 +56,7 @@ public class AnalyticsService {
     private final PaymentRepository paymentRepository;
     private final ExpenseRepository expenseRepository;
     private final RevenueCalculationService revenueCalculationService;
+    private final InventoryService inventoryService;
 
     @Transactional(readOnly = true)
     public AnalyticsSummaryResponse summary(String email, LocalDate startDate, LocalDate endDate) {
@@ -82,9 +83,10 @@ public class AnalyticsService {
         BigDecimal thisMonthSales = sumInvoiceSalesForMonth(invoices, thisMonth);
         BigDecimal lastMonthSales = sumInvoiceSalesForMonth(invoices, lastMonth);
         BigDecimal outstanding = calculateOutstandingAsOf(customers, invoices, payments, endDate);
+        Map<Long, InventoryService.ProductInventorySnapshot> inventoryByProduct = inventoryService.summarize(company, productsFor(company), false);
         long lowStockCount = productsFor(company).stream()
                 .filter(Product::isActive)
-                .filter(product -> product.getStockQty() <= product.getMinStockQty())
+                .filter(product -> inventoryByProduct.getOrDefault(product.getId(), InventoryService.ProductInventorySnapshot.empty()).getCurrentStock() <= product.getMinStockQty())
                 .count();
         long dueCustomers = customers.stream().filter(customer -> scale(customer.getCurrentBalance()).compareTo(BigDecimal.ZERO) > 0).count();
         long newCustomers = customers.stream()
@@ -160,6 +162,8 @@ public class AnalyticsService {
 
     @Transactional(readOnly = true)
     public PageResponse<TopSellingProductResponse> topSellingProducts(String email, LocalDate startDate, LocalDate endDate, String search, int page, int size) {
+        User user = accessControlService.getCurrentUser(email);
+        Company company = accessControlService.requireCompany(user);
         Pageable pageable = pageRequest(page, size);
         String normalizedSearch = blankToNull(search);
         List<Invoice> invoices = invoicesForCurrentUser(email).stream()
@@ -192,7 +196,7 @@ public class AnalyticsService {
                         .sku(aggregate.product.getSku())
                         .totalQtySold(aggregate.totalQty)
                         .totalSalesAmount(scale(aggregate.totalSales))
-                        .currentStockQty(aggregate.product.getStockQty())
+                        .currentStockQty(inventoryService.summarize(company, aggregate.product, false).getCurrentStock())
                         .build())
                 .toList();
         return page(allRecords, pageable);
@@ -264,13 +268,13 @@ public class AnalyticsService {
         Pageable pageable = pageRequest(page, size);
         List<LowStockProductResponse> allRecords = productsFor(company).stream()
                 .filter(Product::isActive)
-                .filter(product -> product.getStockQty() <= product.getMinStockQty())
-                .sorted(Comparator.comparing(Product::getStockQty).thenComparing(Product::getName))
+                .filter(product -> inventoryService.summarize(company, product, false).getCurrentStock() <= product.getMinStockQty())
+                .sorted(Comparator.comparing((Product product) -> inventoryService.summarize(company, product, false).getCurrentStock()).thenComparing(Product::getName))
                 .map(product -> LowStockProductResponse.builder()
                         .productId(product.getId())
                         .productName(product.getName())
                         .sku(product.getSku())
-                        .stockQty(product.getStockQty())
+                        .stockQty(inventoryService.summarize(company, product, false).getCurrentStock())
                         .minStockQty(product.getMinStockQty())
                         .active(product.isActive())
                         .build())

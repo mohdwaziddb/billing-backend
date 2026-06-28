@@ -102,6 +102,18 @@ public class DashboardService {
         BigDecimal previousCollection = previousPayments.stream()
                 .map(Payment::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalGst = filteredInvoices.stream()
+                .map(Invoice::getTaxAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal cgstCollected = filteredInvoices.stream()
+                .map(Invoice::getCgstTotal)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal sgstCollected = filteredInvoices.stream()
+                .map(Invoice::getSgstTotal)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal igstCollected = filteredInvoices.stream()
+                .map(Invoice::getIgstTotal)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         BigDecimal outstanding = calculateOutstandingAsOf(allCustomers, allInvoices, allPayments, safeEnd);
         BigDecimal previousOutstanding = calculateOutstandingAsOf(allCustomers, allInvoices, allPayments, previousEnd);
@@ -154,6 +166,10 @@ public class DashboardService {
                 .totalExpense(scale(totalExpense))
                 .netRevenue(revenueCalculationService.netRevenue(totalCollection, totalExpense))
                 .outstandingBalance(scale(outstanding))
+                .totalGst(scale(totalGst))
+                .cgstCollected(scale(cgstCollected))
+                .sgstCollected(scale(sgstCollected))
+                .igstCollected(scale(igstCollected))
                 .totalSalesTrendPercentage(calculateTrendPercentage(totalSales, previousSales))
                 .collectionTrendPercentage(calculateTrendPercentage(totalCollection, previousCollection))
                 .outstandingTrendPercentage(calculateTrendPercentage(outstanding, previousOutstanding))

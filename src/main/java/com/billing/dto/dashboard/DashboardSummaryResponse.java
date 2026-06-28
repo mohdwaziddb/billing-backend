@@ -24,6 +24,10 @@ public class DashboardSummaryResponse {
     private BigDecimal totalExpense;
     private BigDecimal netRevenue;
     private BigDecimal outstandingBalance;
+    private BigDecimal totalGst;
+    private BigDecimal cgstCollected;
+    private BigDecimal sgstCollected;
+    private BigDecimal igstCollected;
     private BigDecimal totalSalesTrendPercentage;
     private BigDecimal collectionTrendPercentage;
     private BigDecimal outstandingTrendPercentage;

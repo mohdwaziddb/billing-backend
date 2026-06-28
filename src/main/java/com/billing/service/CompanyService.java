@@ -31,6 +31,7 @@ public class CompanyService {
     private final AccessControlService accessControlService;
     private final CompanyRepository companyRepository;
     private final CompanyThemeSettingRepository companyThemeSettingRepository;
+    private final StateMasterService stateMasterService;
     private static final Set<String> LOGO_CONTENT_TYPES = Set.of("image/jpeg", "image/png", "image/webp");
 
     @Value("${app.upload-dir:uploads}")
@@ -48,10 +49,22 @@ public class CompanyService {
                 && companyRepository.existsByEmailIgnoreCase(request.getEmail())) {
             throw new BadRequestException("Company email already exists");
         }
-        if (!company.getTaxId().equalsIgnoreCase(request.getTaxId())
-                && companyRepository.existsByTaxIdIgnoreCase(request.getTaxId())) {
+        boolean gstRegistered = Boolean.TRUE.equals(request.getGstRegistered());
+        String requestedGstin = firstNonBlank(request.getGstin(), request.getTaxId());
+        if (gstRegistered && requestedGstin == null) {
+            throw new BadRequestException("GST number is required when GST Registered is Yes");
+        }
+        if (!gstRegistered) {
+            requestedGstin = null;
+        }
+        String currentGstin = firstNonBlank(company.getGstin(), company.getTaxId());
+        if (requestedGstin != null
+                && (currentGstin == null || !currentGstin.equalsIgnoreCase(requestedGstin))
+                && companyRepository.existsByTaxIdIgnoreCase(requestedGstin)) {
             throw new BadRequestException("Tax ID already exists");
         }
+
+        var stateMaster = request.getStateId() == null ? null : stateMasterService.getActiveByIdOrThrow(request.getStateId(), "Company state");
 
         company.setName(request.getName());
         company.setLegalName(blankToNull(request.getLegalName()));
@@ -62,13 +75,25 @@ public class CompanyService {
         company.setAddressLine1(blankToNull(request.getAddressLine1()));
         company.setAddressLine2(blankToNull(request.getAddressLine2()));
         company.setCity(blankToNull(request.getCity()));
-        company.setState(blankToNull(request.getState()));
-        company.setCountry(blankToNull(request.getCountry()));
+        company.setStateMaster(stateMaster);
+        company.setState(stateMaster != null ? stateMaster.getStateName() : blankToNull(request.getState()));
+        company.setCountry(stateMaster != null ? stateMaster.getCountryName() : blankToNull(request.getCountry()));
         company.setPincode(blankToNull(request.getPincode()));
-        company.setTaxId(request.getTaxId());
+        company.setTaxId(requestedGstin);
+        company.setGstin(requestedGstin);
+        company.setGstRegistered(gstRegistered);
+        company.setCompositionScheme(Boolean.TRUE.equals(request.getCompositionScheme()));
         company.setPanNumber(blankToNull(request.getPanNumber()));
         company.setCinNumber(blankToNull(request.getCinNumber()));
         company.setWebsiteUrl(blankToNull(request.getWebsiteUrl()));
+        company.setBankName(blankToNull(request.getBankName()));
+        company.setBankAccountName(blankToNull(request.getBankAccountName()));
+        company.setBankAccountNumber(blankToNull(request.getBankAccountNumber()));
+        company.setBankIfscCode(blankToNull(request.getBankIfscCode()));
+        company.setBankBranch(blankToNull(request.getBankBranch()));
+        company.setUpiId(blankToNull(request.getUpiId()));
+        company.setInvoiceNotes(blankToNull(request.getInvoiceNotes()));
+        company.setInvoiceTerms(blankToNull(request.getInvoiceTerms()));
         company.setDatabaseName(blankToNull(request.getDatabaseName()));
 
         return toSummary(companyRepository.save(company));
@@ -76,54 +101,76 @@ public class CompanyService {
 
     @Transactional
     public CompanySummary uploadLogo(String email, MultipartFile file) {
+        Company company = accessControlService.requireOwnerCompany(email);
+        return saveImage(company, file, "company-logos", "company-" + company.getId() + "-", true);
+    }
+
+    @Transactional
+    public CompanySummary uploadSignature(String email, MultipartFile file) {
+        Company company = accessControlService.requireOwnerCompany(email);
+        return saveImage(company, file, "company-signatures", "signature-" + company.getId() + "-", false);
+    }
+
+    @Transactional
+    public CompanySummary deleteSignature(String email) {
+        Company company = accessControlService.requireOwnerCompany(email);
+        deleteFile(company.getSignatureUrl(), "company-signatures");
+        company.setSignatureUrl(null);
+        return toSummary(companyRepository.save(company));
+    }
+
+    private CompanySummary saveImage(Company company, MultipartFile file, String folderName, String prefix, boolean logo) {
         if (file == null || file.isEmpty()) {
-            throw new BadRequestException("Logo file is required");
+            throw new BadRequestException((logo ? "Logo" : "Signature") + " file is required");
         }
         String contentType = file.getContentType() == null ? "" : file.getContentType().toLowerCase(Locale.ROOT);
         if (!LOGO_CONTENT_TYPES.contains(contentType)) {
-            throw new BadRequestException("Only JPG, PNG, and WEBP logos are allowed");
+            throw new BadRequestException("Only JPG, PNG, and WEBP images are allowed");
         }
-
-        Company company = accessControlService.requireOwnerCompany(email);
         String extension = switch (contentType) {
             case "image/png" -> ".png";
             case "image/webp" -> ".webp";
             default -> ".jpg";
         };
-        String fileName = "company-" + company.getId() + "-" + UUID.randomUUID() + extension;
-        Path targetDir = Paths.get(uploadDir).toAbsolutePath().normalize().resolve("company-logos");
+        String fileName = prefix + UUID.randomUUID() + extension;
+        Path targetDir = Paths.get(uploadDir).toAbsolutePath().normalize().resolve(folderName);
         Path targetFile = targetDir.resolve(fileName).normalize();
         if (!targetFile.startsWith(targetDir)) {
-            throw new BadRequestException("Invalid logo path");
+            throw new BadRequestException("Invalid image path");
         }
 
         try {
             Files.createDirectories(targetDir);
             Files.copy(file.getInputStream(), targetFile, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException ex) {
-            throw new BadRequestException("Unable to upload company logo");
+            throw new BadRequestException("Unable to upload company image");
         }
 
-        deleteLogoFile(company.getLogoUrl());
-        company.setLogoUrl("/uploads/company-logos/" + fileName);
+        if (logo) {
+            deleteFile(company.getLogoUrl(), folderName);
+            company.setLogoUrl("/uploads/" + folderName + "/" + fileName);
+        } else {
+            deleteFile(company.getSignatureUrl(), folderName);
+            company.setSignatureUrl("/uploads/" + folderName + "/" + fileName);
+        }
         return toSummary(companyRepository.save(company));
     }
 
     @Transactional
     public CompanySummary deleteLogo(String email) {
         Company company = accessControlService.requireOwnerCompany(email);
-        deleteLogoFile(company.getLogoUrl());
+        deleteFile(company.getLogoUrl(), "company-logos");
         company.setLogoUrl(null);
         return toSummary(companyRepository.save(company));
     }
 
-    private void deleteLogoFile(String logoUrl) {
-        if (logoUrl == null || logoUrl.isBlank()) {
+    private void deleteFile(String fileUrl, String folderName) {
+        if (fileUrl == null || fileUrl.isBlank()) {
             return;
         }
         try {
-            Path targetDir = Paths.get(uploadDir).toAbsolutePath().normalize().resolve("company-logos");
-            Path fileName = Paths.get(logoUrl).getFileName();
+            Path targetDir = Paths.get(uploadDir).toAbsolutePath().normalize().resolve(folderName);
+            Path fileName = Paths.get(fileUrl).getFileName();
             if (fileName == null) {
                 return;
             }
@@ -177,14 +224,29 @@ public class CompanyService {
                 .addressLine2(company.getAddressLine2())
                 .city(company.getCity())
                 .state(company.getState())
+                .stateId(company.getStateMaster() != null ? company.getStateMaster().getId() : null)
                 .country(company.getCountry())
                 .pincode(company.getPincode())
-                .taxId(company.getTaxId())
+                .taxId(firstNonBlank(company.getGstin(), company.getTaxId()))
+                .gstin(firstNonBlank(company.getGstin(), company.getTaxId()))
+                .gstRegistered(company.isGstRegistered())
+                .compositionScheme(company.isCompositionScheme())
                 .panNumber(company.getPanNumber())
                 .cinNumber(company.getCinNumber())
                 .logoUrl(company.getLogoUrl())
                 .websiteUrl(company.getWebsiteUrl())
+                .bankName(company.getBankName())
+                .bankAccountName(company.getBankAccountName())
+                .bankAccountNumber(company.getBankAccountNumber())
+                .bankIfscCode(company.getBankIfscCode())
+                .bankBranch(company.getBankBranch())
+                .upiId(company.getUpiId())
+                .signatureUrl(company.getSignatureUrl())
+                .invoiceNotes(company.getInvoiceNotes())
+                .invoiceTerms(company.getInvoiceTerms())
                 .chatbotEnabled(company.isChatbotEnabled())
+                .inventoryConsumptionMethod(company.getInventoryConsumptionMethod().name())
+                .inventoryPricingPolicy(company.getInventoryPricingPolicy().name())
                 .build();
     }
 

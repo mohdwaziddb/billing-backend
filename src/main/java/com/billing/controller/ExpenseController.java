@@ -8,7 +8,7 @@ import com.billing.dto.expense.ProfitLossReportResponse;
 import com.billing.dto.expense.ProfitabilityResponse;
 import com.billing.entity.enums.ExpenseType;
 import com.billing.entity.enums.RoleName;
-import com.billing.security.RequirePermission;
+import com.billing.security.RequiresPermission;
 import com.billing.service.ExpenseService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -35,7 +35,7 @@ public class ExpenseController {
     private final ExpenseService expenseService;
 
     @GetMapping
-    @RequirePermission(menu = "EXPENSES", action = "VIEW")
+    @RequiresPermission(menu = "EXPENSES", action = "VIEW")
     public ResponseEntity<ApiResponse<PageResponse<ExpenseResponse>>> list(Authentication authentication,
                                                                           @RequestParam(required = false) String search,
                                                                           @RequestParam(required = false) ExpenseType expenseType,
@@ -52,14 +52,14 @@ public class ExpenseController {
     }
 
     @GetMapping("/{expenseId}")
-    @RequirePermission(menu = "EXPENSES", action = "VIEW")
+    @RequiresPermission(menu = "EXPENSES", action = "VIEW")
     public ResponseEntity<ApiResponse<ExpenseResponse>> get(Authentication authentication, @PathVariable Long expenseId) {
         return ResponseEntity.ok(ApiResponse.success("Expense fetched successfully",
                 expenseService.get(authentication.getName(), expenseId)));
     }
 
     @PostMapping
-    @RequirePermission(menu = "EXPENSES", action = "ADD")
+    @RequiresPermission(menu = "EXPENSES", action = "ADD")
     public ResponseEntity<ApiResponse<ExpenseResponse>> create(Authentication authentication,
                                                                @Valid @RequestBody ExpenseRequest request) {
         return ResponseEntity.ok(ApiResponse.success("Expense created successfully",
@@ -67,7 +67,7 @@ public class ExpenseController {
     }
 
     @PutMapping("/{expenseId}")
-    @RequirePermission(menu = "EXPENSES", action = "EDIT")
+    @RequiresPermission(menu = "EXPENSES", action = "EDIT")
     public ResponseEntity<ApiResponse<ExpenseResponse>> update(Authentication authentication,
                                                                @PathVariable Long expenseId,
                                                                @Valid @RequestBody ExpenseRequest request) {
@@ -76,14 +76,14 @@ public class ExpenseController {
     }
 
     @DeleteMapping("/{expenseId}")
-    @RequirePermission(menu = "EXPENSES", action = "DELETE")
+    @RequiresPermission(menu = "EXPENSES", action = "DELETE")
     public ResponseEntity<ApiResponse<Map<String, String>>> delete(Authentication authentication, @PathVariable Long expenseId) {
         expenseService.delete(authentication.getName(), expenseId);
         return ResponseEntity.ok(ApiResponse.success("Expense deleted successfully", Map.of("status", "ok")));
     }
 
     @GetMapping("/profitability/customer/{customerId}")
-    @RequirePermission(menu = "EXPENSES", action = "VIEW")
+    @RequiresPermission(menu = "EXPENSES", action = "VIEW")
     public ResponseEntity<ApiResponse<ProfitabilityResponse>> customerProfitability(Authentication authentication,
                                                                                    @PathVariable Long customerId,
                                                                                    @RequestParam(required = false) LocalDate startDate,
@@ -93,7 +93,7 @@ public class ExpenseController {
     }
 
     @GetMapping("/profitability/invoice/{invoiceId}")
-    @RequirePermission(menu = "EXPENSES", action = "VIEW")
+    @RequiresPermission(menu = "EXPENSES", action = "VIEW")
     public ResponseEntity<ApiResponse<ProfitabilityResponse>> invoiceProfitability(Authentication authentication,
                                                                                   @PathVariable Long invoiceId) {
         return ResponseEntity.ok(ApiResponse.success("Invoice profitability fetched successfully",
@@ -101,7 +101,7 @@ public class ExpenseController {
     }
 
     @GetMapping("/reports/profit-loss")
-    @RequirePermission(menu = "PROFIT_LOSS", action = "VIEW")
+    @RequiresPermission(menu = "PROFIT_LOSS", action = "VIEW")
     public ResponseEntity<ApiResponse<ProfitLossReportResponse>> profitLossReport(Authentication authentication,
                                                                                  @RequestParam(required = false) ExpenseType expenseType,
                                                                                  @RequestParam(required = false) Long categoryId,

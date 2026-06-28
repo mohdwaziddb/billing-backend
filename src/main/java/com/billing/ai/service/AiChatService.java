@@ -358,18 +358,16 @@ public class AiChatService {
         payload.put("brand", text(slots, "brand"));
         payload.put("sku", text(slots, "sku"));
         payload.put("hsnCode", text(slots, "hsnCode"));
-        payload.put("purchasePrice", decimal(slots, "purchasePrice"));
-        payload.put("sellingPrice", decimal(slots, "sellingPrice"));
-        payload.put("stockQty", integer(slots, "stockQty", 0));
         payload.put("minStockQty", integer(slots, "minStockQty", 0));
-        payload.put("taxPercent", decimal(slots, "taxPercent", BigDecimal.ZERO));
+        payload.put("taxable", false);
+        payload.put("taxMasterId", null);
         payload.put("active", true);
 
         Map<String, Object> fields = new LinkedHashMap<>(payload);
         fields.put("category", categoryName);
         fields.put("subCategory", subCategoryName);
 
-        List<String> missing = missing(payload, "name", "categoryId", "subCategoryId", "sku", "purchasePrice", "sellingPrice", "taxPercent");
+        List<String> missing = missing(payload, "name", "categoryId", "subCategoryId", "sku");
         return draftResponse(context, AiOperation.CREATE_PRODUCT, "Product Draft", fields, payload, missing,
                 missing.isEmpty() ? "Product draft is ready. Please confirm to create it." : "Product draft needs more information.");
     }

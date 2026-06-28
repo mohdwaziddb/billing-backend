@@ -3,7 +3,7 @@ package com.billing.controller;
 import com.billing.dto.ApiResponse;
 import com.billing.dto.dashboard.DashboardDetailResponse;
 import com.billing.dto.dashboard.DashboardSummaryResponse;
-import com.billing.security.RequirePermission;
+import com.billing.security.RequiresPermission;
 import com.billing.service.DashboardService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -20,7 +20,7 @@ public class DashboardController {
     private final DashboardService dashboardService;
 
     @GetMapping("/summary")
-    @RequirePermission(menu = "DASHBOARD", action = "VIEW")
+    @RequiresPermission(menu = "DASHBOARD", action = "VIEW")
     public ResponseEntity<ApiResponse<DashboardSummaryResponse>> summary(Authentication authentication,
                                                                          @RequestParam(required = false) LocalDate startDate,
                                                                          @RequestParam(required = false) LocalDate endDate) {
@@ -29,7 +29,7 @@ public class DashboardController {
     }
 
     @GetMapping("/details")
-    @RequirePermission(menu = "DASHBOARD", action = "VIEW")
+    @RequiresPermission(menu = "DASHBOARD", action = "VIEW")
     public ResponseEntity<ApiResponse<DashboardDetailResponse>> details(Authentication authentication,
                                                                         @RequestParam String card,
                                                                         @RequestParam(required = false) LocalDate startDate,

@@ -4,7 +4,7 @@ import com.billing.dto.ApiResponse;
 import com.billing.dto.PageResponse;
 import com.billing.dto.paymentmode.PaymentModeRequest;
 import com.billing.dto.paymentmode.PaymentModeResponse;
-import com.billing.security.RequirePermission;
+import com.billing.security.RequiresPermission;
 import com.billing.service.PaymentModeMasterService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -30,7 +30,7 @@ public class PaymentModeController {
     private final PaymentModeMasterService paymentModeMasterService;
 
     @GetMapping
-    @RequirePermission(menu = "PAYMENT_MODES", action = "VIEW")
+    @RequiresPermission(menu = "PAYMENT_MODES", action = "VIEW")
     public ResponseEntity<ApiResponse<PageResponse<PaymentModeResponse>>> list(Authentication authentication,
                                                                               @RequestParam(required = false) String search,
                                                                               @RequestParam(required = false) Boolean active,
@@ -41,14 +41,14 @@ public class PaymentModeController {
     }
 
     @GetMapping("/{modeId}")
-    @RequirePermission(menu = "PAYMENT_MODES", action = "VIEW")
+    @RequiresPermission(menu = "PAYMENT_MODES", action = "VIEW")
     public ResponseEntity<ApiResponse<PaymentModeResponse>> get(Authentication authentication, @PathVariable Long modeId) {
         return ResponseEntity.ok(ApiResponse.success("Payment mode fetched successfully",
                 paymentModeMasterService.get(authentication.getName(), modeId)));
     }
 
     @PostMapping
-    @RequirePermission(menu = "PAYMENT_MODES", action = "ADD")
+    @RequiresPermission(menu = "PAYMENT_MODES", action = "ADD")
     public ResponseEntity<ApiResponse<PaymentModeResponse>> create(Authentication authentication,
                                                                    @Valid @RequestBody PaymentModeRequest request) {
         return ResponseEntity.ok(ApiResponse.success("Payment mode created successfully",
@@ -56,7 +56,7 @@ public class PaymentModeController {
     }
 
     @PutMapping("/{modeId}")
-    @RequirePermission(menu = "PAYMENT_MODES", action = "EDIT")
+    @RequiresPermission(menu = "PAYMENT_MODES", action = "EDIT")
     public ResponseEntity<ApiResponse<PaymentModeResponse>> update(Authentication authentication,
                                                                    @PathVariable Long modeId,
                                                                    @Valid @RequestBody PaymentModeRequest request) {
@@ -65,7 +65,7 @@ public class PaymentModeController {
     }
 
     @DeleteMapping("/{modeId}")
-    @RequirePermission(menu = "PAYMENT_MODES", action = "DELETE")
+    @RequiresPermission(menu = "PAYMENT_MODES", action = "DELETE")
     public ResponseEntity<ApiResponse<Map<String, String>>> delete(Authentication authentication, @PathVariable Long modeId) {
         paymentModeMasterService.delete(authentication.getName(), modeId);
         return ResponseEntity.ok(ApiResponse.success("Payment mode deleted successfully", Map.of("status", "ok")));

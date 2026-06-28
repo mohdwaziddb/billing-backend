@@ -1,31 +1,32 @@
 package com.billing.service;
 
-import com.billing.entity.enums.InvoiceStatus;
-import com.billing.entity.enums.RoleName;
-import com.billing.exception.ResourceNotFoundException;
+import com.billing.dto.PageResponse;
 import com.billing.dto.invoice.InvoiceItemRequest;
 import com.billing.dto.invoice.InvoiceItemResponse;
 import com.billing.dto.invoice.InvoiceRequest;
 import com.billing.dto.invoice.InvoiceResponse;
-import com.billing.dto.PageResponse;
 import com.billing.entity.Company;
 import com.billing.entity.Customer;
 import com.billing.entity.Invoice;
 import com.billing.entity.InvoiceItem;
 import com.billing.entity.Payment;
 import com.billing.entity.Product;
+import com.billing.entity.TaxMaster;
 import com.billing.entity.User;
+import com.billing.entity.enums.InvoiceStatus;
+import com.billing.entity.enums.RoleName;
 import com.billing.exception.BadRequestException;
+import com.billing.exception.ResourceNotFoundException;
 import com.billing.repository.InvoiceRepository;
 import com.billing.repository.PaymentRepository;
 import com.billing.repository.ProductRepository;
 import com.billing.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -45,10 +46,12 @@ public class InvoiceService {
     private final AccessControlService accessControlService;
     private final CustomerService customerService;
     private final AuditNameResolver auditNameResolver;
-    private final InvoiceCalculationService invoiceCalculationService;
+    private final TaxCalculationService taxCalculationService;
+    private final TaxMasterService taxMasterService;
     private final AuditLogService auditLogService;
     private final PaymentModeMasterService paymentModeMasterService;
     private final UserRepository userRepository;
+    private final InventoryService inventoryService;
 
     @Transactional
     public InvoiceResponse create(String email, InvoiceRequest request) {
@@ -66,12 +69,25 @@ public class InvoiceService {
                 .referByUser(resolveReferByUser(company, request.getReferByUserId()))
                 .invoiceNo(generateInvoiceNumber(company, customer, request.getInvoiceDate()))
                 .invoiceDate(request.getInvoiceDate())
-                .paidAmount(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP))
+                .subtotal(zero())
+                .taxableAmount(zero())
+                .cgstTotal(zero())
+                .sgstTotal(zero())
+                .igstTotal(zero())
+                .taxAmount(zero())
+                .discountAmount(zero())
+                .roundOff(zero())
+                .grandTotal(zero())
+                .totalAmount(zero())
+                .paidAmount(zero())
+                .balanceAmount(zero())
+                .paymentStatus(InvoiceStatus.UNPAID)
                 .build();
 
-        request.setPaidAmount(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
+        request.setPaidAmount(zero());
         applyInvoiceState(invoice, request, customer, true);
-        invoiceRepository.save(invoice);
+        invoiceRepository.saveAndFlush(invoice);
+        inventoryService.allocateForInvoice(invoice);
         if (initialPaidAmount.compareTo(BigDecimal.ZERO) > 0) {
             createInitialPayment(email, company, customer, invoice, initialPaidAmount, initialPaymentMode, request.getInvoiceDate());
         }
@@ -89,13 +105,11 @@ public class InvoiceService {
         List<Invoice> invoices = customerId == null
                 ? invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company)
                 : invoiceRepository.findByCompanyAndCustomerOrderByInvoiceDateDescIdDesc(
-                        company,
-                        customerService.getCustomerOrThrow(company, customerId)
-                );
+                company,
+                customerService.getCustomerOrThrow(company, customerId)
+        );
 
-        return invoices.stream()
-                .map(this::toResponse)
-                .toList();
+        return invoices.stream().map(this::toResponse).toList();
     }
 
     @Transactional(readOnly = true)
@@ -125,13 +139,7 @@ public class InvoiceService {
         PageRequest pageable = PageRequest.of(Math.max(0, page), safeSize, Sort.by(Sort.Direction.DESC, "invoiceDate").and(Sort.by(Sort.Direction.DESC, "id")));
         InvoiceStatus resolvedStatus = resolveFilterStatus(invoiceStatus, paymentStatus);
         if (isUnsupportedInvoiceStatus(invoiceStatus)) {
-            return PageResponse.<InvoiceResponse>builder()
-                    .records(List.of())
-                    .page(Math.max(0, page))
-                    .size(safeSize)
-                    .totalRecords(0)
-                    .totalPages(0)
-                    .build();
+            return PageResponse.<InvoiceResponse>builder().records(List.of()).page(Math.max(0, page)).size(safeSize).totalRecords(0).totalPages(0).build();
         }
         Customer customer = company == null || customerId == null ? null : customerService.getCustomerOrThrow(company, customerId);
         Page<Invoice> invoices = invoiceRepository.searchInvoices(
@@ -179,7 +187,8 @@ public class InvoiceService {
         invoice.setReferByUser(resolveReferByUser(company, request.getReferByUserId()));
         invoice.setInvoiceDate(request.getInvoiceDate());
         applyInvoiceState(invoice, request, newCustomer, false);
-        invoiceRepository.save(invoice);
+        invoiceRepository.saveAndFlush(invoice);
+        inventoryService.allocateForInvoice(invoice);
         auditLogService.logUpdate(email, company, "Invoice", "Invoice", invoice.getId(), oldData, snapshot(invoice));
         Long newReferByUserId = invoice.getReferByUser() != null ? invoice.getReferByUser().getId() : null;
         if (!java.util.Objects.equals(oldReferByUserId, newReferByUserId)) {
@@ -298,7 +307,7 @@ public class InvoiceService {
     }
 
     private void applyInvoiceState(Invoice invoice, InvoiceRequest request, Customer customer, boolean creating) {
-        List<InvoiceCalculationService.CalculationLineInput> calculationLines = new ArrayList<>();
+        List<TaxCalculationService.TaxDocumentLineInput> calculationLines = new ArrayList<>();
 
         for (InvoiceItemRequest itemRequest : request.getItems()) {
             Product product = productRepository.findByIdAndCompany(itemRequest.getProductId(), invoice.getCompany())
@@ -307,54 +316,72 @@ public class InvoiceService {
             if (!product.isActive()) {
                 throw new BadRequestException("Inactive product cannot be invoiced: " + product.getName());
             }
-            if (product.getStockQty() < itemRequest.getQty()) {
-                throw new BadRequestException("Insufficient stock for product " + product.getName());
-            }
+            inventoryService.assertSufficientStock(invoice.getCompany(), product, itemRequest.getQty());
 
-            product.setStockQty(product.getStockQty() - itemRequest.getQty());
-            productRepository.save(product);
-
-            calculationLines.add(new InvoiceCalculationService.CalculationLineInput(
+            TaxMaster taxMaster = taxMasterService.resolveForProduct(invoice.getCompany(), product.getTaxMaster() != null ? product.getTaxMaster().getId() : null, BigDecimal.ZERO, product.isTaxable());
+            calculationLines.add(new TaxCalculationService.TaxDocumentLineInput(
                     product,
+                    taxMaster,
                     itemRequest.getQty(),
                     itemRequest.getPrice(),
-                    itemRequest.getTaxPercent(),
                     scale(itemRequest.getDiscountPercent()),
                     itemRequest.getDiscountType(),
                     itemRequest.getDiscountValue()
             ));
         }
 
-        BigDecimal paidAmount = request.getPaidAmount() != null
-                ? scale(request.getPaidAmount())
-                : creating ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP) : scale(invoice.getPaidAmount());
-        InvoiceCalculationService.CalculationResult calculation = invoiceCalculationService.calculate(
+        BigDecimal paidAmount = request.getPaidAmount() != null ? scale(request.getPaidAmount()) : creating ? zero() : scale(invoice.getPaidAmount());
+        TaxCalculationService.TaxDocumentCalculation calculation = taxCalculationService.calculate(
+                invoice.getCompany(),
+                customer,
                 calculationLines,
                 request.getDiscountAmount(),
                 paidAmount
         );
 
         List<InvoiceItem> items = new ArrayList<>();
-        for (InvoiceCalculationService.CalculationLine line : calculation.lines()) {
+        for (TaxCalculationService.TaxDocumentLine line : calculation.lines()) {
             items.add(InvoiceItem.builder()
                     .company(invoice.getCompany())
                     .invoice(invoice)
                     .product(line.product())
+                    .taxMaster(line.taxMaster())
                     .qty(line.qty())
                     .price(line.unitPrice())
-                    .discountPercent(line.discountPercent())
-                    .taxPercent(line.taxPercent())
-                    .lineTotal(line.grandTotal())
+                    .discountPercent(line.lineTotal().compareTo(BigDecimal.ZERO) > 0
+                            ? scale(line.productDiscount().multiply(BigDecimal.valueOf(100)).divide(line.lineTotal(), 2, RoundingMode.HALF_UP))
+                            : zero())
+                    .discountAmount(scale(line.productDiscount().add(line.invoiceDiscountShare())))
+                    .taxPercent(scale(line.taxRate()))
+                    .taxName(line.taxMaster() != null ? line.taxMaster().getTaxName() : null)
+                    .taxRate(scale(line.taxRate()))
+                    .hsnCode(line.product().getHsnCode())
+                    .taxableAmount(scale(line.taxableAmount()))
+                    .cgstRate(scale(line.cgstRate()))
+                    .cgstAmount(scale(line.cgstAmount()))
+                    .sgstRate(scale(line.sgstRate()))
+                    .sgstAmount(scale(line.sgstAmount()))
+                    .igstRate(scale(line.igstRate()))
+                    .igstAmount(scale(line.igstAmount()))
+                    .netAmount(scale(line.taxableAmount().add(line.cgstAmount()).add(line.sgstAmount()).add(line.igstAmount())))
+                    .grandAmount(scale(line.grandTotal()))
+                    .lineTotal(scale(line.grandTotal()))
                     .build());
         }
 
-        BigDecimal previousBalance = creating ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP) : scale(invoice.getBalanceAmount());
+        BigDecimal previousBalance = creating ? zero() : scale(invoice.getBalanceAmount());
 
         invoice.getItems().clear();
         invoice.getItems().addAll(items);
         invoice.setSubtotal(scale(calculation.subtotal()));
-        invoice.setTaxAmount(scale(calculation.taxAmount()));
-        invoice.setDiscountAmount(scale(calculation.totalDiscount()));
+        invoice.setTaxableAmount(scale(calculation.taxableAmount()));
+        invoice.setCgstTotal(scale(calculation.cgstTotal()));
+        invoice.setSgstTotal(scale(calculation.sgstTotal()));
+        invoice.setIgstTotal(scale(calculation.igstTotal()));
+        invoice.setTaxAmount(scale(calculation.totalTaxAmount()));
+        invoice.setDiscountAmount(scale(calculation.discountAmount()));
+        invoice.setRoundOff(scale(calculation.roundOff()));
+        invoice.setGrandTotal(scale(calculation.grandTotal()));
         invoice.setTotalAmount(scale(calculation.grandTotal()));
         invoice.setPaidAmount(scale(calculation.paidAmount()));
         invoice.setBalanceAmount(scale(calculation.outstandingAmount()));
@@ -366,29 +393,26 @@ public class InvoiceService {
     private void restoreInvoiceEffects(Invoice invoice) {
         Customer oldCustomer = invoice.getCustomer();
         customerService.decreaseBalance(oldCustomer, scale(invoice.getBalanceAmount()));
-
-        for (InvoiceItem item : invoice.getItems()) {
-            Product product = item.getProduct();
-            product.setStockQty(product.getStockQty() + item.getQty());
-            productRepository.save(product);
-        }
+        inventoryService.releaseInvoiceAllocations(invoice, "Invoice allocation released for edit");
 
         invoice.getItems().clear();
-        invoice.setSubtotal(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
-        invoice.setTaxAmount(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
-        invoice.setDiscountAmount(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
-        invoice.setTotalAmount(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
-        invoice.setBalanceAmount(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
+        invoice.setSubtotal(zero());
+        invoice.setTaxableAmount(zero());
+        invoice.setCgstTotal(zero());
+        invoice.setSgstTotal(zero());
+        invoice.setIgstTotal(zero());
+        invoice.setTaxAmount(zero());
+        invoice.setDiscountAmount(zero());
+        invoice.setRoundOff(zero());
+        invoice.setGrandTotal(zero());
+        invoice.setTotalAmount(zero());
+        invoice.setBalanceAmount(zero());
         invoice.setPaymentStatus(InvoiceStatus.UNPAID);
     }
 
     private void removeInvoiceBusinessEffects(Invoice invoice) {
         customerService.decreaseBalance(invoice.getCustomer(), scale(invoice.getBalanceAmount()));
-        for (InvoiceItem item : invoice.getItems()) {
-            Product product = item.getProduct();
-            product.setStockQty(product.getStockQty() + item.getQty());
-            productRepository.save(product);
-        }
+        inventoryService.releaseInvoiceAllocations(invoice, "Invoice allocation released for delete");
     }
 
     private void reapplyInvoiceBusinessEffects(Invoice invoice) {
@@ -400,15 +424,9 @@ public class InvoiceService {
             if (!product.isActive()) {
                 throw new BadRequestException("Cannot restore invoice with inactive product: " + product.getName());
             }
-            if (product.getStockQty() < item.getQty()) {
-                throw new BadRequestException("Insufficient stock to restore product " + product.getName());
-            }
+            inventoryService.assertSufficientStock(invoice.getCompany(), product, item.getQty());
         }
-        for (InvoiceItem item : invoice.getItems()) {
-            Product product = item.getProduct();
-            product.setStockQty(product.getStockQty() - item.getQty());
-            productRepository.save(product);
-        }
+        inventoryService.allocateForInvoice(invoice);
         customerService.increaseBalance(invoice.getCustomer(), scale(invoice.getBalanceAmount()));
     }
 
@@ -481,7 +499,7 @@ public class InvoiceService {
         return value.trim();
     }
 
-    private String generateInvoiceNumber(Company company, Customer customer, java.time.LocalDate invoiceDate) {
+    private String generateInvoiceNumber(Company company, Customer customer, LocalDate invoiceDate) {
         long nextSequence = invoiceRepository.countByCompanyAndInvoiceDate(company, invoiceDate) + 1L;
         String customerRef = buildCustomerReference(customer.getName());
         String mobileSuffix = buildMobileSuffix(customer.getMobile());
@@ -498,12 +516,21 @@ public class InvoiceService {
                 .customerMobile(invoice.getCustomer().getMobile())
                 .customerEmail(invoice.getCustomer().getEmail())
                 .customerAddress(invoice.getCustomer().getAddress())
+                .customerState(invoice.getCustomer().getState())
+                .customerStateId(invoice.getCustomer().getStateMaster() != null ? invoice.getCustomer().getStateMaster().getId() : null)
+                .customerGstin(invoice.getCustomer().getGstin() != null ? invoice.getCustomer().getGstin() : invoice.getCustomer().getGstNo())
                 .referByUserId(invoice.getReferByUser() != null ? invoice.getReferByUser().getId() : null)
                 .referByUserName(invoice.getReferByUser() != null ? invoice.getReferByUser().getFullName() : null)
                 .referByUsername(invoice.getReferByUser() != null ? invoice.getReferByUser().getUsername() : null)
                 .subtotal(scale(invoice.getSubtotal()))
+                .taxableAmount(scale(invoice.getTaxableAmount()))
+                .cgstTotal(scale(invoice.getCgstTotal()))
+                .sgstTotal(scale(invoice.getSgstTotal()))
+                .igstTotal(scale(invoice.getIgstTotal()))
                 .taxAmount(scale(invoice.getTaxAmount()))
                 .discountAmount(scale(invoice.getDiscountAmount()))
+                .roundOff(scale(invoice.getRoundOff()))
+                .grandTotal(scale(invoice.getGrandTotal()))
                 .totalAmount(scale(invoice.getTotalAmount()))
                 .paidAmount(scale(invoice.getPaidAmount()))
                 .balanceAmount(scale(invoice.getBalanceAmount()))
@@ -521,7 +548,21 @@ public class InvoiceService {
                         .qty(item.getQty())
                         .price(scale(item.getPrice()))
                         .discountPercent(scale(item.getDiscountPercent()))
+                        .discountAmount(scale(item.getDiscountAmount()))
+                        .taxMasterId(item.getTaxMaster() != null ? item.getTaxMaster().getId() : null)
+                        .taxName(item.getTaxName())
+                        .taxRate(scale(item.getTaxRate()))
+                        .hsnCode(item.getHsnCode())
+                        .taxableAmount(scale(item.getTaxableAmount()))
+                        .cgstRate(scale(item.getCgstRate()))
+                        .cgstAmount(scale(item.getCgstAmount()))
+                        .sgstRate(scale(item.getSgstRate()))
+                        .sgstAmount(scale(item.getSgstAmount()))
+                        .igstRate(scale(item.getIgstRate()))
+                        .igstAmount(scale(item.getIgstAmount()))
                         .taxPercent(scale(item.getTaxPercent()))
+                        .netAmount(scale(item.getNetAmount()))
+                        .grandAmount(scale(item.getGrandAmount()))
                         .lineTotal(scale(item.getLineTotal()))
                         .build()).toList())
                 .build();
@@ -548,13 +589,21 @@ public class InvoiceService {
         data.put("invoiceNo", invoice.getInvoiceNo());
         data.put("customerId", invoice.getCustomer().getId());
         data.put("customerName", invoice.getCustomer().getName());
+        data.put("customerState", invoice.getCustomer().getState());
+        data.put("customerGstin", invoice.getCustomer().getGstin() != null ? invoice.getCustomer().getGstin() : invoice.getCustomer().getGstNo());
         data.put("referByUserId", invoice.getReferByUser() != null ? invoice.getReferByUser().getId() : null);
         data.put("referByUserName", invoice.getReferByUser() != null ? invoice.getReferByUser().getFullName() : null);
         data.put("referByUsername", invoice.getReferByUser() != null ? invoice.getReferByUser().getUsername() : null);
         data.put("invoiceDate", invoice.getInvoiceDate());
         data.put("subtotal", scale(invoice.getSubtotal()));
+        data.put("taxableAmount", scale(invoice.getTaxableAmount()));
+        data.put("cgstTotal", scale(invoice.getCgstTotal()));
+        data.put("sgstTotal", scale(invoice.getSgstTotal()));
+        data.put("igstTotal", scale(invoice.getIgstTotal()));
         data.put("taxAmount", scale(invoice.getTaxAmount()));
         data.put("discountAmount", scale(invoice.getDiscountAmount()));
+        data.put("roundOff", scale(invoice.getRoundOff()));
+        data.put("grandTotal", scale(invoice.getGrandTotal()));
         data.put("totalAmount", scale(invoice.getTotalAmount()));
         data.put("paidAmount", scale(invoice.getPaidAmount()));
         data.put("balanceAmount", scale(invoice.getBalanceAmount()));
@@ -567,7 +616,18 @@ public class InvoiceService {
             row.put("qty", item.getQty());
             row.put("price", scale(item.getPrice()));
             row.put("discountPercent", scale(item.getDiscountPercent()));
-            row.put("taxPercent", scale(item.getTaxPercent()));
+            row.put("discountAmount", scale(item.getDiscountAmount()));
+            row.put("taxMasterId", item.getTaxMaster() != null ? item.getTaxMaster().getId() : null);
+            row.put("taxName", item.getTaxName());
+            row.put("taxRate", scale(item.getTaxRate()));
+            row.put("hsnCode", item.getHsnCode());
+            row.put("taxableAmount", scale(item.getTaxableAmount()));
+            row.put("cgstRate", scale(item.getCgstRate()));
+            row.put("cgstAmount", scale(item.getCgstAmount()));
+            row.put("sgstRate", scale(item.getSgstRate()));
+            row.put("sgstAmount", scale(item.getSgstAmount()));
+            row.put("igstRate", scale(item.getIgstRate()));
+            row.put("igstAmount", scale(item.getIgstAmount()));
             row.put("lineTotal", scale(item.getLineTotal()));
             return row;
         }).toList());
@@ -611,7 +671,11 @@ public class InvoiceService {
     }
 
     private BigDecimal scale(BigDecimal value) {
-        return value == null ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP) : value.setScale(2, RoundingMode.HALF_UP);
+        return value == null ? zero() : value.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal zero() {
+        return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
     }
 
     private User resolveReferByUser(Company company, Long referByUserId) {

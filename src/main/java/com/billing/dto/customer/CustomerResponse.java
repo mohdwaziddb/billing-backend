@@ -15,7 +15,14 @@ public class CustomerResponse {
     private String mobile;
     private String email;
     private String address;
+    private String city;
+    private String state;
+    private Long stateId;
+    private String country;
+    private String pincode;
     private String gstNo;
+    private String gstin;
+    private boolean gstRegistered;
     private BigDecimal currentBalance;
     private BigDecimal totalPurchaseAmount;
     private BigDecimal totalPaidAmount;

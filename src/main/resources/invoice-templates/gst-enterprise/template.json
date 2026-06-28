@@ -1,0 +1,21 @@
+{
+  "templateId": "gst-enterprise",
+  "templateName": "GST Enterprise",
+  "version": "1.0.0",
+  "description": "Enterprise GST-heavy invoice with multi-section summaries and compliance-first presentation.",
+  "author": "BizFinity",
+  "supportsWatermark": true,
+  "supportsQr": true,
+  "supportsSignature": true,
+  "supportsBankDetails": true,
+  "supportsTerms": true,
+  "supportsNotes": true,
+  "supportsGst": true,
+  "supportsMultiPage": true,
+  "supportedPaperSizes": ["A4"],
+  "defaultColors": {
+    "accent": "#1e293b",
+    "muted": "#64748b",
+    "surface": "#f8fafc"
+  }
+}

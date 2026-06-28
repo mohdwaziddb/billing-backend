@@ -12,6 +12,14 @@ public class RevenueCalculationService {
         return scale(scale(totalCollection).subtract(scale(totalExpense)));
     }
 
+    public BigDecimal grossProfit(BigDecimal revenue, BigDecimal costOfGoodsSold) {
+        return scale(scale(revenue).subtract(scale(costOfGoodsSold)));
+    }
+
+    public BigDecimal netProfit(BigDecimal revenue, BigDecimal costOfGoodsSold, BigDecimal totalExpense) {
+        return scale(grossProfit(revenue, costOfGoodsSold).subtract(scale(totalExpense)));
+    }
+
     private BigDecimal scale(BigDecimal value) {
         return value == null ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP) : value.setScale(2, RoundingMode.HALF_UP);
     }

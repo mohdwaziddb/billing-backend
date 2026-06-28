@@ -33,12 +33,19 @@ public class CompanySettingsRequest {
 
     private String state;
 
+    private Long stateId;
+
     private String country;
 
     private String pincode;
 
-    @NotBlank
     private String taxId;
+
+    private String gstin;
+
+    private Boolean gstRegistered;
+
+    private Boolean compositionScheme;
 
     private String panNumber;
 
@@ -47,4 +54,20 @@ public class CompanySettingsRequest {
     private String websiteUrl;
 
     private String databaseName;
+
+    private String bankName;
+
+    private String bankAccountName;
+
+    private String bankAccountNumber;
+
+    private String bankIfscCode;
+
+    private String bankBranch;
+
+    private String upiId;
+
+    private String invoiceNotes;
+
+    private String invoiceTerms;
 }

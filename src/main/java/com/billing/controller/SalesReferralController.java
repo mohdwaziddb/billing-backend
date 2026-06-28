@@ -2,7 +2,7 @@ package com.billing.controller;
 
 import com.billing.dto.ApiResponse;
 import com.billing.dto.referral.SalesReferralReportResponse;
-import com.billing.security.RequirePermission;
+import com.billing.security.RequiresPermission;
 import com.billing.service.SalesReferralService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -22,7 +22,7 @@ public class SalesReferralController {
     private final SalesReferralService salesReferralService;
 
     @GetMapping("/report")
-    @RequirePermission(menu = "SALES_REFERRALS", action = "VIEW")
+    @RequiresPermission(menu = "SALES_REFERRALS", action = "VIEW")
     public ResponseEntity<ApiResponse<SalesReferralReportResponse>> report(Authentication authentication,
                                                                            @RequestParam(required = false) LocalDate startDate,
                                                                            @RequestParam(required = false) LocalDate endDate) {

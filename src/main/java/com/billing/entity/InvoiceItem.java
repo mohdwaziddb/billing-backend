@@ -44,6 +44,10 @@ public class InvoiceItem extends BaseEntity {
     @JoinColumn(name = "product_id", nullable = false)
     private Product product;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "tax_master_id")
+    private TaxMaster taxMaster;
+
     @Column(nullable = false)
     private Integer qty;
 
@@ -55,6 +59,43 @@ public class InvoiceItem extends BaseEntity {
 
     @Column(nullable = false, precision = 5, scale = 2)
     private BigDecimal taxPercent;
+
+    private String taxName;
+
+    @Column(precision = 5, scale = 2)
+    private BigDecimal taxRate;
+
+    private String hsnCode;
+
+    @Column(precision = 12, scale = 2)
+    private BigDecimal taxableAmount;
+
+    @Column(precision = 5, scale = 2)
+    private BigDecimal cgstRate;
+
+    @Column(precision = 12, scale = 2)
+    private BigDecimal cgstAmount;
+
+    @Column(precision = 5, scale = 2)
+    private BigDecimal sgstRate;
+
+    @Column(precision = 12, scale = 2)
+    private BigDecimal sgstAmount;
+
+    @Column(precision = 5, scale = 2)
+    private BigDecimal igstRate;
+
+    @Column(precision = 12, scale = 2)
+    private BigDecimal igstAmount;
+
+    @Column(precision = 12, scale = 2)
+    private BigDecimal discountAmount;
+
+    @Column(precision = 12, scale = 2)
+    private BigDecimal netAmount;
+
+    @Column(precision = 12, scale = 2)
+    private BigDecimal grandAmount;
 
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal lineTotal;

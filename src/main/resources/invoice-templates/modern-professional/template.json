@@ -1,0 +1,21 @@
+{
+  "templateId": "modern-professional",
+  "templateName": "Modern Professional",
+  "version": "1.0.0",
+  "description": "Minimal premium invoice with airy layout and elegant totals treatment.",
+  "author": "BizFinity",
+  "supportsWatermark": true,
+  "supportsQr": true,
+  "supportsSignature": true,
+  "supportsBankDetails": true,
+  "supportsTerms": true,
+  "supportsNotes": true,
+  "supportsGst": true,
+  "supportsMultiPage": true,
+  "supportedPaperSizes": ["A4"],
+  "defaultColors": {
+    "accent": "#0f3d3e",
+    "muted": "#6b7280",
+    "surface": "#f7fbfb"
+  }
+}

@@ -23,7 +23,21 @@ public class CustomerRequest {
 
     private String address;
 
+    private String city;
+
+    private String state;
+
+    private Long stateId;
+
+    private String country;
+
+    private String pincode;
+
     private String gstNo;
+
+    private String gstin;
+
+    private Boolean gstRegistered;
 
     @NotNull
     private Boolean active;

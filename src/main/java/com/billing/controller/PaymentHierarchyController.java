@@ -2,7 +2,7 @@ package com.billing.controller;
 
 import com.billing.dto.ApiResponse;
 import com.billing.dto.payment.PaymentHierarchyResponse;
-import com.billing.security.RequirePermission;
+import com.billing.security.RequiresPermission;
 import com.billing.service.PaymentHierarchyService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -22,7 +22,7 @@ public class PaymentHierarchyController {
     private final PaymentHierarchyService paymentHierarchyService;
 
     @GetMapping("/children")
-    @RequirePermission(menu = "PAYMENT_HIERARCHY", action = "VIEW")
+    @RequiresPermission(menu = "PAYMENT_HIERARCHY", action = "VIEW")
     public ResponseEntity<ApiResponse<PaymentHierarchyResponse>> children(Authentication authentication,
                                                                           @RequestParam(required = false) String nodeType,
                                                                           @RequestParam(required = false) String nodeId,
@@ -40,7 +40,7 @@ public class PaymentHierarchyController {
     }
 
     @GetMapping("/summary")
-    @RequirePermission(menu = "PAYMENT_HIERARCHY", action = "VIEW")
+    @RequiresPermission(menu = "PAYMENT_HIERARCHY", action = "VIEW")
     public ResponseEntity<ApiResponse<PaymentHierarchyResponse>> summary(Authentication authentication,
                                                                          @RequestParam(required = false) LocalDate startDate,
                                                                          @RequestParam(required = false) LocalDate endDate,

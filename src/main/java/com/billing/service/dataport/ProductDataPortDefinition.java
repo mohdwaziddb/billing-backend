@@ -32,9 +32,6 @@ public class ProductDataPortDefinition implements DataPortDefinition<ProductData
             "Active",
             "Brand",
             "HSN Code",
-            "Purchase Price*",
-            "Selling Price*",
-            "Opening Stock Qty",
             "Minimum Stock Qty",
             "Tax Percent*"
     );
@@ -75,9 +72,6 @@ public class ProductDataPortDefinition implements DataPortDefinition<ProductData
                 "Yes",
                 "Acme",
                 "4820",
-                "75.00",
-                "120.00",
-                "25",
                 "5",
                 "18.00"
         ));
@@ -94,11 +88,8 @@ public class ProductDataPortDefinition implements DataPortDefinition<ProductData
         row.setActive(rowValues.getOrDefault(COLUMNS.get(4), ""));
         row.setBrand(rowValues.getOrDefault(COLUMNS.get(5), ""));
         row.setHsnCode(rowValues.getOrDefault(COLUMNS.get(6), ""));
-        row.setPurchasePrice(rowValues.getOrDefault(COLUMNS.get(7), ""));
-        row.setSellingPrice(rowValues.getOrDefault(COLUMNS.get(8), ""));
-        row.setOpeningStockQty(rowValues.getOrDefault(COLUMNS.get(9), ""));
-        row.setMinimumStockQty(rowValues.getOrDefault(COLUMNS.get(10), ""));
-        row.setTaxPercent(rowValues.getOrDefault(COLUMNS.get(11), ""));
+        row.setMinimumStockQty(rowValues.getOrDefault(COLUMNS.get(7), ""));
+        row.setTaxPercent(rowValues.getOrDefault(COLUMNS.get(8), ""));
         return row;
     }
 

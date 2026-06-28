@@ -21,7 +21,10 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
             FROM Customer c
             WHERE (:company IS NULL OR c.company = :company)
               AND (:active IS NULL OR c.active = :active)
-              AND (:search IS NULL OR TRIM(:search) = '' OR LOWER(c.name) LIKE LOWER(CONCAT('%', :search, '%')))
+              AND (:search IS NULL OR TRIM(:search) = ''
+                OR LOWER(c.name) LIKE LOWER(CONCAT('%', :search, '%'))
+                OR LOWER(c.mobile) LIKE LOWER(CONCAT('%', :search, '%'))
+                OR LOWER(COALESCE(c.email, '')) LIKE LOWER(CONCAT('%', :search, '%')))
             ORDER BY c.createdAt DESC
             """)
     List<Customer> findAllByCompanyWithFilters(@Param("company") Company company,
@@ -32,7 +35,10 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
             FROM Customer c
             WHERE (:company IS NULL OR c.company = :company)
               AND (:active IS NULL OR c.active = :active)
-              AND (:search IS NULL OR TRIM(:search) = '' OR LOWER(c.name) LIKE LOWER(CONCAT('%', :search, '%')))
+              AND (:search IS NULL OR TRIM(:search) = ''
+                OR LOWER(c.name) LIKE LOWER(CONCAT('%', :search, '%'))
+                OR LOWER(c.mobile) LIKE LOWER(CONCAT('%', :search, '%'))
+                OR LOWER(COALESCE(c.email, '')) LIKE LOWER(CONCAT('%', :search, '%')))
             ORDER BY c.createdAt DESC
             """)
     Page<Customer> findPageByCompanyWithFilters(@Param("company") Company company,
@@ -40,6 +46,7 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
                                                 @Param("search") String search,
                                                 Pageable pageable);
     Optional<Customer> findByCompanyAndMobileIgnoreCase(Company company, String mobile);
+    Optional<Customer> findByCompanyAndMobileIgnoreCaseAndActiveTrue(Company company, String mobile);
     Optional<Customer> findByIdAndCompany(Long id, Company company);
     List<Customer> findByCompanyAndCurrentBalanceGreaterThanOrderByCurrentBalanceDesc(Company company, BigDecimal amount);
     @Query("""

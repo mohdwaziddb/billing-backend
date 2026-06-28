@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8" />
+  <title th:text="${invoice.invoiceNo}">Invoice</title>
+</head>
+<body class="classic-template">
+  <div class="watermark" th:if="${settings.showWatermark}" th:text="${invoice.watermarkText}">INVOICE</div>
+  <div class="page">
+    <header class="hero">
+      <div class="brand">
+        <img th:if="${company.logoDataUrl != null}" th:src="${company.logoDataUrl}" alt="Logo" class="logo" />
+        <div class="brand-copy">
+          <h1 th:text="${company.legalName}">Company Name</h1>
+          <p th:text="${company.address}">Address</p>
+          <p><span th:text="${company.phone}">Phone</span> | <span th:text="${company.email}">Email</span> | <span th:text="${company.website}">Website</span></p>
+          <p>GSTIN: <strong th:text="${company.gstin}">GSTIN</strong></p>
+        </div>
+      </div>
+      <div class="doc-box">
+        <div class="eyebrow">Tax Invoice</div>
+        <div class="doc-grid">
+          <div><label>Invoice No</label><strong th:text="${invoice.invoiceNo}">INV</strong></div>
+          <div><label>Date</label><strong th:text="${invoice.invoiceDateLabel}">Date</strong></div>
+          <div><label>Due Date</label><strong th:text="${invoice.dueDateLabel}">Due</strong></div>
+          <div><label>Place of Supply</label><strong th:text="${invoice.placeOfSupply}">Place</strong></div>
+        </div>
+      </div>
+    </header>
+
+    <section class="address-grid">
+      <article>
+        <h3>Bill To</h3>
+        <strong th:text="${invoice.customerName}">Customer</strong>
+        <p th:text="${invoice.customerAddress}">Address</p>
+        <p th:text="${invoice.customerPhone}">Phone</p>
+        <p th:text="${invoice.customerEmail}">Email</p>
+        <p>GSTIN: <span th:text="${invoice.customerGstin}">GSTIN</span></p>
+      </article>
+      <article class="status-card">
+        <h3>Payment Status</h3>
+        <div class="status-pill" th:text="${invoice.paymentStatus}">PAID</div>
+        <div class="amount-row"><span>Grand Total</span><strong th:text="${invoice.grandTotal}">0.00</strong></div>
+        <div class="amount-row"><span>Outstanding</span><strong th:text="${invoice.balanceAmount}">0.00</strong></div>
+      </article>
+    </section>
+
+    <section class="table-shell">
+      <table class="items">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Item Description</th>
+            <th>HSN</th>
+            <th>Qty</th>
+            <th>Rate</th>
+            <th>Taxable</th>
+            <th>GST</th>
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr th:each="item, stat : ${invoice.items}">
+            <td th:text="${stat.count}">1</td>
+            <td>
+              <strong th:text="${item.productName}">Item</strong>
+              <div class="subtext">Tax: <span th:text="${item.gstBreakup}">GST</span></div>
+            </td>
+            <td th:text="${item.hsnCode}">HSN</td>
+            <td th:text="${item.qty}">1</td>
+            <td th:text="${item.price}">0</td>
+            <td th:text="${item.taxableAmount}">0</td>
+            <td th:text="${item.gstBreakup}">GST</td>
+            <td th:text="${item.lineTotal}">0</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="summary-layout">
+      <div class="totals">
+        <div class="line"><span>Subtotal</span><strong th:text="${invoice.subtotal}">0</strong></div>
+        <div class="line"><span>Discount</span><strong th:text="${invoice.discount}">0</strong></div>
+        <div class="line"><span>Taxable Amount</span><strong th:text="${invoice.taxableAmount}">0</strong></div>
+        <div class="line"><span>CGST</span><strong th:text="${invoice.cgst}">0</strong></div>
+        <div class="line"><span>SGST</span><strong th:text="${invoice.sgst}">0</strong></div>
+        <div class="line"><span>IGST</span><strong th:text="${invoice.igst}">0</strong></div>
+        <div class="line"><span>Round Off</span><strong th:text="${invoice.roundOff}">0</strong></div>
+        <div class="grand"><span>Grand Total</span><strong th:text="${invoice.grandTotal}">0</strong></div>
+        <div class="line"><span>Paid</span><strong th:text="${invoice.paidAmount}">0</strong></div>
+        <div class="line"><span>Balance</span><strong th:text="${invoice.balanceAmount}">0</strong></div>
+      </div>
+    </section>
+
+    <section class="bottom-grid">
+      <article class="panel" th:if="${settings.showNotes}">
+        <h3>Notes</h3>
+        <p th:text="${company.invoiceNotes}">Notes</p>
+        <p class="words"><strong>Amount in Words:</strong> <span th:text="${invoice.amountInWords}">Words</span></p>
+      </article>
+      <article class="panel qr-sign">
+        <div class="signature" th:if="${settings.showSignature}">
+          <p class="signature-heading" th:text="${settings.signatureHeading}">For Company</p>
+          <img th:if="${company.signatureDataUrl != null}" th:src="${company.signatureDataUrl}" alt="Signature" class="signature-img" />
+          <div class="sign-line"></div>
+          <p th:text="${settings.signatureLabel}">Authorized Signature</p>
+        </div>
+      </article>
+    </section>
+
+    <section class="terms panel" th:if="${settings.showTerms}">
+      <h3>Terms &amp; Conditions</h3>
+      <p th:text="${company.invoiceTerms}">Terms</p>
+    </section>
+
+    <footer class="footer">
+      <span th:text="${settings.footerCredit}">Generated by BizFinity Billing SaaS</span>
+      <span>Page <span class="page-number"></span></span>
+    </footer>
+  </div>
+</body>
+</html>

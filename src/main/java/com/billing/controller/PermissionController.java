@@ -3,7 +3,7 @@ package com.billing.controller;
 import com.billing.dto.ApiResponse;
 import com.billing.dto.permission.PermissionMatrixRequest;
 import com.billing.dto.permission.PermissionMatrixResponse;
-import com.billing.security.RequirePermission;
+import com.billing.security.RequiresPermission;
 import com.billing.service.PermissionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -34,28 +34,28 @@ public class PermissionController {
     }
 
     @GetMapping("/role-matrix")
-    @RequirePermission(menu = "ROLE_PERMISSIONS", action = "VIEW")
+    @RequiresPermission(menu = "ROLE_PERMISSIONS", action = "VIEW")
     public ResponseEntity<ApiResponse<PermissionMatrixResponse>> roleMatrix(Authentication authentication,
                                                                             @RequestParam String roleCode) {
         return ResponseEntity.ok(ApiResponse.success("Role permissions fetched successfully", permissionService.roleMatrix(authentication.getName(), roleCode)));
     }
 
     @PostMapping("/role-matrix")
-    @RequirePermission(menu = "ROLE_PERMISSIONS", action = "EDIT")
+    @RequiresPermission(menu = "ROLE_PERMISSIONS", action = "EDIT")
     public ResponseEntity<ApiResponse<PermissionMatrixResponse>> saveRoleMatrix(Authentication authentication,
                                                                                 @Valid @RequestBody PermissionMatrixRequest request) {
         return ResponseEntity.ok(ApiResponse.success("Role permissions saved successfully", permissionService.saveRoleMatrix(authentication.getName(), request)));
     }
 
     @GetMapping("/user-matrix")
-    @RequirePermission(menu = "ROLE_PERMISSIONS", action = "VIEW")
+    @RequiresPermission(menu = "ROLE_PERMISSIONS", action = "VIEW")
     public ResponseEntity<ApiResponse<PermissionMatrixResponse>> userMatrix(Authentication authentication,
                                                                             @RequestParam Long userId) {
         return ResponseEntity.ok(ApiResponse.success("User permissions fetched successfully", permissionService.userMatrix(authentication.getName(), userId)));
     }
 
     @PostMapping("/user-matrix")
-    @RequirePermission(menu = "ROLE_PERMISSIONS", action = "EDIT")
+    @RequiresPermission(menu = "ROLE_PERMISSIONS", action = "EDIT")
     public ResponseEntity<ApiResponse<PermissionMatrixResponse>> saveUserMatrix(Authentication authentication,
                                                                                 @Valid @RequestBody PermissionMatrixRequest request) {
         return ResponseEntity.ok(ApiResponse.success("User permissions saved successfully", permissionService.saveUserMatrix(authentication.getName(), request)));

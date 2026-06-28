@@ -11,7 +11,7 @@ import com.billing.dto.notification.SmsProviderMetadataResponse;
 import com.billing.dto.notification.SmsProviderTestRequest;
 import com.billing.dto.notification.WhatsAppProviderTestRequest;
 import com.billing.dto.notification.WhatsAppProviderMetadataResponse;
-import com.billing.security.RequirePermission;
+import com.billing.security.RequiresPermission;
 import com.billing.service.NotificationService;
 import com.billing.service.NotificationSettingsService;
 import lombok.RequiredArgsConstructor;
@@ -38,34 +38,34 @@ public class NotificationController {
     private final NotificationSettingsService notificationSettingsService;
 
     @PostMapping("/send")
-    @RequirePermission(menu = "EMAIL_TEMPLATES", action = "EMAIL_SEND")
+    @RequiresPermission(menu = "EMAIL_TEMPLATES", action = "EMAIL_SEND")
     public ResponseEntity<ApiResponse<List<NotificationLogResponse>>> send(Authentication authentication, @RequestBody NotificationSendRequest request) {
         return ResponseEntity.ok(ApiResponse.success("Notification processed successfully", notificationService.sendNotification(authentication.getName(), request)));
     }
 
     @PostMapping("/send-email")
-    @RequirePermission(menu = "EMAIL_TEMPLATES", action = "EMAIL_SEND")
+    @RequiresPermission(menu = "EMAIL_TEMPLATES", action = "EMAIL_SEND")
     public ResponseEntity<ApiResponse<List<NotificationLogResponse>>> sendEmail(Authentication authentication, @RequestBody NotificationSendRequest request) {
         request.setChannel(com.billing.dto.notification.NotificationChannelType.EMAIL);
         return ResponseEntity.ok(ApiResponse.success("Email notification processed successfully", notificationService.sendNotification(authentication.getName(), request)));
     }
 
     @PostMapping("/send-sms")
-    @RequirePermission(menu = "SMS_TEMPLATES", action = "SMS_SEND")
+    @RequiresPermission(menu = "SMS_TEMPLATES", action = "SMS_SEND")
     public ResponseEntity<ApiResponse<List<NotificationLogResponse>>> sendSms(Authentication authentication, @RequestBody NotificationSendRequest request) {
         request.setChannel(com.billing.dto.notification.NotificationChannelType.SMS);
         return ResponseEntity.ok(ApiResponse.success("SMS notification processed successfully", notificationService.sendNotification(authentication.getName(), request)));
     }
 
     @PostMapping("/send-whatsapp")
-    @RequirePermission(menu = "COMMUNICATION", action = "WHATSAPP_SEND")
+    @RequiresPermission(menu = "COMMUNICATION", action = "WHATSAPP_SEND")
     public ResponseEntity<ApiResponse<List<NotificationLogResponse>>> sendWhatsApp(Authentication authentication, @RequestBody NotificationSendRequest request) {
         request.setChannel(com.billing.dto.notification.NotificationChannelType.WHATSAPP);
         return ResponseEntity.ok(ApiResponse.success("WhatsApp notification processed successfully", notificationService.sendNotification(authentication.getName(), request)));
     }
 
     @GetMapping("/logs")
-    @RequirePermission(menu = "COMMUNICATION", action = "VIEW")
+    @RequiresPermission(menu = "COMMUNICATION", action = "VIEW")
     public ResponseEntity<ApiResponse<PageResponse<NotificationLogResponse>>> logs(Authentication authentication,
                                                                                    @RequestParam(defaultValue = "0") int page,
                                                                                    @RequestParam(defaultValue = "20") int size) {
@@ -73,14 +73,14 @@ public class NotificationController {
     }
 
     @GetMapping("/email-settings")
-    @RequirePermission(menu = "COMMUNICATION", action = "VIEW")
+    @RequiresPermission(menu = "COMMUNICATION", action = "VIEW")
     @PreAuthorize("denyAll()")
     public ResponseEntity<ApiResponse<List<ProviderSettingsResponse>>> emailSettings(Authentication authentication) {
         return ResponseEntity.ok(ApiResponse.success("Email settings fetched successfully", notificationSettingsService.emailSettings(authentication.getName())));
     }
 
     @PostMapping("/email-settings")
-    @RequirePermission(menu = "COMMUNICATION", action = "ADD")
+    @RequiresPermission(menu = "COMMUNICATION", action = "ADD")
     @PreAuthorize("denyAll()")
     public ResponseEntity<ApiResponse<ProviderSettingsResponse>> createEmailSettings(Authentication authentication, @RequestBody ProviderSettingsRequest request) {
         request.setId(null);
@@ -88,7 +88,7 @@ public class NotificationController {
     }
 
     @PutMapping("/email-settings/{id}")
-    @RequirePermission(menu = "COMMUNICATION", action = "EDIT")
+    @RequiresPermission(menu = "COMMUNICATION", action = "EDIT")
     @PreAuthorize("denyAll()")
     public ResponseEntity<ApiResponse<ProviderSettingsResponse>> saveEmailSettings(Authentication authentication, @PathVariable Long id, @RequestBody ProviderSettingsRequest request) {
         request.setId(id);
@@ -96,28 +96,28 @@ public class NotificationController {
     }
 
     @PostMapping("/email-settings/test")
-    @RequirePermission(menu = "COMMUNICATION", action = "VIEW")
+    @RequiresPermission(menu = "COMMUNICATION", action = "VIEW")
     @PreAuthorize("denyAll()")
     public ResponseEntity<ApiResponse<ProviderSettingsResponse>> sendTestEmail(Authentication authentication, @RequestBody(required = false) EmailProviderTestRequest request) {
         return ResponseEntity.ok(ApiResponse.success("Test email sent successfully", notificationSettingsService.sendTestEmail(authentication.getName(), request)));
     }
 
     @GetMapping("/sms-settings")
-    @RequirePermission(menu = "COMMUNICATION", action = "VIEW")
+    @RequiresPermission(menu = "COMMUNICATION", action = "VIEW")
     @PreAuthorize("denyAll()")
     public ResponseEntity<ApiResponse<List<ProviderSettingsResponse>>> smsSettings(Authentication authentication) {
         return ResponseEntity.ok(ApiResponse.success("SMS settings fetched successfully", notificationSettingsService.smsSettings(authentication.getName())));
     }
 
     @GetMapping("/sms-settings/providers")
-    @RequirePermission(menu = "COMMUNICATION", action = "VIEW")
+    @RequiresPermission(menu = "COMMUNICATION", action = "VIEW")
     @PreAuthorize("denyAll()")
     public ResponseEntity<ApiResponse<List<SmsProviderMetadataResponse>>> smsProviders(Authentication authentication) {
         return ResponseEntity.ok(ApiResponse.success("SMS providers fetched successfully", notificationSettingsService.smsProviderMetadata()));
     }
 
     @PostMapping("/sms-settings")
-    @RequirePermission(menu = "COMMUNICATION", action = "ADD")
+    @RequiresPermission(menu = "COMMUNICATION", action = "ADD")
     @PreAuthorize("denyAll()")
     public ResponseEntity<ApiResponse<ProviderSettingsResponse>> createSmsSettings(Authentication authentication, @RequestBody ProviderSettingsRequest request) {
         request.setId(null);
@@ -125,7 +125,7 @@ public class NotificationController {
     }
 
     @PutMapping("/sms-settings/{id}")
-    @RequirePermission(menu = "COMMUNICATION", action = "EDIT")
+    @RequiresPermission(menu = "COMMUNICATION", action = "EDIT")
     @PreAuthorize("denyAll()")
     public ResponseEntity<ApiResponse<ProviderSettingsResponse>> saveSmsSettings(Authentication authentication, @PathVariable Long id, @RequestBody ProviderSettingsRequest request) {
         request.setId(id);
@@ -133,28 +133,28 @@ public class NotificationController {
     }
 
     @PostMapping("/sms-settings/test")
-    @RequirePermission(menu = "COMMUNICATION", action = "VIEW")
+    @RequiresPermission(menu = "COMMUNICATION", action = "VIEW")
     @PreAuthorize("denyAll()")
     public ResponseEntity<ApiResponse<ProviderSettingsResponse>> sendTestSms(Authentication authentication, @RequestBody(required = false) SmsProviderTestRequest request) {
         return ResponseEntity.ok(ApiResponse.success("Test SMS sent successfully", notificationSettingsService.sendTestSms(authentication.getName(), request)));
     }
 
     @GetMapping("/whatsapp-settings")
-    @RequirePermission(menu = "COMMUNICATION", action = "VIEW")
+    @RequiresPermission(menu = "COMMUNICATION", action = "VIEW")
     @PreAuthorize("denyAll()")
     public ResponseEntity<ApiResponse<List<ProviderSettingsResponse>>> whatsAppSettings(Authentication authentication) {
         return ResponseEntity.ok(ApiResponse.success("WhatsApp settings fetched successfully", notificationSettingsService.whatsAppSettings(authentication.getName())));
     }
 
     @GetMapping("/whatsapp-settings/providers")
-    @RequirePermission(menu = "COMMUNICATION", action = "VIEW")
+    @RequiresPermission(menu = "COMMUNICATION", action = "VIEW")
     @PreAuthorize("denyAll()")
     public ResponseEntity<ApiResponse<List<WhatsAppProviderMetadataResponse>>> whatsAppProviders(Authentication authentication) {
         return ResponseEntity.ok(ApiResponse.success("WhatsApp providers fetched successfully", notificationSettingsService.whatsAppProviderMetadata()));
     }
 
     @PostMapping("/whatsapp-settings")
-    @RequirePermission(menu = "COMMUNICATION", action = "ADD")
+    @RequiresPermission(menu = "COMMUNICATION", action = "ADD")
     @PreAuthorize("denyAll()")
     public ResponseEntity<ApiResponse<ProviderSettingsResponse>> createWhatsAppSettings(Authentication authentication, @RequestBody ProviderSettingsRequest request) {
         request.setId(null);
@@ -162,7 +162,7 @@ public class NotificationController {
     }
 
     @PutMapping("/whatsapp-settings/{id}")
-    @RequirePermission(menu = "COMMUNICATION", action = "EDIT")
+    @RequiresPermission(menu = "COMMUNICATION", action = "EDIT")
     @PreAuthorize("denyAll()")
     public ResponseEntity<ApiResponse<ProviderSettingsResponse>> saveWhatsAppSettings(Authentication authentication, @PathVariable Long id, @RequestBody ProviderSettingsRequest request) {
         request.setId(id);
@@ -170,7 +170,7 @@ public class NotificationController {
     }
 
     @PostMapping("/whatsapp-settings/test")
-    @RequirePermission(menu = "COMMUNICATION", action = "VIEW")
+    @RequiresPermission(menu = "COMMUNICATION", action = "VIEW")
     @PreAuthorize("denyAll()")
     public ResponseEntity<ApiResponse<ProviderSettingsResponse>> sendTestWhatsApp(Authentication authentication, @RequestBody(required = false) WhatsAppProviderTestRequest request) {
         return ResponseEntity.ok(ApiResponse.success("WhatsApp message sent successfully", notificationSettingsService.sendTestWhatsApp(authentication.getName(), request)));

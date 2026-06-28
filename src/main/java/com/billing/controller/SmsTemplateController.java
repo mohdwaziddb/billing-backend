@@ -6,7 +6,7 @@ import com.billing.dto.email.EmailPreviewResponse;
 import com.billing.dto.email.EmailRenderRequest;
 import com.billing.dto.notification.SmsTemplateRequest;
 import com.billing.dto.notification.SmsTemplateResponse;
-import com.billing.security.RequirePermission;
+import com.billing.security.RequiresPermission;
 import com.billing.service.EmailTemplateService;
 import com.billing.service.SmsTemplateService;
 import jakarta.validation.Valid;
@@ -35,7 +35,7 @@ public class SmsTemplateController {
     private final EmailTemplateService emailTemplateService;
 
     @GetMapping
-    @RequirePermission(menu = "SMS_TEMPLATES", action = "VIEW")
+    @RequiresPermission(menu = "SMS_TEMPLATES", action = "VIEW")
     public ResponseEntity<ApiResponse<PageResponse<SmsTemplateResponse>>> page(Authentication authentication,
                                                                                 @RequestParam(required = false) String search,
                                                                                 @RequestParam(required = false) Boolean active,
@@ -45,38 +45,38 @@ public class SmsTemplateController {
     }
 
     @GetMapping("/active")
-    @RequirePermission(menu = "SMS_TEMPLATES", action = "VIEW")
+    @RequiresPermission(menu = "SMS_TEMPLATES", action = "VIEW")
     public ResponseEntity<ApiResponse<List<SmsTemplateResponse>>> active(Authentication authentication) {
         return ResponseEntity.ok(ApiResponse.success("Active SMS templates fetched successfully", smsTemplateService.activeTemplates(authentication.getName())));
     }
 
     @GetMapping("/variables")
-    @RequirePermission(menu = "SMS_TEMPLATES", action = "VIEW")
+    @RequiresPermission(menu = "SMS_TEMPLATES", action = "VIEW")
     public ResponseEntity<ApiResponse<Map<String, String>>> variables() {
         return ResponseEntity.ok(ApiResponse.success("Template variables fetched successfully", emailTemplateService.variables()));
     }
 
     @PostMapping
-    @RequirePermission(menu = "SMS_TEMPLATES", action = "ADD")
+    @RequiresPermission(menu = "SMS_TEMPLATES", action = "ADD")
     public ResponseEntity<ApiResponse<SmsTemplateResponse>> create(Authentication authentication, @Valid @RequestBody SmsTemplateRequest request) {
         return ResponseEntity.ok(ApiResponse.success("SMS template created successfully", smsTemplateService.create(authentication.getName(), request)));
     }
 
     @PutMapping("/{templateId}")
-    @RequirePermission(menu = "SMS_TEMPLATES", action = "EDIT")
+    @RequiresPermission(menu = "SMS_TEMPLATES", action = "EDIT")
     public ResponseEntity<ApiResponse<SmsTemplateResponse>> update(Authentication authentication, @PathVariable Long templateId, @Valid @RequestBody SmsTemplateRequest request) {
         return ResponseEntity.ok(ApiResponse.success("SMS template updated successfully", smsTemplateService.update(authentication.getName(), templateId, request)));
     }
 
     @DeleteMapping("/{templateId}")
-    @RequirePermission(menu = "SMS_TEMPLATES", action = "DELETE")
+    @RequiresPermission(menu = "SMS_TEMPLATES", action = "DELETE")
     public ResponseEntity<ApiResponse<Map<String, String>>> delete(Authentication authentication, @PathVariable Long templateId) {
         smsTemplateService.delete(authentication.getName(), templateId);
         return ResponseEntity.ok(ApiResponse.success("SMS template deleted successfully", Map.of("status", "ok")));
     }
 
     @PostMapping("/{templateId}/preview")
-    @RequirePermission(menu = "SMS_TEMPLATES", action = "VIEW")
+    @RequiresPermission(menu = "SMS_TEMPLATES", action = "VIEW")
     public ResponseEntity<ApiResponse<EmailPreviewResponse>> preview(Authentication authentication, @PathVariable Long templateId, @RequestBody(required = false) EmailRenderRequest request) {
         return ResponseEntity.ok(ApiResponse.success("SMS preview rendered successfully", smsTemplateService.preview(authentication.getName(), templateId, request)));
     }

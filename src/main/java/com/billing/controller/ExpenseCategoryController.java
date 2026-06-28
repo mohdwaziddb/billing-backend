@@ -4,7 +4,7 @@ import com.billing.dto.ApiResponse;
 import com.billing.dto.PageResponse;
 import com.billing.dto.expense.ExpenseCategoryRequest;
 import com.billing.dto.expense.ExpenseCategoryResponse;
-import com.billing.security.RequirePermission;
+import com.billing.security.RequiresPermission;
 import com.billing.service.ExpenseCategoryService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -30,7 +30,7 @@ public class ExpenseCategoryController {
     private final ExpenseCategoryService expenseCategoryService;
 
     @GetMapping
-    @RequirePermission(menu = "EXPENSE_CATEGORIES", action = "VIEW")
+    @RequiresPermission(menu = "EXPENSE_CATEGORIES", action = "VIEW")
     public ResponseEntity<ApiResponse<PageResponse<ExpenseCategoryResponse>>> list(Authentication authentication,
                                                                                   @RequestParam(required = false) String search,
                                                                                   @RequestParam(required = false) Boolean active,
@@ -41,14 +41,14 @@ public class ExpenseCategoryController {
     }
 
     @GetMapping("/{categoryId}")
-    @RequirePermission(menu = "EXPENSE_CATEGORIES", action = "VIEW")
+    @RequiresPermission(menu = "EXPENSE_CATEGORIES", action = "VIEW")
     public ResponseEntity<ApiResponse<ExpenseCategoryResponse>> get(Authentication authentication, @PathVariable Long categoryId) {
         return ResponseEntity.ok(ApiResponse.success("Expense category fetched successfully",
                 expenseCategoryService.get(authentication.getName(), categoryId)));
     }
 
     @PostMapping
-    @RequirePermission(menu = "EXPENSE_CATEGORIES", action = "ADD")
+    @RequiresPermission(menu = "EXPENSE_CATEGORIES", action = "ADD")
     public ResponseEntity<ApiResponse<ExpenseCategoryResponse>> create(Authentication authentication,
                                                                        @Valid @RequestBody ExpenseCategoryRequest request) {
         return ResponseEntity.ok(ApiResponse.success("Expense category created successfully",
@@ -56,7 +56,7 @@ public class ExpenseCategoryController {
     }
 
     @PutMapping("/{categoryId}")
-    @RequirePermission(menu = "EXPENSE_CATEGORIES", action = "EDIT")
+    @RequiresPermission(menu = "EXPENSE_CATEGORIES", action = "EDIT")
     public ResponseEntity<ApiResponse<ExpenseCategoryResponse>> update(Authentication authentication,
                                                                        @PathVariable Long categoryId,
                                                                        @Valid @RequestBody ExpenseCategoryRequest request) {
@@ -65,7 +65,7 @@ public class ExpenseCategoryController {
     }
 
     @DeleteMapping("/{categoryId}")
-    @RequirePermission(menu = "EXPENSE_CATEGORIES", action = "DELETE")
+    @RequiresPermission(menu = "EXPENSE_CATEGORIES", action = "DELETE")
     public ResponseEntity<ApiResponse<Map<String, String>>> delete(Authentication authentication, @PathVariable Long categoryId) {
         expenseCategoryService.delete(authentication.getName(), categoryId);
         return ResponseEntity.ok(ApiResponse.success("Expense category deleted successfully", Map.of("status", "ok")));

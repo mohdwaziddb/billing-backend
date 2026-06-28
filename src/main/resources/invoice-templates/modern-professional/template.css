@@ -1,0 +1,49 @@
+@page { size: A4; margin: 10mm; }
+body { margin: 0; font-family: "Arial", "Helvetica Neue", sans-serif; color: #163231; background: #eef7f6; font-size: 11px; }
+.page { background: #ffffff; position: relative; }
+.watermark { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 78px; font-weight: 800; color: rgba(15, 61, 62, 0.12); transform: rotate(-30deg); letter-spacing: 0.14em; z-index: 5; pointer-events: none; }
+.topbar, .customer-ribbon, .items, .summary-band, .support-grid, .footer { position: relative; z-index: 1; }
+.topbar { display: flex; justify-content: space-between; gap: 18px; margin-bottom: 12px; }
+.identity { display: flex; gap: 12px; align-items: flex-start; }
+.logo-wrap { width: 60px; height: 60px; border-radius: 18px; background: #f5fbfb; display: flex; align-items: center; justify-content: center; }
+.logo { width: 50px; height: 50px; object-fit: contain; }
+.kicker { margin: 0 0 6px; text-transform: uppercase; letter-spacing: 0.16em; color: #7c8f8f; font-size: 9px; font-weight: 800; }
+h1, h2, h3 { margin: 0; }
+h1 { font-size: 22px; letter-spacing: -0.03em; }
+h2 { font-size: 26px; letter-spacing: -0.05em; }
+.muted, .identity p, .customer-ribbon p { color: #607070; margin: 3px 0; }
+.doc-meta { min-width: 220px; }
+.meta-list { display: grid; gap: 6px; margin-top: 8px; }
+.meta-list div { display: flex; justify-content: space-between; border-bottom: 1px solid #d8ebea; padding-bottom: 5px; }
+.meta-list span { color: #7f8d8f; }
+.customer-ribbon { display: grid; grid-template-columns: 1.25fr 0.75fr; gap: 12px; margin-bottom: 12px; }
+.card { background: #f7fbfb; border-radius: 18px; padding: 14px; min-height: 92px; }
+.emphasis { background: #0f3d3e; color: #fff; }
+.emphasis .kicker, .emphasis p { color: rgba(255,255,255,0.78); }
+.big { font-size: 22px; font-weight: 800; color: #fff !important; margin-top: 6px !important; }
+.items { width: 100%; border-collapse: separate; border-spacing: 0 6px; }
+.items thead th { text-align: left; color: #7a8a8a; font-size: 9px; text-transform: uppercase; letter-spacing: 0.14em; padding: 0 10px 4px; }
+.items tbody td { background: #fbfdfd; padding: 10px 10px; border-top: 1px solid #edf3f3; border-bottom: 1px solid #edf3f3; vertical-align: top; }
+.items tbody td:first-child { border-left: 1px solid #edf3f3; border-radius: 14px 0 0 14px; }
+.items tbody td:last-child { border-right: 1px solid #edf3f3; border-radius: 0 14px 14px 0; }
+.micro { margin-top: 4px; font-size: 10px; color: #879494; }
+.strong { font-weight: 800; }
+.summary-band { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 12px; margin-top: 10px; }
+.notes { display: grid; gap: 10px; }
+.panel { background: #f9fcfc; border: 1px solid #e5efee; border-radius: 16px; padding: 12px 14px; }
+.words { font-size: 13px; font-weight: 700; color: #123637; }
+.totals { background: linear-gradient(180deg, #143d3f, #0f2f30); color: #fff; border-radius: 20px; padding: 14px 16px; }
+.totals .line, .totals .grand { display: flex; justify-content: space-between; margin: 7px 0; }
+.totals .grand { margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.18); font-size: 15px; font-weight: 800; }
+.support-grid { display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 10px; align-items: stretch; }
+.mini { width: 100%; border-collapse: collapse; }
+.mini th, .mini td { padding: 6px 0; border-bottom: 1px solid #e5efee; text-align: left; }
+.mini th { font-size: 9px; text-transform: uppercase; letter-spacing: 0.12em; color: #7d8d8d; }
+.side-tools { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; min-height: 120px; }
+.qr { width: 92px; height: 92px; object-fit: contain; }
+.signature { width: 100%; text-align: center; }
+.signature-heading { margin: 0 0 8px; font-size: 11px; font-weight: 700; color: #607070; }
+.signature-img { max-width: 120px; max-height: 42px; object-fit: contain; }
+.rule { border-top: 1px solid #b8cbcb; margin-top: 10px; }
+.footer { display: flex; justify-content: space-between; color: #7a8a8a; margin-top: 10px; font-size: 10px; }
+.page-number::after { content: counter(page); }

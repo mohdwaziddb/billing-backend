@@ -2,15 +2,22 @@ package com.billing.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import com.billing.entity.enums.InventoryConsumptionMethod;
+import com.billing.entity.enums.InventoryPricingPolicy;
 
 @Getter
 @Setter
@@ -59,10 +66,25 @@ public class Company extends BaseEntity {
 
     private String country;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "state_id")
+    private StateMaster stateMaster;
+
     private String pincode;
 
     @Column(unique = true)
     private String taxId;
+
+    @Column(unique = true)
+    private String gstin;
+
+    @Builder.Default
+    @Column(nullable = false)
+    private boolean gstRegistered = false;
+
+    @Builder.Default
+    @Column(nullable = false)
+    private boolean compositionScheme = false;
 
     @Column(name = "pan_number")
     private String panNumber;
@@ -76,6 +98,33 @@ public class Company extends BaseEntity {
     @Column(name = "website_url")
     private String websiteUrl;
 
+    @Column(name = "bank_name")
+    private String bankName;
+
+    @Column(name = "bank_account_name")
+    private String bankAccountName;
+
+    @Column(name = "bank_account_number")
+    private String bankAccountNumber;
+
+    @Column(name = "bank_ifsc_code")
+    private String bankIfscCode;
+
+    @Column(name = "bank_branch")
+    private String bankBranch;
+
+    @Column(name = "upi_id")
+    private String upiId;
+
+    @Column(name = "signature_url")
+    private String signatureUrl;
+
+    @Column(name = "invoice_notes", columnDefinition = "TEXT")
+    private String invoiceNotes;
+
+    @Column(name = "invoice_terms", columnDefinition = "TEXT")
+    private String invoiceTerms;
+
     @Builder.Default
     @Column(name = "is_active", nullable = false)
     private boolean active = true;
@@ -83,5 +132,15 @@ public class Company extends BaseEntity {
     @Builder.Default
     @Column(name = "is_chatbot_enabled", nullable = false)
     private boolean chatbotEnabled = false;
+
+    @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(name = "inventory_consumption_method", nullable = false)
+    private InventoryConsumptionMethod inventoryConsumptionMethod = InventoryConsumptionMethod.FIFO;
+
+    @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(name = "inventory_pricing_policy", nullable = false)
+    private InventoryPricingPolicy inventoryPricingPolicy = InventoryPricingPolicy.LATEST_BATCH_SELLING_PRICE;
 
 }

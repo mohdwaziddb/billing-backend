@@ -5,7 +5,7 @@ import com.billing.dto.PageResponse;
 import com.billing.dto.payment.PaymentRequest;
 import com.billing.dto.payment.PaymentResponse;
 import com.billing.entity.enums.RoleName;
-import com.billing.security.RequirePermission;
+import com.billing.security.RequiresPermission;
 import com.billing.service.PaymentService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -26,7 +26,7 @@ public class PaymentController {
     private final PaymentService paymentService;
 
     @GetMapping
-    @RequirePermission(menu = "PAYMENTS", action = "VIEW")
+    @RequiresPermission(menu = "PAYMENTS", action = "VIEW")
     public ResponseEntity<ApiResponse<PageResponse<PaymentResponse>>> list(Authentication authentication,
                                                                           @RequestParam(required = false) String search,
                                                                           @RequestParam(required = false) String paymentStatus,
@@ -45,20 +45,20 @@ public class PaymentController {
     }
 
     @GetMapping("/{paymentId}")
-    @RequirePermission(menu = "PAYMENTS", action = "VIEW")
+    @RequiresPermission(menu = "PAYMENTS", action = "VIEW")
     public ResponseEntity<ApiResponse<PaymentResponse>> get(Authentication authentication, @PathVariable Long paymentId) {
         return ResponseEntity.ok(ApiResponse.success("Payment fetched successfully", paymentService.get(authentication.getName(), paymentId)));
     }
 
     @PostMapping
-    @RequirePermission(menu = "PAYMENTS", action = "ADD")
+    @RequiresPermission(menu = "PAYMENTS", action = "ADD")
     public ResponseEntity<ApiResponse<PaymentResponse>> create(Authentication authentication,
                                                                @Valid @RequestBody PaymentRequest request) {
         return ResponseEntity.ok(ApiResponse.success("Payment added successfully", paymentService.create(authentication.getName(), request)));
     }
 
     @PutMapping("/{paymentId}")
-    @RequirePermission(menu = "PAYMENTS", action = "EDIT")
+    @RequiresPermission(menu = "PAYMENTS", action = "EDIT")
     public ResponseEntity<ApiResponse<PaymentResponse>> update(Authentication authentication,
                                                                @PathVariable Long paymentId,
                                                                @Valid @RequestBody PaymentRequest request) {
@@ -66,14 +66,14 @@ public class PaymentController {
     }
 
     @DeleteMapping("/{paymentId}")
-    @RequirePermission(menu = "PAYMENTS", action = "DELETE")
+    @RequiresPermission(menu = "PAYMENTS", action = "DELETE")
     public ResponseEntity<ApiResponse<Map<String, String>>> delete(Authentication authentication, @PathVariable Long paymentId) {
         paymentService.delete(authentication.getName(), paymentId);
         return ResponseEntity.ok(ApiResponse.success("Payment deleted successfully", Map.of("status", "ok")));
     }
 
     @PostMapping("/{paymentId}/restore")
-    @RequirePermission(menu = "PAYMENTS", action = "RESTORE")
+    @RequiresPermission(menu = "PAYMENTS", action = "RESTORE")
     public ResponseEntity<ApiResponse<PaymentResponse>> restore(Authentication authentication, @PathVariable Long paymentId) {
         return ResponseEntity.ok(ApiResponse.success("Payment restored successfully", paymentService.restore(authentication.getName(), paymentId)));
     }

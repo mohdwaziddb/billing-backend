@@ -16,10 +16,10 @@ public class RequirePermissionAspect {
 
     private final PermissionService permissionService;
 
-    @Before("@annotation(requirePermission)")
-    public void checkPermission(RequirePermission requirePermission) {
+    @Before("@annotation(requiresPermission)")
+    public void checkPermission(RequiresPermission requiresPermission) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (!permissionService.has(authentication, requirePermission.menu(), requirePermission.action())) {
+        if (!permissionService.has(authentication, requiresPermission.menu(), requiresPermission.action())) {
             throw new AccessDeniedException("Permission denied");
         }
     }

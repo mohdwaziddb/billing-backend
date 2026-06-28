@@ -45,25 +45,21 @@ public class Product extends BaseEntity {
 
     private String brand;
 
-    @Column(nullable = false, precision = 12, scale = 2)
-    private BigDecimal purchasePrice;
-
-    @Column(nullable = false, precision = 12, scale = 2)
-    private BigDecimal sellingPrice;
-
     @Column(nullable = false)
     private String sku;
 
     private String hsnCode;
 
-    @Column(nullable = false)
-    private Integer stockQty;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "tax_master_id")
+    private TaxMaster taxMaster;
 
     @Column(nullable = false)
     private Integer minStockQty;
 
-    @Column(nullable = false, precision = 5, scale = 2)
-    private BigDecimal taxPercent;
+    @Builder.Default
+    @Column(nullable = false)
+    private boolean taxable = true;
 
     @Builder.Default
     @Column(nullable = false)

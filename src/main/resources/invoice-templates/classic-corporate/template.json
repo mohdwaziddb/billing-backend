@@ -1,0 +1,21 @@
+{
+  "templateId": "classic-corporate",
+  "templateName": "Classic Corporate",
+  "version": "1.0.0",
+  "description": "Traditional corporate invoice with strong hierarchy and balanced boxed layout.",
+  "author": "BizFinity",
+  "supportsWatermark": true,
+  "supportsQr": true,
+  "supportsSignature": true,
+  "supportsBankDetails": true,
+  "supportsTerms": true,
+  "supportsNotes": true,
+  "supportsGst": true,
+  "supportsMultiPage": true,
+  "supportedPaperSizes": ["A4"],
+  "defaultColors": {
+    "accent": "#16324f",
+    "muted": "#6b7280",
+    "surface": "#eef4f8"
+  }
+}

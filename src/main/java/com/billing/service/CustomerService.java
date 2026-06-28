@@ -1,30 +1,30 @@
 package com.billing.service;
 
-import com.billing.entity.Company;
-import com.billing.entity.Customer;
-import com.billing.entity.Invoice;
-import com.billing.entity.Payment;
-import com.billing.entity.User;
-import com.billing.exception.ResourceNotFoundException;
+import com.billing.dto.PageResponse;
 import com.billing.dto.customer.CustomerLedgerEntryResponse;
 import com.billing.dto.customer.CustomerLedgerResponse;
 import com.billing.dto.customer.CustomerPurchaseHistoryResponse;
 import com.billing.dto.customer.CustomerRequest;
 import com.billing.dto.customer.CustomerResponse;
 import com.billing.dto.customer.CustomerSummaryMetrics;
-import com.billing.dto.PageResponse;
 import com.billing.dto.invoice.InvoiceItemResponse;
 import com.billing.dto.invoice.InvoiceResponse;
+import com.billing.entity.Company;
+import com.billing.entity.Customer;
+import com.billing.entity.Invoice;
+import com.billing.entity.Payment;
+import com.billing.entity.User;
 import com.billing.exception.BadRequestException;
+import com.billing.exception.ResourceNotFoundException;
 import com.billing.repository.CustomerRepository;
 import com.billing.repository.InvoiceRepository;
 import com.billing.repository.PaymentRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -45,19 +45,36 @@ public class CustomerService {
     private final AccessControlService accessControlService;
     private final AuditNameResolver auditNameResolver;
     private final AuditLogService auditLogService;
+    private final StateMasterService stateMasterService;
 
     @Transactional
     public CustomerResponse create(String email, CustomerRequest request) {
         Company company = accessControlService.getCurrentCompany(email);
         validateUnique(company, request, null);
+        boolean gstRegistered = Boolean.TRUE.equals(request.getGstRegistered());
+        String gstin = firstNonBlank(request.getGstin(), request.getGstNo());
+        if (gstRegistered && gstin == null) {
+            throw new BadRequestException("GST number is required when GST Registered is Yes");
+        }
+        if (!gstRegistered) {
+            gstin = null;
+        }
+        var stateMaster = request.getStateId() == null ? null : stateMasterService.getActiveByIdOrThrow(request.getStateId(), "Customer state");
 
         Customer customer = Customer.builder()
                 .company(company)
                 .name(request.getName())
                 .mobile(request.getMobile())
                 .email(blankToNull(request.getEmail()))
-                .address(request.getAddress())
-                .gstNo(request.getGstNo())
+                .address(blankToNull(request.getAddress()))
+                .city(blankToNull(request.getCity()))
+                .stateMaster(stateMaster)
+                .state(stateMaster != null ? stateMaster.getStateName() : blankToNull(request.getState()))
+                .country(stateMaster != null ? stateMaster.getCountryName() : blankToNull(request.getCountry()))
+                .pincode(blankToNull(request.getPincode()))
+                .gstNo(gstin)
+                .gstin(gstin)
+                .gstRegistered(gstRegistered)
                 .currentBalance(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP))
                 .active(Boolean.TRUE.equals(request.getActive()))
                 .build();
@@ -92,8 +109,8 @@ public class CustomerService {
     @Transactional(readOnly = true)
     public CustomerResponse getByMobile(String email, String mobile) {
         Company company = accessControlService.getCurrentCompany(email);
-        Customer customer = customerRepository.findByCompanyAndMobileIgnoreCase(company, mobile == null ? null : mobile.trim())
-                .orElseThrow(() -> new ResourceNotFoundException("Customer not found with this mobile number"));
+        Customer customer = customerRepository.findByCompanyAndMobileIgnoreCaseAndActiveTrue(company, mobile == null ? null : mobile.trim())
+                .orElseThrow(() -> new ResourceNotFoundException("Active customer not found with this mobile number"));
         return toResponse(customer, loadMetrics(company, List.of(customer)).get(customer.getId()));
     }
 
@@ -103,12 +120,28 @@ public class CustomerService {
         Customer customer = getCustomerOrThrow(company, customerId);
         Map<String, Object> oldData = snapshot(customer);
         validateUnique(company, request, customerId);
+        boolean gstRegistered = Boolean.TRUE.equals(request.getGstRegistered());
+        String gstin = firstNonBlank(request.getGstin(), request.getGstNo());
+        if (gstRegistered && gstin == null) {
+            throw new BadRequestException("GST number is required when GST Registered is Yes");
+        }
+        if (!gstRegistered) {
+            gstin = null;
+        }
+        var stateMaster = request.getStateId() == null ? null : stateMasterService.getActiveByIdOrThrow(request.getStateId(), "Customer state");
 
         customer.setName(request.getName());
         customer.setMobile(request.getMobile());
         customer.setEmail(blankToNull(request.getEmail()));
-        customer.setAddress(request.getAddress());
-        customer.setGstNo(request.getGstNo());
+        customer.setAddress(blankToNull(request.getAddress()));
+        customer.setCity(blankToNull(request.getCity()));
+        customer.setStateMaster(stateMaster);
+        customer.setState(stateMaster != null ? stateMaster.getStateName() : blankToNull(request.getState()));
+        customer.setCountry(stateMaster != null ? stateMaster.getCountryName() : blankToNull(request.getCountry()));
+        customer.setPincode(blankToNull(request.getPincode()));
+        customer.setGstNo(gstin);
+        customer.setGstin(gstin);
+        customer.setGstRegistered(gstRegistered);
         customer.setActive(Boolean.TRUE.equals(request.getActive()));
 
         Customer saved = customerRepository.save(customer);
@@ -284,7 +317,7 @@ public class CustomerService {
     private Map<Long, CustomerSummaryMetrics> loadMetrics(Company company, List<Customer> customers) {
         Map<Long, CustomerSummaryMetricsBuilderState> states = new HashMap<>();
         for (Customer customer : customers) {
-          states.put(customer.getId(), new CustomerSummaryMetricsBuilderState(customer));
+            states.put(customer.getId(), new CustomerSummaryMetricsBuilderState(customer));
         }
         if (states.isEmpty()) {
             return Map.of();
@@ -368,7 +401,14 @@ public class CustomerService {
                 .mobile(customer.getMobile())
                 .email(customer.getEmail())
                 .address(customer.getAddress())
+                .city(customer.getCity())
+                .state(customer.getState())
+                .stateId(customer.getStateMaster() != null ? customer.getStateMaster().getId() : null)
+                .country(customer.getCountry())
+                .pincode(customer.getPincode())
                 .gstNo(customer.getGstNo())
+                .gstin(firstNonBlank(customer.getGstin(), customer.getGstNo()))
+                .gstRegistered(customer.isGstRegistered())
                 .currentBalance(scale(customer.getCurrentBalance()))
                 .totalPurchaseAmount(scale(safeMetrics.getTotalPurchaseAmount()))
                 .totalPaidAmount(scale(safeMetrics.getTotalPaidAmount()))
@@ -392,12 +432,21 @@ public class CustomerService {
                 .customerName(invoice.getCustomer().getName())
                 .customerMobile(invoice.getCustomer().getMobile())
                 .customerAddress(invoice.getCustomer().getAddress())
+                .customerState(invoice.getCustomer().getState())
+                .customerStateId(invoice.getCustomer().getStateMaster() != null ? invoice.getCustomer().getStateMaster().getId() : null)
+                .customerGstin(firstNonBlank(invoice.getCustomer().getGstin(), invoice.getCustomer().getGstNo()))
                 .referByUserId(invoice.getReferByUser() != null ? invoice.getReferByUser().getId() : null)
                 .referByUserName(invoice.getReferByUser() != null ? invoice.getReferByUser().getFullName() : null)
                 .referByUsername(invoice.getReferByUser() != null ? invoice.getReferByUser().getUsername() : null)
                 .subtotal(scale(invoice.getSubtotal()))
+                .taxableAmount(scale(invoice.getTaxableAmount()))
+                .cgstTotal(scale(invoice.getCgstTotal()))
+                .sgstTotal(scale(invoice.getSgstTotal()))
+                .igstTotal(scale(invoice.getIgstTotal()))
                 .taxAmount(scale(invoice.getTaxAmount()))
                 .discountAmount(scale(invoice.getDiscountAmount()))
+                .roundOff(scale(invoice.getRoundOff()))
+                .grandTotal(scale(invoice.getGrandTotal()))
                 .totalAmount(scale(invoice.getTotalAmount()))
                 .paidAmount(scale(invoice.getPaidAmount()))
                 .balanceAmount(scale(invoice.getBalanceAmount()))
@@ -414,7 +463,21 @@ public class CustomerService {
                         .qty(item.getQty())
                         .price(scale(item.getPrice()))
                         .discountPercent(scale(item.getDiscountPercent()))
+                        .discountAmount(scale(item.getDiscountAmount()))
+                        .taxMasterId(item.getTaxMaster() != null ? item.getTaxMaster().getId() : null)
+                        .taxName(item.getTaxName())
+                        .taxRate(scale(item.getTaxRate()))
+                        .hsnCode(item.getHsnCode())
+                        .taxableAmount(scale(item.getTaxableAmount()))
+                        .cgstRate(scale(item.getCgstRate()))
+                        .cgstAmount(scale(item.getCgstAmount()))
+                        .sgstRate(scale(item.getSgstRate()))
+                        .sgstAmount(scale(item.getSgstAmount()))
+                        .igstRate(scale(item.getIgstRate()))
+                        .igstAmount(scale(item.getIgstAmount()))
                         .taxPercent(scale(item.getTaxPercent()))
+                        .netAmount(scale(item.getNetAmount()))
+                        .grandAmount(scale(item.getGrandAmount()))
                         .lineTotal(scale(item.getLineTotal()))
                         .build()).toList())
                 .build();
@@ -425,7 +488,12 @@ public class CustomerService {
     }
 
     private String blankToNull(String value) {
-        return value == null || value.isBlank() ? null : value;
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private String firstNonBlank(String preferred, String fallback) {
+        String value = blankToNull(preferred);
+        return value == null ? blankToNull(fallback) : value;
     }
 
     private String normalizeSearch(String value) {
@@ -438,7 +506,14 @@ public class CustomerService {
         data.put("mobile", customer.getMobile());
         data.put("email", customer.getEmail());
         data.put("address", customer.getAddress());
+        data.put("city", customer.getCity());
+        data.put("state", customer.getState());
+        data.put("stateId", customer.getStateMaster() != null ? customer.getStateMaster().getId() : null);
+        data.put("country", customer.getCountry());
+        data.put("pincode", customer.getPincode());
         data.put("gstNo", customer.getGstNo());
+        data.put("gstin", firstNonBlank(customer.getGstin(), customer.getGstNo()));
+        data.put("gstRegistered", customer.isGstRegistered());
         data.put("currentBalance", scale(customer.getCurrentBalance()));
         data.put("active", customer.isActive());
         return data;

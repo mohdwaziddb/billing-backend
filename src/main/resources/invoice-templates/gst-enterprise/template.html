@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8" />
+  <title th:text="${invoice.invoiceNo}">Invoice</title>
+</head>
+<body class="gst-template">
+  <div class="watermark" th:if="${settings.showWatermark}" th:text="${invoice.watermarkText}">INVOICE</div>
+  <div class="sheet">
+    <header class="header-box">
+      <div class="company-box">
+        <div class="logo-cell" th:if="${company.logoDataUrl != null}"><img th:src="${company.logoDataUrl}" class="logo" alt="Logo" /></div>
+        <div>
+          <div class="caption">Supplier</div>
+          <h1 th:text="${company.name}">Company</h1>
+          <p th:text="${company.address}">Address</p>
+          <p>GSTIN: <strong th:text="${company.gstin}">GSTIN</strong></p>
+          <p><span th:text="${company.phone}">Phone</span> | <span th:text="${company.email}">Email</span> | <span th:text="${company.website}">Website</span></p>
+        </div>
+      </div>
+      <div class="invoice-box">
+        <div class="heading">GST TAX INVOICE</div>
+        <table class="meta-table">
+          <tr><th>Invoice Number</th><td th:text="${invoice.invoiceNo}">INV</td></tr>
+          <tr><th>Invoice Date</th><td th:text="${invoice.invoiceDateLabel}">Date</td></tr>
+          <tr><th>Due Date</th><td th:text="${invoice.dueDateLabel}">Due</td></tr>
+          <tr><th>Place of Supply</th><td th:text="${invoice.placeOfSupply}">State</td></tr>
+          <tr><th>Payment Status</th><td th:text="${invoice.paymentStatus}">Status</td></tr>
+        </table>
+      </div>
+    </header>
+
+    <section class="party-grid">
+      <div class="box">
+        <div class="caption">Bill To</div>
+        <h3 th:text="${invoice.customerName}">Customer</h3>
+        <p th:text="${invoice.customerAddress}">Address</p>
+        <p><strong>Mobile:</strong> <span th:text="${invoice.customerPhone}">Phone</span></p>
+        <p><strong>Email:</strong> <span th:text="${invoice.customerEmail}">Email</span></p>
+        <p><strong>GSTIN:</strong> <span th:text="${invoice.customerGstin}">GSTIN</span></p>
+      </div>
+      <div class="box">
+        <div class="caption">Invoice Snapshot</div>
+        <p><strong>Invoice No:</strong> <span th:text="${invoice.invoiceNo}">INV</span></p>
+        <p><strong>Invoice Date:</strong> <span th:text="${invoice.invoiceDateLabel}">Date</span></p>
+        <p><strong>Place of Supply:</strong> <span th:text="${invoice.placeOfSupply}">State</span></p>
+        <p><strong>Payment Status:</strong> <span th:text="${invoice.paymentStatus}">Status</span></p>
+        <p><strong>Generated At:</strong> <span th:text="${invoice.renderedAt}">Date Time</span></p>
+      </div>
+    </section>
+
+    <table class="items-table">
+      <thead>
+        <tr>
+          <th>Sr</th>
+          <th>Description</th>
+          <th>HSN</th>
+          <th>Qty</th>
+          <th>Rate</th>
+          <th>Discount</th>
+          <th>Taxable</th>
+          <th>GST Breakup</th>
+          <th>Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr th:each="item, stat : ${invoice.items}">
+          <td th:text="${stat.count}">1</td>
+          <td>
+            <strong th:text="${item.productName}">Item</strong>
+            <div class="small" th:text="${item.taxName}">GST</div>
+          </td>
+          <td th:text="${item.hsnCode}">HSN</td>
+          <td th:text="${item.qty}">1</td>
+          <td th:text="${item.price}">0</td>
+          <td th:text="${item.discountAmount}">0</td>
+          <td th:text="${item.taxableAmount}">0</td>
+          <td th:text="${item.gstBreakup}">GST</td>
+          <td th:text="${item.lineTotal}">0</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <section class="closing-grid">
+      <div class="left-stack">
+        <div class="box" th:if="${settings.showNotes}">
+          <div class="caption">Notes</div>
+          <p th:text="${company.invoiceNotes}">Notes</p>
+          <p><strong>Amount in Words:</strong> <span th:text="${invoice.amountInWords}">Words</span></p>
+        </div>
+        <div class="box" th:if="${settings.showTerms}">
+          <div class="caption">Terms &amp; Conditions</div>
+          <p th:text="${company.invoiceTerms}">Terms</p>
+        </div>
+      </div>
+      <div class="right-stack">
+        <div class="totals-box">
+          <div class="line"><span>Subtotal</span><strong th:text="${invoice.subtotal}">0</strong></div>
+          <div class="line"><span>Discount</span><strong th:text="${invoice.discount}">0</strong></div>
+          <div class="line"><span>Taxable Amount</span><strong th:text="${invoice.taxableAmount}">0</strong></div>
+          <div class="line"><span>CGST</span><strong th:text="${invoice.cgst}">0</strong></div>
+          <div class="line"><span>SGST</span><strong th:text="${invoice.sgst}">0</strong></div>
+          <div class="line"><span>IGST</span><strong th:text="${invoice.igst}">0</strong></div>
+          <div class="line"><span>Round Off</span><strong th:text="${invoice.roundOff}">0</strong></div>
+          <div class="grand"><span>Grand Total</span><strong th:text="${invoice.grandTotal}">0</strong></div>
+          <div class="line"><span>Paid</span><strong th:text="${invoice.paidAmount}">0</strong></div>
+          <div class="line"><span>Balance</span><strong th:text="${invoice.balanceAmount}">0</strong></div>
+        </div>
+        <div class="tools-box">
+          <div class="signature" th:if="${settings.showSignature}">
+            <p class="signature-heading" th:text="${settings.signatureHeading}">For Company</p>
+            <img th:if="${company.signatureDataUrl != null}" th:src="${company.signatureDataUrl}" alt="Signature" class="signature-img" />
+            <div class="sig-line"></div>
+            <span th:text="${settings.signatureLabel}">Authorized Signature</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <span th:text="${settings.footerCredit}">Generated by BizFinity Billing SaaS</span>
+      <span>Page <span class="page-number"></span></span>
+    </footer>
+  </div>
+</body>
+</html>

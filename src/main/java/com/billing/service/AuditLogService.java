@@ -12,6 +12,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.criteria.Predicate;
+import jakarta.persistence.criteria.CriteriaBuilder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -27,6 +28,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -150,7 +152,9 @@ public class AuditLogService {
                 predicates.add(builder.equal(root.get("company"), company));
             }
             if (hasText(moduleName)) {
-                predicates.add(builder.equal(builder.lower(root.get("moduleName")), moduleName.trim().toLowerCase()));
+                CriteriaBuilder.In<String> moduleIn = builder.in(builder.lower(root.get("moduleName")));
+                moduleNameAliases(moduleName).forEach(moduleIn::value);
+                predicates.add(moduleIn);
             }
             if (entityId != null) {
                 predicates.add(builder.equal(root.get("entityId"), entityId));
@@ -348,12 +352,22 @@ public class AuditLogService {
         return value != null && !value.isBlank();
     }
 
+    private List<String> moduleNameAliases(String moduleName) {
+        String normalized = moduleName.trim().toLowerCase();
+        return switch (normalized) {
+            case "product", "products" -> Arrays.asList("product", "products");
+            case "purchase", "purchases" -> Arrays.asList("purchase", "purchases");
+            default -> List.of(normalized);
+        };
+    }
+
     private void requireRowLogPermission(String email, String moduleName) {
         if (!hasText(moduleName)) {
             throw new BadRequestException("Module name is required to view logs");
         }
         String menuCode = switch (moduleName.trim().toLowerCase()) {
-            case "product" -> "PRODUCTS";
+            case "product", "products" -> "PRODUCTS";
+            case "purchase", "purchases" -> "PURCHASES";
             case "customer" -> "CUSTOMERS";
             case "invoice" -> "INVOICES";
             case "payment" -> "PAYMENTS";
@@ -362,6 +376,8 @@ public class AuditLogService {
             case "product category" -> "PRODUCT_CATEGORY";
             case "product sub category" -> "PRODUCT_SUB_CATEGORIES";
             case "payment mode" -> "PAYMENT_MODES";
+            case "tax master" -> "TAX_MASTER";
+            case "gst summary" -> "GST_SUMMARY";
             case "user" -> "USERS";
             case "email template" -> "EMAIL_TEMPLATES";
             case "sms template" -> "SMS_TEMPLATES";

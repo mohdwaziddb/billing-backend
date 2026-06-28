@@ -7,6 +7,7 @@ import com.billing.entity.ProductCategory;
 import com.billing.entity.ProductSubCategory;
 import com.billing.repository.ProductRepository;
 import com.billing.service.AuditLogService;
+import com.billing.service.TaxMasterService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,6 +24,7 @@ public class ProductImportProcessor implements ImportProcessor<ProductDataPortRo
 
     private final AuditLogService auditLogService;
     private final ProductRepository productRepository;
+    private final TaxMasterService taxMasterService;
 
     @Override
     @Transactional
@@ -57,11 +59,9 @@ public class ProductImportProcessor implements ImportProcessor<ProductDataPortRo
                 .brand(row.getBrand())
                 .sku(row.getSku())
                 .hsnCode(row.getHsnCode())
-                .purchasePrice(scaleDecimal(row.getPurchasePrice()))
-                .sellingPrice(scaleDecimal(row.getSellingPrice()))
-                .stockQty(parseIntegerOrDefault(row.getOpeningStockQty()))
                 .minStockQty(parseIntegerOrDefault(row.getMinimumStockQty()))
-                .taxPercent(scalePercent(row.getTaxPercent()))
+                .taxMaster(taxMasterService.resolveForProduct(company, null, scalePercent(row.getTaxPercent()), scalePercent(row.getTaxPercent()).compareTo(BigDecimal.ZERO) > 0))
+                .taxable(scalePercent(row.getTaxPercent()).compareTo(BigDecimal.ZERO) > 0)
                 .active(Boolean.TRUE.equals(row.getActiveValue()))
                 .build();
     }
@@ -85,11 +85,8 @@ public class ProductImportProcessor implements ImportProcessor<ProductDataPortRo
         data.put("subCategory", product.getProductSubCategory() != null ? product.getProductSubCategory().getSubCategoryName() : null);
         data.put("brand", product.getBrand());
         data.put("sku", product.getSku());
-        data.put("purchasePrice", product.getPurchasePrice());
-        data.put("sellingPrice", product.getSellingPrice());
-        data.put("stockQty", product.getStockQty());
         data.put("minStockQty", product.getMinStockQty());
-        data.put("taxPercent", product.getTaxPercent());
+        data.put("taxPercent", product.getTaxMaster() != null ? product.getTaxMaster().getRate() : BigDecimal.ZERO);
         data.put("active", product.isActive());
         return data;
     }

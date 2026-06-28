@@ -18,20 +18,20 @@ import java.util.List;
 import java.util.Optional;
 
 public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
-    @EntityGraph(attributePaths = {"customer", "referByUser", "items", "items.product"})
+    @EntityGraph(attributePaths = {"customer", "customer.stateMaster", "referByUser", "items", "items.product", "items.taxMaster"})
     @Query("select i from Invoice i where i.company = :company and i.deleted = false order by i.invoiceDate desc, i.id desc")
     List<Invoice> findByCompanyOrderByInvoiceDateDescIdDesc(@Param("company") Company company);
-    @EntityGraph(attributePaths = {"customer", "referByUser", "items", "items.product"})
+    @EntityGraph(attributePaths = {"customer", "customer.stateMaster", "referByUser", "items", "items.product", "items.taxMaster"})
     @Query("select i from Invoice i where i.deleted = false order by i.invoiceDate desc, i.id desc")
     List<Invoice> findAllByOrderByInvoiceDateDescIdDesc();
-    @EntityGraph(attributePaths = {"customer", "referByUser", "items", "items.product"})
+    @EntityGraph(attributePaths = {"customer", "customer.stateMaster", "referByUser", "items", "items.product", "items.taxMaster"})
     @Query("select i from Invoice i where i.company = :company and i.deleted = false")
     Page<Invoice> findByCompany(@Param("company") Company company, Pageable pageable);
     Optional<Invoice> findByIdAndCompany(Long id, Company company);
     Optional<Invoice> findTopByCompanyOrderByIdDesc(Company company);
     @Query("select i from Invoice i where i.company = :company and i.customer = :customer and i.deleted = false order by i.invoiceDate desc, i.id desc")
     List<Invoice> findByCompanyAndCustomerOrderByInvoiceDateDescIdDesc(@Param("company") Company company, @Param("customer") Customer customer);
-    @EntityGraph(attributePaths = {"customer", "referByUser", "items", "items.product"})
+    @EntityGraph(attributePaths = {"customer", "customer.stateMaster", "referByUser", "items", "items.product", "items.taxMaster"})
     @Query("select i from Invoice i where i.company = :company and i.customer = :customer and i.deleted = false")
     Page<Invoice> findByCompanyAndCustomer(@Param("company") Company company, @Param("customer") Customer customer, Pageable pageable);
     long countByCompanyAndInvoiceDate(Company company, LocalDate invoiceDate);

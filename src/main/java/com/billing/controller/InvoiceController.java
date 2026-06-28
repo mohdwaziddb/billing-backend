@@ -2,11 +2,13 @@ package com.billing.controller;
 
 import com.billing.dto.ApiResponse;
 import com.billing.dto.PageResponse;
+import com.billing.dto.invoice.InvoiceRenderResponse;
 import com.billing.dto.invoice.InvoiceRequest;
 import com.billing.dto.invoice.InvoiceResponse;
 import com.billing.entity.enums.RoleName;
-import com.billing.security.RequirePermission;
+import com.billing.security.RequiresPermission;
 import com.billing.service.InvoiceService;
+import com.billing.service.invoice.InvoiceTemplateRenderService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -23,9 +25,10 @@ import java.time.LocalDate;
 public class InvoiceController {
 
     private final InvoiceService invoiceService;
+    private final InvoiceTemplateRenderService invoiceTemplateRenderService;
 
     @GetMapping
-    @RequirePermission(menu = "INVOICES", action = "VIEW")
+    @RequiresPermission(menu = "INVOICES", action = "VIEW")
     public ResponseEntity<ApiResponse<PageResponse<InvoiceResponse>>> list(Authentication authentication,
                                                                           @RequestParam(required = false) Long customerId,
                                                                           @RequestParam(required = false) String search,
@@ -61,20 +64,41 @@ public class InvoiceController {
     }
 
     @GetMapping("/{invoiceId}")
-    @RequirePermission(menu = "INVOICES", action = "VIEW")
+    @RequiresPermission(menu = "INVOICES", action = "VIEW")
     public ResponseEntity<ApiResponse<InvoiceResponse>> get(Authentication authentication, @PathVariable Long invoiceId) {
         return ResponseEntity.ok(ApiResponse.success("Invoice fetched successfully", invoiceService.get(authentication.getName(), invoiceId)));
     }
 
+    @GetMapping("/{invoiceId}/render")
+    @RequiresPermission(menu = "INVOICES", action = "VIEW")
+    public ResponseEntity<ApiResponse<InvoiceRenderResponse>> render(Authentication authentication,
+                                                                     @PathVariable Long invoiceId,
+                                                                     @RequestParam(required = false) String templateId) {
+        return ResponseEntity.ok(ApiResponse.success("Invoice rendered successfully", invoiceTemplateRenderService.renderInvoice(authentication.getName(), invoiceId, templateId)));
+    }
+
+    @GetMapping("/{invoiceId}/pdf")
+    @RequiresPermission(menu = "INVOICES", action = "EXPORT")
+    public ResponseEntity<byte[]> pdf(Authentication authentication,
+                                      @PathVariable Long invoiceId,
+                                      @RequestParam(required = false) String templateId) {
+        InvoiceResponse invoice = invoiceService.get(authentication.getName(), invoiceId);
+        byte[] content = invoiceTemplateRenderService.pdf(authentication.getName(), invoiceId, templateId);
+        return ResponseEntity.ok()
+                .header("Content-Type", "application/pdf")
+                .header("Content-Disposition", "attachment; filename=\"" + invoice.getInvoiceNo() + ".pdf\"")
+                .body(content);
+    }
+
     @PostMapping
-    @RequirePermission(menu = "CREATE_INVOICE", action = "ADD")
+    @RequiresPermission(menu = "CREATE_INVOICE", action = "ADD")
     public ResponseEntity<ApiResponse<InvoiceResponse>> create(Authentication authentication,
                                                                @Valid @RequestBody InvoiceRequest request) {
         return ResponseEntity.ok(ApiResponse.success("Invoice created successfully", invoiceService.create(authentication.getName(), request)));
     }
 
     @PutMapping("/{invoiceId}")
-    @RequirePermission(menu = "INVOICES", action = "EDIT")
+    @RequiresPermission(menu = "INVOICES", action = "EDIT")
     public ResponseEntity<ApiResponse<InvoiceResponse>> update(Authentication authentication,
                                                                @PathVariable Long invoiceId,
                                                                @Valid @RequestBody InvoiceRequest request) {
@@ -82,14 +106,14 @@ public class InvoiceController {
     }
 
     @DeleteMapping("/{invoiceId}")
-    @RequirePermission(menu = "INVOICES", action = "DELETE")
+    @RequiresPermission(menu = "INVOICES", action = "DELETE")
     public ResponseEntity<ApiResponse<java.util.Map<String, String>>> delete(Authentication authentication, @PathVariable Long invoiceId) {
         invoiceService.delete(authentication.getName(), invoiceId);
         return ResponseEntity.ok(ApiResponse.success("Invoice deleted successfully", java.util.Map.of("status", "ok")));
     }
 
     @PostMapping("/{invoiceId}/restore")
-    @RequirePermission(menu = "INVOICES", action = "RESTORE")
+    @RequiresPermission(menu = "INVOICES", action = "RESTORE")
     public ResponseEntity<ApiResponse<InvoiceResponse>> restore(Authentication authentication, @PathVariable Long invoiceId) {
         return ResponseEntity.ok(ApiResponse.success("Invoice restored successfully", invoiceService.restore(authentication.getName(), invoiceId)));
     }

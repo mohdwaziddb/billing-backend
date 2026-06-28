@@ -17,7 +17,7 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     List<Product> findByCompanyOrderByCreatedAtDesc(Company company);
     List<Product> findByCompanyAndActiveTrueOrderByCreatedAtDesc(Company company);
 
-    @EntityGraph(attributePaths = {"productCategory", "productSubCategory"})
+    @EntityGraph(attributePaths = {"productCategory", "productSubCategory", "taxMaster"})
     @Query("""
             SELECT p
             FROM Product p
@@ -43,7 +43,7 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
                                               @Param("subCategoryId") Long subCategoryId,
                                               @Param("search") String search);
 
-    @EntityGraph(attributePaths = {"productCategory", "productSubCategory"})
+    @EntityGraph(attributePaths = {"productCategory", "productSubCategory", "taxMaster"})
     @Query("""
             SELECT p
             FROM Product p
@@ -70,7 +70,7 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
                                                @Param("search") String search,
                                                Pageable pageable);
 
-    @EntityGraph(attributePaths = {"productCategory", "productSubCategory"})
+    @EntityGraph(attributePaths = {"productCategory", "productSubCategory", "taxMaster"})
     Optional<Product> findByIdAndCompany(Long id, Company company);
 
     boolean existsByCompanyAndSkuIgnoreCase(Company company, String sku);

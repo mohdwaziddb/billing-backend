@@ -13,7 +13,9 @@ public class ProfitLossReportResponse {
     private LocalDate startDate;
     private LocalDate endDate;
     private BigDecimal revenue;
+    private BigDecimal costOfGoodsSold;
     private BigDecimal expense;
+    private BigDecimal grossProfit;
     private BigDecimal netProfit;
     private List<ProfitLossPointResponse> expenseByCategory;
     private List<ProfitLossPointResponse> revenueVsExpense;

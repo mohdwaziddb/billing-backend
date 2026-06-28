@@ -7,7 +7,7 @@ import java.lang.annotation.Target;
 
 @Target({ElementType.METHOD, ElementType.TYPE})
 @Retention(RetentionPolicy.RUNTIME)
-public @interface RequirePermission {
+public @interface RequiresPermission {
     String menu();
     String action() default "VIEW";
 }

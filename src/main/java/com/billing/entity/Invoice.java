@@ -63,7 +63,25 @@ public class Invoice extends BaseEntity {
     private BigDecimal taxAmount;
 
     @Column(nullable = false, precision = 12, scale = 2)
+    private BigDecimal taxableAmount;
+
+    @Column(nullable = false, precision = 12, scale = 2)
+    private BigDecimal cgstTotal;
+
+    @Column(nullable = false, precision = 12, scale = 2)
+    private BigDecimal sgstTotal;
+
+    @Column(nullable = false, precision = 12, scale = 2)
+    private BigDecimal igstTotal;
+
+    @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal discountAmount;
+
+    @Column(nullable = false, precision = 12, scale = 2)
+    private BigDecimal roundOff;
+
+    @Column(nullable = false, precision = 12, scale = 2)
+    private BigDecimal grandTotal;
 
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal totalAmount;

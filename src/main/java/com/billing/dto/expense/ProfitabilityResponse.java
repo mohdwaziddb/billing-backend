@@ -11,6 +11,8 @@ public class ProfitabilityResponse {
     private Long referenceId;
     private String referenceName;
     private BigDecimal revenue;
+    private BigDecimal costOfGoodsSold;
     private BigDecimal expense;
+    private BigDecimal grossProfit;
     private BigDecimal netRevenue;
 }

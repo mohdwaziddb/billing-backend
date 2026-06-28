@@ -177,16 +177,13 @@ public class AiIntentParser {
     }
 
     private void fillProductSlots(String text, Map<String, Object> slots) {
-        Matcher name = Pattern.compile("(?i)(?:create|add)\\s+product\\s+(.+?)(?:\\s+sku|\\s+category|\\s+price|\\s+stock|$)").matcher(text);
+        Matcher name = Pattern.compile("(?i)(?:create|add)\\s+product\\s+(.+?)(?:\\s+sku|\\s+category|\\s+tax|\\s+minimum|$)").matcher(text);
         if (name.find()) {
             slots.put("name", singular(cleanName(name.group(1))));
         }
         putRegex(text, slots, "sku", "(?i)sku\\s+([A-Za-z0-9_-]+)");
-        putRegex(text, slots, "categoryName", "(?i)category\\s+([A-Za-z0-9 _-]+?)(?:\\s+sub|\\s+sku|\\s+price|\\s+stock|$)");
-        putRegex(text, slots, "subCategoryName", "(?i)sub\\s*category\\s+([A-Za-z0-9 _-]+?)(?:\\s+sku|\\s+price|\\s+stock|$)");
-        putNumberRegex(text, slots, "sellingPrice", "(?i)(?:selling\\s+price|price|rate)\\s+(\\d+(?:\\.\\d{1,2})?)");
-        putNumberRegex(text, slots, "purchasePrice", "(?i)purchase\\s+price\\s+(\\d+(?:\\.\\d{1,2})?)");
-        putIntegerRegex(text, slots, "stockQty", "(?i)stock\\s+(\\d+)");
+        putRegex(text, slots, "categoryName", "(?i)category\\s+([A-Za-z0-9 _-]+?)(?:\\s+sub|\\s+sku|\\s+tax|\\s+minimum|$)");
+        putRegex(text, slots, "subCategoryName", "(?i)sub\\s*category\\s+([A-Za-z0-9 _-]+?)(?:\\s+sku|\\s+tax|\\s+minimum|$)");
         putIntegerRegex(text, slots, "minStockQty", "(?i)(?:min|minimum)\\s+stock\\s+(\\d+)");
         putNumberRegex(text, slots, "taxPercent", "(?i)tax\\s+(\\d+(?:\\.\\d{1,2})?)");
     }

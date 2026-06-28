@@ -1,0 +1,44 @@
+@page { size: A4; margin: 10mm 10mm 12mm 10mm; }
+body { font-family: "Segoe UI", Arial, sans-serif; color: #16324f; margin: 0; background: #f3f7fa; font-size: 11px; }
+.page { background: #fff; position: relative; }
+.watermark { position: fixed; top: 42%; left: 16%; font-size: 80px; color: rgba(22, 50, 79, 0.12); transform: rotate(-28deg); font-weight: 800; letter-spacing: 0.14em; z-index: 5; pointer-events: none; }
+.hero, .address-grid, .table-shell, .summary-layout, .bottom-grid, .terms, .footer { position: relative; z-index: 1; }
+.hero { display: grid; grid-template-columns: 1.45fr 0.95fr; gap: 12px; align-items: stretch; margin-bottom: 10px; }
+.brand { display: flex; gap: 12px; background: #eef4f8; padding: 12px; border: 1px solid #d7e3ec; }
+.logo { width: 58px; height: 58px; object-fit: contain; border-radius: 12px; background: #fff; padding: 5px; }
+.brand-copy h1 { margin: 0 0 4px; font-size: 18px; }
+.brand-copy p { margin: 2px 0; color: #4b647b; }
+.doc-box { border: 1px solid #cfdbe6; padding: 12px; }
+.eyebrow { font-size: 10px; text-transform: uppercase; letter-spacing: 0.2em; color: #6b7280; margin-bottom: 8px; font-weight: 700; }
+.doc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.doc-grid label, .address-grid h3, .panel h3 { display: block; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #748396; margin-bottom: 5px; font-weight: 700; }
+.doc-grid strong { font-size: 13px; }
+.address-grid { display: grid; grid-template-columns: 1.35fr 0.85fr; gap: 12px; margin-bottom: 10px; }
+.address-grid article { border: 1px solid #d8e2ea; padding: 12px; min-height: 88px; }
+.status-card { background: #16324f; color: #fff; }
+.status-card h3, .status-card span { color: #dce7f1; }
+.status-pill { background: #fff; color: #16324f; display: inline-block; padding: 6px 12px; border-radius: 999px; font-weight: 800; margin-bottom: 8px; }
+.amount-row { display: flex; justify-content: space-between; margin: 6px 0; }
+.items, .mini-table { width: 100%; border-collapse: collapse; }
+.items thead th { background: #16324f; color: #fff; padding: 9px 8px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; }
+.items tbody td { border-bottom: 1px solid #dde6ee; padding: 8px; vertical-align: top; color: #294862; }
+.subtext { margin-top: 3px; font-size: 10px; color: #718096; }
+.summary-layout { margin-top: 10px; display: block; }
+.panel { border: 1px solid #d8e2ea; padding: 10px 12px; background: #fcfdff; }
+.mini-table th, .mini-table td { padding: 6px 5px; border-bottom: 1px solid #e4edf4; text-align: left; }
+.mini-table th { font-size: 9px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.12em; }
+.totals { background: #16324f; color: #fff; padding: 12px; border-radius: 16px; }
+.totals .line, .totals .grand { display: flex; justify-content: space-between; margin: 6px 0; }
+.totals .grand { margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.24); font-size: 14px; font-weight: 800; }
+.bottom-grid { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 12px; margin-top: 10px; }
+.qr-sign { display: grid; gap: 10px; align-items: center; }
+.qr { width: 86px; height: 86px; object-fit: contain; }
+.qr-block { display: flex; justify-content: center; }
+.signature { text-align: center; }
+.signature-heading { margin: 0 0 8px; font-size: 11px; font-weight: 700; color: #5c7186; }
+.signature-img { max-width: 110px; max-height: 40px; object-fit: contain; }
+.sign-line { border-top: 1px solid #9fb4c7; margin-top: 16px; }
+.terms { margin-top: 10px; }
+.footer { margin-top: 10px; display: flex; justify-content: space-between; color: #7b8794; font-size: 10px; }
+.page-number::after { content: counter(page); }
+.words { margin-top: 8px; }

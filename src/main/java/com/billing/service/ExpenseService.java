@@ -19,6 +19,7 @@ import com.billing.exception.BadRequestException;
 import com.billing.exception.ResourceNotFoundException;
 import com.billing.repository.ExpenseRepository;
 import com.billing.repository.InvoiceRepository;
+import com.billing.repository.InvoiceItemAllocationRepository;
 import com.billing.repository.PaymentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
@@ -50,6 +51,7 @@ public class ExpenseService {
     private final AuditLogService auditLogService;
     private final AuditNameResolver auditNameResolver;
     private final RevenueCalculationService revenueCalculationService;
+    private final InvoiceItemAllocationRepository invoiceItemAllocationRepository;
 
     @Transactional(readOnly = true)
     public PageResponse<ExpenseResponse> page(String email,
@@ -121,31 +123,30 @@ public class ExpenseService {
     public ProfitabilityResponse customerProfitability(String email, Long customerId, LocalDate startDate, LocalDate endDate) {
         Company company = accessControlService.getCurrentCompany(email);
         Customer customer = customerService.getCustomerOrThrow(company, customerId);
-        BigDecimal revenue = paymentRepository.findByCompanyAndCustomerOrderByPaymentDateDescIdDesc(company, customer).stream()
-                .filter(payment -> inRange(payment.getPaymentDate(), startDate, endDate))
-                .map(Payment::getAmount)
+        BigDecimal revenue = invoiceRepository.findByCompanyAndCustomerOrderByInvoiceDateDescIdDesc(company, customer).stream()
+                .filter(invoice -> inRange(invoice.getInvoiceDate(), startDate, endDate))
+                .map(Invoice::getTotalAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal costOfGoodsSold = invoiceItemAllocationRepository.sumActiveCostByCustomer(company, customerId, startDate, endDate);
         BigDecimal expense = expenseRepository.findByCompanyOrderByExpenseDateDescIdDesc(company).stream()
                 .filter(item -> item.getCustomer() != null && item.getCustomer().getId().equals(customerId))
                 .filter(item -> inRange(item.getExpenseDate(), startDate, endDate))
                 .map(Expense::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        return profitability(customerId, customer.getName(), revenue, expense);
+        return profitability(customerId, customer.getName(), revenue, costOfGoodsSold, expense);
     }
 
     @Transactional(readOnly = true)
     public ProfitabilityResponse invoiceProfitability(String email, Long invoiceId) {
         Company company = accessControlService.getCurrentCompany(email);
         Invoice invoice = invoiceService.getInvoiceOrThrow(company, invoiceId);
-        BigDecimal collection = paymentRepository.findByCompanyAndCustomerOrderByPaymentDateDescIdDesc(company, invoice.getCustomer()).stream()
-                .filter(payment -> payment.getInvoice() != null && payment.getInvoice().getId().equals(invoiceId))
-                .map(Payment::getAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal revenue = scale(invoice.getTotalAmount());
+        BigDecimal costOfGoodsSold = scale(invoiceItemAllocationRepository.sumActiveCostByInvoice(company, invoiceId));
         BigDecimal expense = expenseRepository.findByCompanyOrderByExpenseDateDescIdDesc(company).stream()
                 .filter(item -> item.getInvoice() != null && item.getInvoice().getId().equals(invoiceId))
                 .map(Expense::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        return profitability(invoiceId, invoice.getInvoiceNo(), collection, expense);
+        return profitability(invoiceId, invoice.getInvoiceNo(), revenue, costOfGoodsSold, expense);
     }
 
     @Transactional(readOnly = true)
@@ -171,7 +172,7 @@ public class ExpenseService {
                 .filter(payment -> inRange(payment.getPaymentDate(), startDate, endDate))
                 .toList();
         BigDecimal revenue = invoices.stream().map(Invoice::getTotalAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal collection = payments.stream().map(Payment::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal costOfGoodsSold = scale(invoiceItemAllocationRepository.sumActiveCostByInvoiceDateRange(company, startDate, endDate));
         BigDecimal expense = expenses.stream().map(Expense::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
 
         Map<String, BigDecimal> categoryTotals = expenses.stream()
@@ -208,8 +209,10 @@ public class ExpenseService {
                 .startDate(startDate)
                 .endDate(endDate)
                 .revenue(scale(revenue))
+                .costOfGoodsSold(scale(costOfGoodsSold))
                 .expense(scale(expense))
-                .netProfit(revenueCalculationService.netRevenue(collection, expense))
+                .grossProfit(revenueCalculationService.grossProfit(revenue, costOfGoodsSold))
+                .netProfit(revenueCalculationService.netProfit(revenue, costOfGoodsSold, expense))
                 .expenseByCategory(expenseByCategory)
                 .revenueVsExpense(revenueVsExpense)
                 .build();
@@ -271,13 +274,15 @@ public class ExpenseService {
                 .build();
     }
 
-    private ProfitabilityResponse profitability(Long id, String name, BigDecimal revenue, BigDecimal expense) {
+    private ProfitabilityResponse profitability(Long id, String name, BigDecimal revenue, BigDecimal costOfGoodsSold, BigDecimal expense) {
         return ProfitabilityResponse.builder()
                 .referenceId(id)
                 .referenceName(name)
                 .revenue(scale(revenue))
+                .costOfGoodsSold(scale(costOfGoodsSold))
                 .expense(scale(expense))
-                .netRevenue(revenueCalculationService.netRevenue(revenue, expense))
+                .grossProfit(revenueCalculationService.grossProfit(revenue, costOfGoodsSold))
+                .netRevenue(revenueCalculationService.netProfit(revenue, costOfGoodsSold, expense))
                 .build();
     }
 

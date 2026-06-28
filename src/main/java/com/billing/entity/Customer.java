@@ -53,7 +53,25 @@ public class Customer extends BaseEntity {
 
     private String address;
 
+    private String city;
+
+    private String state;
+
+    private String country;
+
+    private String pincode;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "state_id")
+    private StateMaster stateMaster;
+
     private String gstNo;
+
+    private String gstin;
+
+    @Builder.Default
+    @Column(nullable = false)
+    private boolean gstRegistered = false;
 
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal currentBalance;

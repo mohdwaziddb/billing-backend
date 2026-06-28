@@ -5,7 +5,7 @@ import com.billing.dto.company.CompanySettingsRequest;
 import com.billing.dto.company.CompanyThemeRequest;
 import com.billing.dto.company.CompanyThemeResponse;
 import com.billing.dto.user.CompanySummary;
-import com.billing.security.RequirePermission;
+import com.billing.security.RequiresPermission;
 import com.billing.service.CompanyService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -29,14 +29,14 @@ public class CompanyController {
     private final CompanyService companyService;
 
     @GetMapping
-    @RequirePermission(menu = "ABOUT_COMPANY", action = "VIEW")
+    @RequiresPermission(menu = "ABOUT_COMPANY", action = "VIEW")
     public ResponseEntity<ApiResponse<CompanySummary>> settings(Authentication authentication) {
         return ResponseEntity.ok(ApiResponse.success("Company settings fetched successfully",
                 companyService.getSettings(authentication.getName())));
     }
 
     @PutMapping
-    @RequirePermission(menu = "ABOUT_COMPANY", action = "EDIT")
+    @RequiresPermission(menu = "ABOUT_COMPANY", action = "EDIT")
     public ResponseEntity<ApiResponse<CompanySummary>> update(Authentication authentication,
                                                               @Valid @RequestBody CompanySettingsRequest request) {
         return ResponseEntity.ok(ApiResponse.success("Company settings updated successfully",
@@ -44,18 +44,33 @@ public class CompanyController {
     }
 
     @PutMapping("/logo")
-    @RequirePermission(menu = "ABOUT_COMPANY", action = "EDIT")
+    @RequiresPermission(menu = "ABOUT_COMPANY", action = "EDIT")
     public ResponseEntity<ApiResponse<CompanySummary>> uploadLogo(Authentication authentication,
                                                                   @RequestParam("logo") MultipartFile logo) {
         return ResponseEntity.ok(ApiResponse.success("Company logo uploaded successfully",
                 companyService.uploadLogo(authentication.getName(), logo)));
     }
 
+    @PutMapping("/signature")
+    @RequiresPermission(menu = "ABOUT_COMPANY", action = "EDIT")
+    public ResponseEntity<ApiResponse<CompanySummary>> uploadSignature(Authentication authentication,
+                                                                       @RequestParam("signature") MultipartFile signature) {
+        return ResponseEntity.ok(ApiResponse.success("Company signature uploaded successfully",
+                companyService.uploadSignature(authentication.getName(), signature)));
+    }
+
     @DeleteMapping("/logo")
-    @RequirePermission(menu = "ABOUT_COMPANY", action = "EDIT")
+    @RequiresPermission(menu = "ABOUT_COMPANY", action = "EDIT")
     public ResponseEntity<ApiResponse<CompanySummary>> deleteLogo(Authentication authentication) {
         return ResponseEntity.ok(ApiResponse.success("Company logo removed successfully",
                 companyService.deleteLogo(authentication.getName())));
+    }
+
+    @DeleteMapping("/signature")
+    @RequiresPermission(menu = "ABOUT_COMPANY", action = "EDIT")
+    public ResponseEntity<ApiResponse<CompanySummary>> deleteSignature(Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.success("Company signature removed successfully",
+                companyService.deleteSignature(authentication.getName())));
     }
 
     @GetMapping("/theme")
@@ -65,7 +80,7 @@ public class CompanyController {
     }
 
     @PutMapping("/theme")
-    @RequirePermission(menu = "THEME_SETTINGS", action = "EDIT")
+    @RequiresPermission(menu = "THEME_SETTINGS", action = "EDIT")
     public ResponseEntity<ApiResponse<CompanyThemeResponse>> updateTheme(Authentication authentication,
                                                                         @Valid @RequestBody CompanyThemeRequest request) {
         return ResponseEntity.ok(ApiResponse.success("Company theme updated successfully",
@@ -73,7 +88,7 @@ public class CompanyController {
     }
 
     @PostMapping("/theme/reset")
-    @RequirePermission(menu = "THEME_SETTINGS", action = "EDIT")
+    @RequiresPermission(menu = "THEME_SETTINGS", action = "EDIT")
     public ResponseEntity<ApiResponse<CompanyThemeResponse>> resetTheme(Authentication authentication) {
         return ResponseEntity.ok(ApiResponse.success("Company theme reset successfully",
                 companyService.resetTheme(authentication.getName())));

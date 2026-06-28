@@ -46,6 +46,7 @@ public class PlatformAdminService {
     private final PasswordEncoder passwordEncoder;
     private final PermissionDataInitializer permissionDataInitializer;
     private final OllamaClient ollamaClient;
+    private final TaxMasterService taxMasterService;
 
     @Transactional(readOnly = true)
     public PlatformAdminDashboardResponse dashboard() {
@@ -127,6 +128,7 @@ public class PlatformAdminService {
         permissionDataInitializer.seedPermissionsForCompany(company);
         permissionDataInitializer.seedThemeForCompany(company);
         permissionDataInitializer.seedDefaultNotificationChannels(company);
+        taxMasterService.createDefaultTaxesForCompany(company);
 
         return toCompanyResponse(company);
     }

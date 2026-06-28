@@ -5,7 +5,7 @@ import com.billing.dto.PageResponse;
 import com.billing.dto.user.CompanyUserRequest;
 import com.billing.dto.user.UserProfileResponse;
 import com.billing.entity.enums.RoleName;
-import com.billing.security.RequirePermission;
+import com.billing.security.RequiresPermission;
 import com.billing.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -37,14 +37,14 @@ public class UserController {
     }
 
     @GetMapping("/active-referrers")
-    @RequirePermission(menu = "CREATE_INVOICE", action = "ADD")
+    @RequiresPermission(menu = "CREATE_INVOICE", action = "ADD")
     public ResponseEntity<ApiResponse<List<UserProfileResponse>>> activeReferrers(Authentication authentication) {
         return ResponseEntity.ok(ApiResponse.success("Active referral users fetched successfully",
                 userService.activeReferralUsers(authentication.getName())));
     }
 
     @GetMapping
-    @RequirePermission(menu = "USERS", action = "VIEW")
+    @RequiresPermission(menu = "USERS", action = "VIEW")
     public ResponseEntity<ApiResponse<PageResponse<UserProfileResponse>>> listCompanyUsers(Authentication authentication,
                                                                                           @RequestParam(defaultValue = "0") int page,
                                                                                           @RequestParam(defaultValue = "20") int size,
@@ -60,7 +60,7 @@ public class UserController {
     }
 
     @PostMapping
-    @RequirePermission(menu = "USERS", action = "ADD")
+    @RequiresPermission(menu = "USERS", action = "ADD")
     public ResponseEntity<ApiResponse<UserProfileResponse>> createCompanyUser(Authentication authentication,
                                                                               @Valid @RequestBody CompanyUserRequest request) {
         return ResponseEntity.ok(ApiResponse.success("User created successfully",
@@ -68,7 +68,7 @@ public class UserController {
     }
 
     @PutMapping("/{userId}")
-    @RequirePermission(menu = "USERS", action = "EDIT")
+    @RequiresPermission(menu = "USERS", action = "EDIT")
     public ResponseEntity<ApiResponse<UserProfileResponse>> updateCompanyUser(Authentication authentication,
                                                                               @PathVariable Long userId,
                                                                               @Valid @RequestBody CompanyUserRequest request) {
@@ -77,7 +77,7 @@ public class UserController {
     }
 
     @DeleteMapping("/{userId}")
-    @RequirePermission(menu = "USERS", action = "DELETE")
+    @RequiresPermission(menu = "USERS", action = "DELETE")
     public ResponseEntity<ApiResponse<Map<String, String>>> deactivateCompanyUser(Authentication authentication,
                                                                                  @PathVariable Long userId) {
         userService.deactivateCompanyUser(authentication.getName(), userId);

@@ -5,7 +5,7 @@ import com.billing.dto.PageResponse;
 import com.billing.dto.reminder.OverdueCustomerResponse;
 import com.billing.dto.reminder.ReminderHistoryResponse;
 import com.billing.dto.reminder.ReminderSendRequest;
-import com.billing.security.RequirePermission;
+import com.billing.security.RequiresPermission;
 import com.billing.service.ReminderService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -22,7 +22,7 @@ public class ReminderController {
     private final ReminderService reminderService;
 
     @GetMapping("/overdue-customers")
-    @RequirePermission(menu = "OUTSTANDING", action = "VIEW")
+    @RequiresPermission(menu = "OUTSTANDING", action = "VIEW")
     public ResponseEntity<ApiResponse<PageResponse<OverdueCustomerResponse>>> overdueCustomers(
             Authentication authentication,
             @RequestParam(required = false) String search,
@@ -38,7 +38,7 @@ public class ReminderController {
     }
 
     @PostMapping("/send")
-    @RequirePermission(menu = "OUTSTANDING", action = "ADD")
+    @RequiresPermission(menu = "OUTSTANDING", action = "ADD")
     public ResponseEntity<ApiResponse<ReminderHistoryResponse>> sendReminder(
             Authentication authentication,
             @Valid @RequestBody ReminderSendRequest request
@@ -50,7 +50,7 @@ public class ReminderController {
     }
 
     @GetMapping("/customer/{customerId}/history")
-    @RequirePermission(menu = "OUTSTANDING", action = "VIEW")
+    @RequiresPermission(menu = "OUTSTANDING", action = "VIEW")
     public ResponseEntity<ApiResponse<PageResponse<ReminderHistoryResponse>>> history(
             Authentication authentication,
             @PathVariable Long customerId,

@@ -1,23 +1,26 @@
 package com.billing.service;
 
-import com.billing.entity.Company;
 import com.billing.dto.PageResponse;
-import com.billing.exception.ResourceNotFoundException;
+import com.billing.dto.inventory.ProductBatchSummaryResponse;
 import com.billing.dto.product.ProductRequest;
 import com.billing.dto.product.ProductResponse;
+import com.billing.entity.Company;
 import com.billing.entity.Product;
 import com.billing.entity.ProductCategory;
 import com.billing.entity.ProductSubCategory;
+import com.billing.entity.TaxMaster;
 import com.billing.entity.User;
 import com.billing.exception.BadRequestException;
+import com.billing.exception.ResourceNotFoundException;
 import com.billing.repository.ProductRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.data.domain.PageRequest;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,8 +33,11 @@ public class ProductService {
     private final AccessControlService accessControlService;
     private final ProductCategoryService productCategoryService;
     private final ProductSubCategoryService productSubCategoryService;
+    private final TaxMasterService taxMasterService;
     private final AuditLogService auditLogService;
     private final AuditNameResolver auditNameResolver;
+    private final TaxValidator taxValidator;
+    private final InventoryService inventoryService;
 
     @Transactional
     public ProductResponse create(String email, ProductRequest request) {
@@ -39,48 +45,53 @@ public class ProductService {
         validateProduct(company, request, null);
         ProductCategory productCategory = productCategoryService.getActiveByIdOrThrow(company, request.getCategoryId());
         ProductSubCategory productSubCategory = productSubCategoryService.getActiveByIdOrThrow(company, productCategory.getId(), request.getSubCategoryId());
+        boolean taxable = !Boolean.FALSE.equals(request.getTaxable());
+        TaxMaster taxMaster = taxMasterService.resolveForProduct(company, request.getTaxMasterId(), null, taxable);
+        taxValidator.requireProductTax(taxMaster, taxable);
 
         Product product = Product.builder()
                 .company(company)
                 .name(request.getName())
                 .productCategory(productCategory)
                 .productSubCategory(productSubCategory)
-                .brand(request.getBrand())
+                .brand(blankToNull(request.getBrand()))
                 .sku(request.getSku())
-                .hsnCode(request.getHsnCode())
-                .purchasePrice(scale(request.getPurchasePrice()))
-                .sellingPrice(scale(request.getSellingPrice()))
-                .stockQty(normalizeCount(request.getStockQty()))
+                .hsnCode(blankToNull(request.getHsnCode()))
                 .minStockQty(normalizeCount(request.getMinStockQty()))
-                .taxPercent(scalePercent(request.getTaxPercent()))
+                .taxMaster(taxMaster)
+                .taxable(taxable)
                 .active(Boolean.TRUE.equals(request.getActive()))
                 .build();
 
         Product saved = productRepository.save(product);
         auditLogService.logCreate(email, company, "Product", "Product", saved.getId(), snapshot(saved));
-        return toResponse(saved);
+        return toResponse(saved, inventoryService.summarize(company, saved, true));
     }
 
     @Transactional(readOnly = true)
     public List<ProductResponse> list(String email, Long categoryId, Long subCategoryId, String search, Boolean active) {
         Company company = companyScope(email);
-        return productRepository.findAllByCompanyWithFilters(company, active, categoryId, subCategoryId, normalizeSearch(search)).stream()
-                .map(this::toResponse)
+        List<Product> products = productRepository.findAllByCompanyWithFilters(company, active, categoryId, subCategoryId, normalizeSearch(search));
+        Map<Long, InventoryService.ProductInventorySnapshot> inventoryByProduct = inventoryService.summarize(company, products, false);
+        return products.stream()
+                .map(product -> toResponse(product, inventoryByProduct.getOrDefault(product.getId(), InventoryService.ProductInventorySnapshot.empty())))
                 .toList();
     }
 
     @Transactional(readOnly = true)
     public PageResponse<ProductResponse> page(String email, Long categoryId, Long subCategoryId, String search, Boolean active, int page, int size) {
         Company company = companyScope(email);
-        return PageResponse.from(productRepository.findPageByCompanyWithFilters(company, active, categoryId, subCategoryId, normalizeSearch(search), pageRequest(page, size))
-                .map(this::toResponse));
+        org.springframework.data.domain.Page<Product> productPage = productRepository.findPageByCompanyWithFilters(company, active, categoryId, subCategoryId, normalizeSearch(search), pageRequest(page, size));
+        Map<Long, InventoryService.ProductInventorySnapshot> inventoryByProduct = inventoryService.summarize(company, productPage.getContent(), false);
+        return PageResponse.from(productPage.map(product -> toResponse(product, inventoryByProduct.getOrDefault(product.getId(), InventoryService.ProductInventorySnapshot.empty()))));
     }
 
     @Transactional(readOnly = true)
     public ProductResponse get(String email, Long productId) {
         User user = accessControlService.getCurrentUser(email);
         Company company = accessControlService.requireCompany(user);
-        return toResponse(getProductOrThrow(company, productId));
+        Product product = getProductOrThrow(company, productId);
+        return toResponse(product, inventoryService.summarize(company, product, true));
     }
 
     @Transactional
@@ -91,23 +102,24 @@ public class ProductService {
         Map<String, Object> oldData = snapshot(product);
         ProductCategory productCategory = productCategoryService.getActiveByIdOrThrow(company, request.getCategoryId());
         ProductSubCategory productSubCategory = productSubCategoryService.getActiveByIdOrThrow(company, productCategory.getId(), request.getSubCategoryId());
+        boolean taxable = !Boolean.FALSE.equals(request.getTaxable());
+        TaxMaster taxMaster = taxMasterService.resolveForProduct(company, request.getTaxMasterId(), null, taxable);
+        taxValidator.requireProductTax(taxMaster, taxable);
 
         product.setName(request.getName());
         product.setProductCategory(productCategory);
         product.setProductSubCategory(productSubCategory);
-        product.setBrand(request.getBrand());
+        product.setBrand(blankToNull(request.getBrand()));
         product.setSku(request.getSku());
-        product.setHsnCode(request.getHsnCode());
-        product.setPurchasePrice(scale(request.getPurchasePrice()));
-        product.setSellingPrice(scale(request.getSellingPrice()));
-        product.setStockQty(normalizeCount(request.getStockQty()));
+        product.setHsnCode(blankToNull(request.getHsnCode()));
         product.setMinStockQty(normalizeCount(request.getMinStockQty()));
-        product.setTaxPercent(scalePercent(request.getTaxPercent()));
+        product.setTaxMaster(taxMaster);
+        product.setTaxable(taxable);
         product.setActive(Boolean.TRUE.equals(request.getActive()));
 
         Product saved = productRepository.save(product);
         auditLogService.logUpdate(email, company, "Product", "Product", saved.getId(), oldData, snapshot(saved));
-        return toResponse(saved);
+        return toResponse(saved, inventoryService.summarize(company, saved, true));
     }
 
     @Transactional
@@ -156,9 +168,6 @@ public class ProductService {
     }
 
     private void validateProduct(Company company, ProductRequest request, Long productId) {
-        if (scale(request.getSellingPrice()).compareTo(scale(request.getPurchasePrice())) < 0) {
-            throw new BadRequestException("Selling price cannot be less than purchase price");
-        }
         if (productId == null) {
             if (productRepository.existsByCompanyAndSkuIgnoreCase(company, request.getSku())) {
                 throw new BadRequestException("SKU already exists in your company");
@@ -168,9 +177,10 @@ public class ProductService {
         }
     }
 
-    private ProductResponse toResponse(Product product) {
+    private ProductResponse toResponse(Product product, InventoryService.ProductInventorySnapshot inventorySnapshot) {
         ProductCategory productCategory = product.getProductCategory();
         ProductSubCategory productSubCategory = product.getProductSubCategory();
+        TaxMaster taxMaster = product.getTaxMaster();
         String categoryName = productCategory != null ? productCategory.getCategoryName() : null;
         String subCategoryName = productSubCategory != null ? productSubCategory.getSubCategoryName() : null;
         return ProductResponse.builder()
@@ -185,12 +195,18 @@ public class ProductService {
                 .brand(product.getBrand())
                 .sku(product.getSku())
                 .hsnCode(product.getHsnCode())
-                .purchasePrice(scale(product.getPurchasePrice()))
-                .sellingPrice(scale(product.getSellingPrice()))
-                .stockQty(product.getStockQty())
+                .taxMasterId(taxMaster != null ? taxMaster.getId() : null)
+                .taxName(taxMaster != null ? taxMaster.getTaxName() : null)
+                .taxCode(taxMaster != null ? taxMaster.getTaxCode() : null)
+                .taxType(taxMaster != null ? taxMaster.getTaxType().name() : null)
+                .sellingPrice(scale(inventorySnapshot.getDefaultSellingPrice()))
+                .stockQty(inventorySnapshot.getCurrentStock())
+                .inventoryValue(scale(inventorySnapshot.getInventoryValue()))
                 .minStockQty(product.getMinStockQty())
-                .taxPercent(scalePercent(product.getTaxPercent()))
+                .taxPercent(scalePercent(product.getTaxMaster() != null ? product.getTaxMaster().getRate() : BigDecimal.ZERO))
+                .taxable(product.isTaxable())
                 .active(product.isActive())
+                .batches(inventorySnapshot.getBatches())
                 .createdAt(product.getCreatedAt())
                 .updatedAt(product.getUpdatedAt())
                 .createdBy(auditNameResolver.displayName(product.getCreatedBy()))
@@ -214,6 +230,10 @@ public class ProductService {
         return value == null || value.isBlank() ? null : value.trim();
     }
 
+    private String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
     private Map<String, Object> snapshot(Product product) {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("name", product.getName());
@@ -221,11 +241,12 @@ public class ProductService {
         data.put("subCategory", product.getProductSubCategory() != null ? product.getProductSubCategory().getSubCategoryName() : null);
         data.put("brand", product.getBrand());
         data.put("sku", product.getSku());
-        data.put("purchasePrice", scale(product.getPurchasePrice()));
-        data.put("sellingPrice", scale(product.getSellingPrice()));
-        data.put("stockQty", product.getStockQty());
+        data.put("hsnCode", product.getHsnCode());
         data.put("minStockQty", product.getMinStockQty());
-        data.put("taxPercent", scalePercent(product.getTaxPercent()));
+        data.put("taxMasterId", product.getTaxMaster() != null ? product.getTaxMaster().getId() : null);
+        data.put("taxName", product.getTaxMaster() != null ? product.getTaxMaster().getTaxName() : null);
+        data.put("taxPercent", scalePercent(product.getTaxMaster() != null ? product.getTaxMaster().getRate() : BigDecimal.ZERO));
+        data.put("taxable", product.isTaxable());
         data.put("active", product.isActive());
         return data;
     }

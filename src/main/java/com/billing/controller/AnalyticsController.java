@@ -9,7 +9,7 @@ import com.billing.dto.analytics.OwnerAnalyticsResponse;
 import com.billing.dto.analytics.SalesByCategoryResponse;
 import com.billing.dto.analytics.SalesChartPointResponse;
 import com.billing.dto.analytics.TopSellingProductResponse;
-import com.billing.security.RequirePermission;
+import com.billing.security.RequiresPermission;
 import com.billing.service.AnalyticsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -30,7 +30,7 @@ public class AnalyticsController {
     private final AnalyticsService analyticsService;
 
     @GetMapping("/summary")
-    @RequirePermission(menu = "ANALYTICS", action = "VIEW")
+    @RequiresPermission(menu = "ANALYTICS", action = "VIEW")
     public ResponseEntity<ApiResponse<AnalyticsSummaryResponse>> summary(Authentication authentication,
                                                                          @RequestParam(required = false) LocalDate startDate,
                                                                          @RequestParam(required = false) LocalDate endDate) {
@@ -39,7 +39,7 @@ public class AnalyticsController {
     }
 
     @GetMapping("/owner-overview")
-    @RequirePermission(menu = "ANALYTICS", action = "VIEW")
+    @RequiresPermission(menu = "ANALYTICS", action = "VIEW")
     public ResponseEntity<ApiResponse<OwnerAnalyticsResponse>> ownerOverview(Authentication authentication,
                                                                              @RequestParam(required = false) LocalDate startDate,
                                                                              @RequestParam(required = false) LocalDate endDate) {
@@ -48,7 +48,7 @@ public class AnalyticsController {
     }
 
     @GetMapping("/day-wise-sales")
-    @RequirePermission(menu = "ANALYTICS", action = "VIEW")
+    @RequiresPermission(menu = "ANALYTICS", action = "VIEW")
     public ResponseEntity<ApiResponse<List<SalesChartPointResponse>>> dayWiseSales(
             Authentication authentication,
             @RequestParam(required = false) Integer year,
@@ -62,7 +62,7 @@ public class AnalyticsController {
     }
 
     @GetMapping("/month-wise-sales")
-    @RequirePermission(menu = "ANALYTICS", action = "VIEW")
+    @RequiresPermission(menu = "ANALYTICS", action = "VIEW")
     public ResponseEntity<ApiResponse<List<SalesChartPointResponse>>> monthWiseSales(
             Authentication authentication,
             @RequestParam(required = false) Integer year
@@ -73,7 +73,7 @@ public class AnalyticsController {
     }
 
     @GetMapping("/top-products")
-    @RequirePermission(menu = "ANALYTICS", action = "VIEW")
+    @RequiresPermission(menu = "ANALYTICS", action = "VIEW")
     public ResponseEntity<ApiResponse<PageResponse<TopSellingProductResponse>>> topProducts(
             Authentication authentication,
             @RequestParam(required = false) LocalDate startDate,
@@ -87,7 +87,7 @@ public class AnalyticsController {
     }
 
     @GetMapping("/sales-by-category")
-    @RequirePermission(menu = "ANALYTICS", action = "VIEW")
+    @RequiresPermission(menu = "ANALYTICS", action = "VIEW")
     public ResponseEntity<ApiResponse<List<SalesByCategoryResponse>>> salesByCategory(
             Authentication authentication,
             @RequestParam(required = false) LocalDate startDate,
@@ -99,7 +99,7 @@ public class AnalyticsController {
     }
 
     @GetMapping("/sales-by-category/details")
-    @RequirePermission(menu = "ANALYTICS", action = "VIEW")
+    @RequiresPermission(menu = "ANALYTICS", action = "VIEW")
     public ResponseEntity<ApiResponse<PageResponse<SalesByCategoryResponse>>> salesByCategoryDetails(
             Authentication authentication,
             @RequestParam(required = false) LocalDate startDate,
@@ -113,7 +113,7 @@ public class AnalyticsController {
     }
 
     @GetMapping("/low-stock-products")
-    @RequirePermission(menu = "ANALYTICS", action = "VIEW")
+    @RequiresPermission(menu = "ANALYTICS", action = "VIEW")
     public ResponseEntity<ApiResponse<PageResponse<LowStockProductResponse>>> lowStockProducts(
             Authentication authentication,
             @RequestParam(defaultValue = "0") int page,
@@ -124,7 +124,7 @@ public class AnalyticsController {
     }
 
     @GetMapping("/customer-due-list")
-    @RequirePermission(menu = "ANALYTICS", action = "VIEW")
+    @RequiresPermission(menu = "ANALYTICS", action = "VIEW")
     public ResponseEntity<ApiResponse<PageResponse<CustomerDueResponse>>> customerDueList(
             Authentication authentication,
             @RequestParam(required = false) String search,

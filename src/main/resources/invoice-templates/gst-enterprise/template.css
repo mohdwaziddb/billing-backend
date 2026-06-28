@@ -1,0 +1,39 @@
+@page { size: A4; margin: 9mm; }
+body { margin: 0; background: #eef2f7; color: #1e293b; font-family: "Calibri", "Segoe UI", Arial, sans-serif; font-size: 11px; }
+.sheet { background: #fff; position: relative; }
+.watermark { position: fixed; top: 42%; left: 12%; font-size: 82px; color: rgba(30, 41, 59, 0.12); font-weight: 900; transform: rotate(-32deg); letter-spacing: 0.16em; z-index: 5; pointer-events: none; }
+.header-box, .party-grid, .items-table, .compliance-grid, .closing-grid, .footer { position: relative; z-index: 1; }
+.header-box, .party-grid, .compliance-grid, .closing-grid { display: grid; gap: 10px; }
+.header-box { grid-template-columns: 1.25fr 0.95fr; margin-bottom: 10px; }
+.company-box, .invoice-box, .box, .totals-box, .tools-box { border: 1px solid #cfd8e3; background: #fff; }
+.company-box { display: grid; grid-template-columns: 72px 1fr; gap: 12px; padding: 12px; }
+.logo-cell { display: flex; align-items: center; justify-content: center; background: #f8fafc; }
+.logo { width: 56px; height: 56px; object-fit: contain; }
+.caption { font-size: 9px; text-transform: uppercase; letter-spacing: 0.14em; color: #64748b; font-weight: 800; margin-bottom: 6px; }
+.company-box h1 { margin: 0 0 4px; font-size: 20px; }
+.company-box p, .box p { margin: 3px 0; color: #475569; }
+.invoice-box { padding: 12px; }
+.heading { font-size: 20px; font-weight: 800; margin-bottom: 8px; }
+.meta-table, .summary-table, .items-table { width: 100%; border-collapse: collapse; }
+.meta-table th, .meta-table td { text-align: left; padding: 5px 0; border-bottom: 1px solid #e2e8f0; }
+.meta-table th { width: 44%; color: #64748b; font-weight: 700; }
+.party-grid { grid-template-columns: 1.25fr 0.9fr; margin-bottom: 10px; }
+.box { padding: 10px 12px; }
+.box h3 { margin: 0 0 4px; font-size: 16px; }
+.items-table { margin-bottom: 10px; }
+.items-table thead th { background: #1e293b; color: #fff; padding: 8px 6px; font-size: 9px; text-transform: uppercase; letter-spacing: 0.12em; }
+.items-table tbody td { border: 1px solid #e2e8f0; padding: 7px 6px; vertical-align: top; }
+.small { margin-top: 3px; color: #64748b; font-size: 10px; }
+.closing-grid { grid-template-columns: 1.05fr 0.95fr; align-items: start; }
+.left-stack, .right-stack { display: grid; gap: 10px; }
+.totals-box { padding: 12px; background: #f8fafc; }
+.totals-box .line, .totals-box .grand { display: flex; justify-content: space-between; margin: 6px 0; }
+.totals-box .grand { padding-top: 8px; margin-top: 8px; border-top: 2px solid #94a3b8; font-size: 14px; font-weight: 800; }
+.tools-box { padding: 12px; display: grid; gap: 12px; justify-items: center; }
+.qr { width: 92px; height: 92px; object-fit: contain; }
+.signature { width: 100%; text-align: center; }
+.signature-heading { margin: 0 0 8px; font-size: 11px; font-weight: 700; color: #475569; }
+.signature-img { max-width: 120px; max-height: 42px; object-fit: contain; }
+.sig-line { border-top: 1px solid #94a3b8; margin-top: 10px; }
+.footer { display: flex; justify-content: space-between; margin-top: 10px; color: #64748b; font-size: 10px; }
+.page-number::after { content: counter(page); }
