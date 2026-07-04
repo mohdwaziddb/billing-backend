@@ -14,6 +14,7 @@ import com.billing.ai.dto.AiDraftTokenPayload;
 import com.billing.ai.parser.AiIntent;
 import com.billing.ai.parser.AiIntentParser;
 import com.billing.ai.parser.AiOperation;
+import com.billing.ai.prompts.AiPromptBuilder;
 import com.billing.ai.security.AiDraftTokenService;
 import com.billing.ai.security.AiPermissionValidator;
 import com.billing.ai.security.AiRateLimiter;
@@ -52,6 +53,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validator;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
@@ -67,6 +70,7 @@ import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -76,9 +80,15 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class AiChatService {
 
+    private static final Logger log = LoggerFactory.getLogger(AiChatService.class);
+    private static final String OFF_TOPIC_REPLY = "Sorry, I'm only able to help with questions related to our product. Could you ask me something about that?";
+
     private final AiSecurityContext aiSecurityContext;
     private final AiRateLimiter aiRateLimiter;
     private final AiIntentParser aiIntentParser;
+    private final AiPromptBuilder aiPromptBuilder;
+    private final OllamaClient ollamaClient;
+    private final GoogleTranslateService googleTranslateService;
     private final AiPermissionValidator aiPermissionValidator;
     private final AiDraftTokenService aiDraftTokenService;
     private final AiAuditService aiAuditService;
@@ -99,42 +109,45 @@ public class AiChatService {
         AiUserContext context = aiSecurityContext.current(authentication, false);
         String prompt = normalizePrompt(request.getMessage());
         if (!context.isChatbotEnabled()) {
-            aiAuditService.log(context, prompt, AiOperation.UNKNOWN.name(), AiAuditService.AI_CHAT, "DENIED_DISABLED");
+            safeAudit(context, prompt, AiOperation.UNKNOWN.name(), AiAuditService.AI_CHAT, "DENIED_DISABLED");
             throw new ChatbotDisabledException("Company Disabled Chatbot");
         }
         if (!hasAssistantAccess(context)) {
-            aiAuditService.log(context, prompt, AiOperation.UNKNOWN.name(), AiAuditService.AI_CHAT, "DENIED_ASSISTANT_ACCESS");
+            safeAudit(context, prompt, AiOperation.UNKNOWN.name(), AiAuditService.AI_CHAT, "DENIED_ASSISTANT_ACCESS");
             return message("You do not have permission to use AI assistant.", AiOperation.UNKNOWN);
         }
 
         aiRateLimiter.check(context);
-        AiIntent intent = aiIntentParser.parse(prompt);
+        String processingPrompt = googleTranslateService.toEnglish(prompt).orElse(prompt);
+        List<AiChatRequest.HistoryMessage> processingHistory = translateHistoryToEnglish(request.getHistory());
+        AiIntent intent = aiIntentParser.parse(processingPrompt, processingHistory);
+        applyOriginalResponseLanguage(intent.getSlots(), prompt, request.getHistory());
         AiOperation operation = intent.getOperation() == null ? AiOperation.UNKNOWN : intent.getOperation();
         try {
             if (operation == AiOperation.UNKNOWN) {
-                AiChatResponse response = message("I can help with customers, products, stock, invoices, payments, sales, expenses, inventory, and profit summaries. Please rephrase your request.", operation);
-                aiAuditService.log(context, prompt, operation.name(), AiAuditService.AI_CHAT, "UNKNOWN");
+                AiChatResponse response = message(generalAssistantReply(prompt, request.getHistory()), operation);
+                safeAudit(context, prompt, operation.name(), AiAuditService.AI_CHAT, "GENERAL");
                 return response;
             }
 
             var denied = aiPermissionValidator.denialMessage(context, operation);
             if (denied.isPresent()) {
                 AiChatResponse response = message(denied.get(), operation);
-                aiAuditService.log(context, prompt, operation.name(), AiAuditService.AI_CHAT, "DENIED_PERMISSION");
+                safeAudit(context, prompt, operation.name(), AiAuditService.AI_CHAT, "DENIED_PERMISSION");
                 return response;
             }
 
             AiChatResponse response = operation.isWriteOperation()
                     ? createDraft(context, operation, intent.getSlots())
                     : executeRead(context, operation, intent.getSlots());
-            aiAuditService.log(context, prompt, operation.name(), AiAuditService.AI_CHAT,
+            safeAudit(context, prompt, operation.name(), AiAuditService.AI_CHAT,
                     operation.isWriteOperation() ? "DRAFT_CREATED" : "SUCCESS");
             return response;
         } catch (BadRequestException | ResourceNotFoundException ex) {
-            aiAuditService.log(context, prompt, operation.name(), AiAuditService.AI_CHAT, "FAILED");
+            safeAudit(context, prompt, operation.name(), AiAuditService.AI_CHAT, "FAILED");
             return message(ex.getMessage(), operation);
         } catch (RuntimeException ex) {
-            aiAuditService.log(context, prompt, operation.name(), AiAuditService.AI_CHAT, "FAILED");
+            safeAudit(context, prompt, operation.name(), AiAuditService.AI_CHAT, "FAILED");
             return message("Unable to complete AI request. Please check the details and try again.", operation);
         }
     }
@@ -143,7 +156,7 @@ public class AiChatService {
     public AiChatResponse confirm(Authentication authentication, AiConfirmRequest request) {
         AiUserContext context = aiSecurityContext.current(authentication, true);
         if (!hasAssistantAccess(context)) {
-            aiAuditService.log(context, "CONFIRM", AiOperation.UNKNOWN.name(), AiAuditService.AI_ACTION, "DENIED_ASSISTANT_ACCESS");
+            safeAudit(context, "CONFIRM", AiOperation.UNKNOWN.name(), AiAuditService.AI_ACTION, "DENIED_ASSISTANT_ACCESS");
             return message("You do not have permission to use AI assistant.", AiOperation.UNKNOWN);
         }
         aiRateLimiter.check(context);
@@ -155,12 +168,12 @@ public class AiChatService {
         }
         var denied = aiPermissionValidator.denialMessage(context, operation);
         if (denied.isPresent()) {
-            aiAuditService.log(context, "CONFIRM", operation.name(), AiAuditService.AI_ACTION, "DENIED_PERMISSION");
+            safeAudit(context, "CONFIRM", operation.name(), AiAuditService.AI_ACTION, "DENIED_PERMISSION");
             return message(denied.get(), operation);
         }
         try {
             Object result = executeWriteWithChatbotAudit(context, operation, draft.getPayload());
-            aiAuditService.log(context, "CONFIRM", operation.name(), AiAuditService.AI_ACTION, "SUCCESS");
+            safeAudit(context, "CONFIRM", operation.name(), AiAuditService.AI_ACTION, "SUCCESS");
             return AiChatResponse.builder()
                     .message(successMessage(operation, result))
                     .intent(operation.name())
@@ -168,10 +181,10 @@ public class AiChatService {
                     .data(result)
                     .build();
         } catch (BadRequestException | ResourceNotFoundException ex) {
-            aiAuditService.log(context, "CONFIRM", operation.name(), AiAuditService.AI_ACTION, "FAILED");
+            safeAudit(context, "CONFIRM", operation.name(), AiAuditService.AI_ACTION, "FAILED");
             return message(ex.getMessage(), operation);
         } catch (RuntimeException ex) {
-            aiAuditService.log(context, "CONFIRM", operation.name(), AiAuditService.AI_ACTION, "FAILED");
+            safeAudit(context, "CONFIRM", operation.name(), AiAuditService.AI_ACTION, "FAILED");
             return message("Unable to complete AI action. Please check the draft and try again.", operation);
         }
     }
@@ -180,13 +193,13 @@ public class AiChatService {
     public AiChatResponse cancel(Authentication authentication, AiCancelRequest request) {
         AiUserContext context = aiSecurityContext.current(authentication, true);
         if (!hasAssistantAccess(context)) {
-            aiAuditService.log(context, "CANCEL", AiOperation.UNKNOWN.name(), AiAuditService.AI_ACTION, "DENIED_ASSISTANT_ACCESS");
+            safeAudit(context, "CANCEL", AiOperation.UNKNOWN.name(), AiAuditService.AI_ACTION, "DENIED_ASSISTANT_ACCESS");
             return message("You do not have permission to use AI assistant.", AiOperation.UNKNOWN);
         }
         AiDraftTokenPayload draft = aiDraftTokenService.parse(request.getDraftId());
         validateDraftContext(context, draft);
         AiOperation operation = draft.getOperation() == null ? AiOperation.UNKNOWN : draft.getOperation();
-        aiAuditService.log(context, "CANCEL", operation.name(), AiAuditService.AI_ACTION, "CANCELLED");
+        safeAudit(context, "CANCEL", operation.name(), AiAuditService.AI_ACTION, "CANCELLED");
         return AiChatResponse.builder()
                 .message("Draft cancelled.")
                 .intent(operation.name())
@@ -269,7 +282,13 @@ public class AiChatService {
     private AiChatResponse salesSummary(String email, Map<String, Object> slots) {
         DateRange range = dateRange(slots);
         DashboardSummaryResponse summary = dashboardService.summary(email, range.startDate(), range.endDate());
-        String text = "Sales summary" + range.label() + ":\n"
+        String text = hindi(slots)
+                ? "Sales summary" + range.label() + ":\n"
+                + "- Total sale: " + money(summary.getTotalSales()) + "\n"
+                + "- Total invoices: " + summary.getTotalInvoices() + "\n"
+                + "- Total collection: " + money(summary.getTotalCollection()) + "\n"
+                + "- Outstanding: " + money(summary.getOutstandingAmount())
+                : "Sales summary" + range.label() + ":\n"
                 + "- Total sales: " + money(summary.getTotalSales()) + "\n"
                 + "- Total invoices: " + summary.getTotalInvoices() + "\n"
                 + "- Total collection: " + money(summary.getTotalCollection()) + "\n"
@@ -280,7 +299,11 @@ public class AiChatService {
     private AiChatResponse collectionSummary(String email, Map<String, Object> slots) {
         DateRange range = dateRange(slots);
         DashboardSummaryResponse summary = dashboardService.summary(email, range.startDate(), range.endDate());
-        String text = "Collection summary" + range.label() + ":\n"
+        String text = hindi(slots)
+                ? "Collection summary" + range.label() + ":\n"
+                + "- Total collection: " + money(summary.getTotalCollection()) + "\n"
+                + "- Abhi outstanding: " + money(summary.getOutstandingAmount())
+                : "Collection summary" + range.label() + ":\n"
                 + "- Total collection: " + money(summary.getTotalCollection()) + "\n"
                 + "- Outstanding: " + money(summary.getOutstandingAmount());
         return response(text, AiOperation.COLLECTION_SUMMARY, summary, buildChart(email, AiOperation.COLLECTION_SUMMARY, range));
@@ -289,7 +312,12 @@ public class AiChatService {
     private AiChatResponse expenseSummary(String email, Map<String, Object> slots) {
         DateRange range = dateRange(slots);
         ProfitLossReportResponse summary = expenseService.profitLossReport(email, null, null, null, null, range.startDate(), range.endDate(), null);
-        String text = "Expense summary" + range.label() + ":\n"
+        String text = hindi(slots)
+                ? "Expense summary" + range.label() + ":\n"
+                + "- Total kharcha: " + money(summary.getExpense()) + "\n"
+                + "- Revenue: " + money(summary.getRevenue()) + "\n"
+                + "- Net profit: " + money(summary.getNetProfit())
+                : "Expense summary" + range.label() + ":\n"
                 + "- Total expense: " + money(summary.getExpense()) + "\n"
                 + "- Revenue: " + money(summary.getRevenue()) + "\n"
                 + "- Net profit: " + money(summary.getNetProfit());
@@ -314,7 +342,12 @@ public class AiChatService {
     private AiChatResponse profitSummary(String email, Map<String, Object> slots) {
         DateRange range = dateRange(slots);
         ProfitLossReportResponse summary = expenseService.profitLossReport(email, null, null, null, null, range.startDate(), range.endDate(), null);
-        String text = "Profit summary" + range.label() + ":\n"
+        String text = hindi(slots)
+                ? "Profit summary" + range.label() + ":\n"
+                + "- Revenue: " + money(summary.getRevenue()) + "\n"
+                + "- Kharcha: " + money(summary.getExpense()) + "\n"
+                + "- Net profit: " + money(summary.getNetProfit())
+                : "Profit summary" + range.label() + ":\n"
                 + "- Revenue: " + money(summary.getRevenue()) + "\n"
                 + "- Expense: " + money(summary.getExpense()) + "\n"
                 + "- Net profit: " + money(summary.getNetProfit());
@@ -657,9 +690,33 @@ public class AiChatService {
         if ("TODAY".equalsIgnoreCase(dateRange)) {
             return new DateRange(today, today, " for today", chartType);
         }
+        if ("YESTERDAY".equalsIgnoreCase(dateRange)) {
+            LocalDate yesterday = today.minusDays(1);
+            return new DateRange(yesterday, yesterday, " for yesterday", chartType);
+        }
+        if ("THIS_WEEK".equalsIgnoreCase(dateRange)) {
+            LocalDate start = today.minusDays((today.getDayOfWeek().getValue() + 6) % 7);
+            return new DateRange(start, today, " for this week", chartType);
+        }
+        if ("LAST_WEEK".equalsIgnoreCase(dateRange)) {
+            LocalDate thisWeekStart = today.minusDays((today.getDayOfWeek().getValue() + 6) % 7);
+            LocalDate start = thisWeekStart.minusWeeks(1);
+            return new DateRange(start, thisWeekStart.minusDays(1), " for last week", chartType);
+        }
         if ("THIS_MONTH".equalsIgnoreCase(dateRange) || "MONTHLY".equalsIgnoreCase(dateRange)) {
             YearMonth month = YearMonth.from(today);
+            return new DateRange(month.atDay(1), today, " for " + month, chartType);
+        }
+        if ("LAST_MONTH".equalsIgnoreCase(dateRange)) {
+            YearMonth month = YearMonth.from(today).minusMonths(1);
             return new DateRange(month.atDay(1), month.atEndOfMonth(), " for " + month, chartType);
+        }
+        if ("THIS_YEAR".equalsIgnoreCase(dateRange)) {
+            return new DateRange(LocalDate.of(today.getYear(), 1, 1), today, " for " + today.getYear(), chartType);
+        }
+        if ("LAST_YEAR".equalsIgnoreCase(dateRange)) {
+            int year = today.getYear() - 1;
+            return new DateRange(LocalDate.of(year, 1, 1), LocalDate.of(year, 12, 31), " for " + year, chartType);
         }
         return new DateRange(null, null, "", chartType);
     }
@@ -678,8 +735,225 @@ public class AiChatService {
         return response(message, operation, null, null);
     }
 
+    private String generalAssistantReply(String prompt, List<AiChatRequest.HistoryMessage> history) {
+        return ollamaClient.generateText(aiPromptBuilder.buildGeneralChatPrompt(prompt, history))
+                .map(this::cleanAssistantText)
+                .filter(value -> !value.isBlank())
+                .orElseGet(() -> deterministicGeneralReply(prompt, history));
+    }
+
+    private String deterministicGeneralReply(String prompt, List<AiChatRequest.HistoryMessage> history) {
+        ChatCategory category = classifyGeneralMessage(prompt);
+        return switch (category) {
+            case GREETING -> greetingReply(prompt);
+            case COURTESY -> courtesyReply(prompt);
+            case PRODUCT -> productFallbackReply();
+            case GREETING_PRODUCT -> greetingReply(prompt) + " " + productFallbackReply();
+            case COURTESY_PRODUCT -> courtesyReply(prompt) + " " + productFallbackReply();
+            case GREETING_OFF_TOPIC -> greetingReply(prompt) + " " + OFF_TOPIC_REPLY;
+            case COURTESY_OFF_TOPIC -> courtesyReply(prompt) + " " + OFF_TOPIC_REPLY;
+            case OFF_TOPIC -> OFF_TOPIC_REPLY;
+        };
+    }
+
+    private ChatCategory classifyGeneralMessage(String prompt) {
+        String normalized = normalizeChatText(prompt);
+        if (normalized.isBlank()) {
+            return ChatCategory.OFF_TOPIC;
+        }
+        boolean greeting = hasGreeting(normalized);
+        boolean courtesy = hasCourtesy(normalized);
+        boolean product = isProductRelated(normalized);
+        String remaining = removeSocialTokens(normalized);
+        boolean onlySocial = remaining.isBlank();
+
+        if (onlySocial && greeting) {
+            return ChatCategory.GREETING;
+        }
+        if (onlySocial && courtesy) {
+            return ChatCategory.COURTESY;
+        }
+        if (product && greeting) {
+            return ChatCategory.GREETING_PRODUCT;
+        }
+        if (product && courtesy) {
+            return ChatCategory.COURTESY_PRODUCT;
+        }
+        if (product) {
+            return ChatCategory.PRODUCT;
+        }
+        if (greeting) {
+            return ChatCategory.GREETING_OFF_TOPIC;
+        }
+        if (courtesy) {
+            return ChatCategory.COURTESY_OFF_TOPIC;
+        }
+        return ChatCategory.OFF_TOPIC;
+    }
+
+    private String greetingReply(String prompt) {
+        String normalized = normalizeChatText(prompt);
+        if (normalized.contains("namaste")) {
+            return "Namaste! Bizio me main aapki kaise help kar sakta hoon?";
+        }
+        if (normalized.contains("salam")) {
+            return "Salam! Bizio me main aapki kaise help kar sakta hoon?";
+        }
+        if (normalized.contains("how are you") || normalized.contains("kaise ho") || normalized.contains("kese ho")) {
+            return "I'm doing well, thanks! How can I help you with Bizio today?";
+        }
+        if (normalized.contains("good night")) {
+            return "Good night! Take care.";
+        }
+        if (normalized.contains("good morning")) {
+            return "Good morning! How can I help you with Bizio today?";
+        }
+        if (normalized.contains("good afternoon")) {
+            return "Good afternoon! How can I help you with Bizio today?";
+        }
+        if (normalized.contains("good evening")) {
+            return "Good evening! How can I help you with Bizio today?";
+        }
+        return "Hello! How can I help you with Bizio today?";
+    }
+
+    private String courtesyReply(String prompt) {
+        String normalized = normalizeChatText(prompt);
+        if (hasAny(normalized, "bye", "goodbye", "see you", "take care")) {
+            return "Goodbye! Take care.";
+        }
+        if (hasAny(normalized, "thanks", "thank you", "thx", "thanku")) {
+            return "You're welcome.";
+        }
+        return "Sure, noted.";
+    }
+
+    private String productFallbackReply() {
+        return "I do not have enough product documentation to answer that accurately. I can help with sales summary, stock, outstanding customers, customer search, invoice search, payments, expenses, and profit summaries, or you can contact support for this product question.";
+    }
+
+    private String normalizeChatText(String value) {
+        return value == null ? "" : value
+                .toLowerCase(Locale.ENGLISH)
+                .replaceAll("[^a-z0-9\\s]", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+    }
+
+    private boolean hasGreeting(String normalized) {
+        return hasTerm(normalized,
+                "hi", "hii", "hello", "helloo", "hey", "hola", "yo", "gm", "gn",
+                "good morning", "good afternoon", "good evening", "good night",
+                "how are you", "what s up", "whats up", "namaste", "salam", "kaise ho", "kese ho");
+    }
+
+    private boolean hasCourtesy(String normalized) {
+        return hasTerm(normalized,
+                "thanks", "thank you", "thanks a lot", "thank you so much", "thx", "thanku",
+                "you re welcome", "welcome", "ok", "okay", "alright", "got it", "cool",
+                "nice", "great", "awesome", "nice to meet you", "pleasure meeting you",
+                "bye", "goodbye", "see you", "take care", "no problem", "sure", "fine", "sounds good");
+    }
+
+    private boolean isProductRelated(String normalized) {
+        return hasTerm(normalized,
+                "bizfinity", "product", "app", "software", "billing", "invoice", "invoices",
+                "payment", "payments", "customer", "customers", "stock", "inventory",
+                "products", "sales", "sale", "expense", "expenses", "profit", "collection",
+                "outstanding", "report", "dashboard", "gst", "tax", "purchase", "supplier",
+                "feature", "features", "pricing", "price", "plan", "plans", "subscription",
+                "account", "login", "password", "support", "integration", "integrations",
+                "how to", "kaise", "use", "troubleshoot", "error", "issue", "problem");
+    }
+
+    private String removeSocialTokens(String normalized) {
+        String value = " " + normalized + " ";
+        String[] phrases = {
+                "good morning", "good afternoon", "good evening", "good night", "how are you",
+                "what s up", "whats up", "kaise ho", "kese ho", "thank you so much",
+                "thanks a lot", "thank you", "you re welcome", "got it", "nice to meet you",
+                "pleasure meeting you", "goodbye", "see you", "take care", "no problem",
+                "sounds good", "hello", "helloo", "hii", "hi", "hey", "hola", "yo", "gm", "gn",
+                "namaste", "salam", "thanks", "thx", "thanku", "welcome", "okay", "ok",
+                "alright", "cool", "nice", "great", "awesome", "bye", "sure", "fine", "pls", "please"
+        };
+        for (String phrase : phrases) {
+            value = value.replace(" " + phrase + " ", " ");
+        }
+        return value.replaceAll("\\s+", " ").trim();
+    }
+
+    private boolean hasTerm(String value, String... terms) {
+        String padded = " " + value + " ";
+        for (String term : terms) {
+            if (padded.contains(" " + term + " ")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean hasAny(String value, String... keywords) {
+        if (value == null) {
+            return false;
+        }
+        for (String keyword : keywords) {
+            if (value.contains(keyword)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private enum ChatCategory {
+        GREETING,
+        COURTESY,
+        PRODUCT,
+        OFF_TOPIC,
+        GREETING_PRODUCT,
+        COURTESY_PRODUCT,
+        GREETING_OFF_TOPIC,
+        COURTESY_OFF_TOPIC
+    }
+
+    private String deterministicGeneralReply(String prompt) {
+        String lower = prompt == null ? "" : prompt.toLowerCase();
+        if (lower.matches(".*\\b(hi|hello|hey|namaste|नमस्ते|salam)\\b.*")) {
+            return "Hello! Main Bizio AI Assistant hoon. Aap sales summary, stock, outstanding payment, customer search, invoice search, ya expense summary pooch sakte hain.";
+        }
+        if (lower.contains("weather") || lower.contains("mausam") || lower.contains("मौसम")) {
+            return "Main yahan live weather fetch nahi kar sakta. Aap city ka naam bata sakte hain, ya latest weather ke liye weather app/service check kar lijiye.";
+        }
+        return "Main billing assistant hoon. Aap normal baat bhi kar sakte hain, aur billing ke liye pooch sakte hain: aaj ki sale, stock dikhao, baaki payment, customer search, invoice search, ya is month ka kharcha.";
+    }
+
+    private String cleanAssistantText(String value) {
+        String cleaned = value == null ? "" : value
+                .replaceAll("(?is)<think>.*?</think>", "")
+                .replaceAll("^```[a-zA-Z]*\\s*", "")
+                .replaceAll("\\s*```$", "")
+                .trim();
+        if (cleaned.length() <= 1200) {
+            return cleaned;
+        }
+        return cleaned.substring(0, 1200).trim();
+    }
+
     private boolean hasAssistantAccess(AiUserContext context) {
         return context.hasPermission("AI_ASSISTANT", "VIEW");
+    }
+
+    private boolean hindi(Map<String, Object> slots) {
+        return "HI".equalsIgnoreCase(text(slots, "responseLanguage"));
+    }
+
+    private void safeAudit(AiUserContext context, String prompt, String detectedIntent, String action, String status) {
+        try {
+            aiAuditService.log(context, prompt, detectedIntent, action, status);
+        } catch (RuntimeException ex) {
+            log.warn("Unable to write AI audit log for company {} user {} action {} status {}: {}",
+                    context.getCompanyId(), context.getUserId(), action, status, ex.getMessage());
+        }
     }
 
     private AiChart buildChart(String email, AiOperation operation, DateRange range) {
@@ -798,6 +1072,48 @@ public class AiChatService {
 
     private String normalizePrompt(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private List<AiChatRequest.HistoryMessage> translateHistoryToEnglish(List<AiChatRequest.HistoryMessage> history) {
+        if (history == null || history.isEmpty()) {
+            return List.of();
+        }
+        return history.stream()
+                .filter(Objects::nonNull)
+                .map(item -> {
+                    AiChatRequest.HistoryMessage translated = new AiChatRequest.HistoryMessage();
+                    translated.setRole(item.getRole());
+                    translated.setContent(googleTranslateService.toEnglish(item.getContent()).orElse(item.getContent()));
+                    return translated;
+                })
+                .toList();
+    }
+
+    private void applyOriginalResponseLanguage(Map<String, Object> slots, String prompt, List<AiChatRequest.HistoryMessage> history) {
+        if (slots == null) {
+            return;
+        }
+        String combined = ((prompt == null ? "" : prompt) + " " + recentUserHistory(history)).toLowerCase(Locale.ENGLISH);
+        if (combined.matches(".*\\p{InDevanagari}.*")
+                || hasAny(combined, "bata", "bta", "kya", "kaise", "kitna", "kitni", "dikhao", "banao", "hai", "nahi", "haan", "bhai", "pichle", "aaj", "kal", "mahina", "saal")) {
+            slots.put("responseLanguage", "HI");
+            return;
+        }
+        slots.put("responseLanguage", "EN");
+    }
+
+    private String recentUserHistory(List<AiChatRequest.HistoryMessage> history) {
+        if (history == null || history.isEmpty()) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (int index = Math.max(0, history.size() - 4); index < history.size(); index++) {
+            AiChatRequest.HistoryMessage item = history.get(index);
+            if (item != null && !"assistant".equalsIgnoreCase(item.getRole()) && item.getContent() != null) {
+                builder.append(' ').append(item.getContent());
+            }
+        }
+        return builder.toString();
     }
 
     private String text(Map<String, Object> slots, String key) {

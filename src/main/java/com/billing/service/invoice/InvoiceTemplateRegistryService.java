@@ -87,7 +87,7 @@ public class InvoiceTemplateRegistryService {
                 .templateName(defaultString(stringValue(metadata.get("templateName")), templateId))
                 .version(defaultString(stringValue(metadata.get("version")), "1.0.0"))
                 .description(defaultString(stringValue(metadata.get("description")), "Invoice template"))
-                .author(defaultString(stringValue(metadata.get("author")), "BizFinity"))
+                .author(defaultString(stringValue(metadata.get("author")), "Bizio"))
                 .previewImage(stringValue(metadata.get("previewImage")))
                 .supportsWatermark(booleanValue(metadata.get("supportsWatermark"), true))
                 .supportsQr(booleanValue(metadata.get("supportsQr"), true))

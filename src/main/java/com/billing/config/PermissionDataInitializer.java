@@ -132,7 +132,7 @@ public class PermissionDataInitializer implements ApplicationRunner {
     private void seedPlatformSettings() {
         PlatformSetting setting = platformSettingRepository.findTopByOrderByIdAsc()
                 .orElseGet(() -> platformSettingRepository.save(PlatformSetting.builder()
-                        .platformName("Bizfinity")
+                        .platformName("Bizio")
                         .platformTagline("Empowering Businesses, Simplifying Growth")
                         .username("mohdwaziddb")
                         .password(passwordEncoder.encode("123456789"))

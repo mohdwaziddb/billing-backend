@@ -3,6 +3,8 @@ package com.billing.ai.service;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.Getter;
 import lombok.Setter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.http.HttpEntity;
@@ -21,6 +23,8 @@ import java.util.Optional;
 
 @Service
 public class OllamaClient {
+
+    private static final Logger log = LoggerFactory.getLogger(OllamaClient.class);
 
     private final RestTemplate restTemplate;
 
@@ -41,6 +45,14 @@ public class OllamaClient {
     }
 
     public Optional<String> generate(String prompt) {
+        return generateInternal(prompt, true);
+    }
+
+    public Optional<String> generateText(String prompt) {
+        return generateInternal(prompt, false);
+    }
+
+    private Optional<String> generateInternal(String prompt, boolean jsonFormat) {
         String resolvedBaseUrl = normalizeBaseUrl(baseUrl);
         if (!enabled || resolvedBaseUrl == null) {
             return Optional.empty();
@@ -50,7 +62,9 @@ public class OllamaClient {
         body.put("model", model);
         body.put("prompt", prompt);
         body.put("stream", false);
-        body.put("format", "json");
+        if (jsonFormat) {
+            body.put("format", "json");
+        }
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
@@ -62,6 +76,7 @@ public class OllamaClient {
             );
             return Optional.ofNullable(response.getBody()).map(OllamaGenerateResponse::getResponse);
         } catch (RestClientException ex) {
+            log.warn("Ollama generate request failed for base URL {}: {}", resolvedBaseUrl, ex.getMessage());
             return Optional.empty();
         }
     }
@@ -85,6 +100,7 @@ public class OllamaClient {
             boolean active = response.getStatusCode().is2xxSuccessful();
             return new OllamaStatus(true, active, resolvedBaseUrl, model, active ? "Connected" : "Unavailable");
         } catch (RestClientException ex) {
+            log.warn("Ollama status request failed for base URL {}: {}", resolvedBaseUrl, ex.getMessage());
             return new OllamaStatus(true, false, resolvedBaseUrl, model, "Unavailable");
         }
     }

@@ -1,15 +1,19 @@
 package com.billing.ai.parser;
 
+import com.billing.ai.dto.AiChatRequest;
 import com.billing.ai.prompts.AiPromptBuilder;
 import com.billing.ai.service.OllamaClient;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -19,6 +23,8 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class AiIntentParser {
 
+    private static final Logger log = LoggerFactory.getLogger(AiIntentParser.class);
+
     private static final Pattern MONEY_PATTERN = Pattern.compile("(?:rs\\.?|inr|\\p{Sc})?\\s*(\\d+(?:\\.\\d{1,2})?)", Pattern.CASE_INSENSITIVE);
     private static final Pattern MOBILE_PATTERN = Pattern.compile("\\b(\\d{10})\\b");
 
@@ -27,25 +33,27 @@ public class AiIntentParser {
     private final ObjectMapper objectMapper;
 
     public AiIntent parse(String message) {
-        AiIntent ollamaIntent = parseWithOllama(message);
-        if (ollamaIntent.getOperation() != AiOperation.UNKNOWN) {
-            return ollamaIntent;
-        }
-        return parseDeterministically(message);
+        return parse(message, List.of());
     }
 
-    private AiIntent parseWithOllama(String message) {
-        return ollamaClient.generate(promptBuilder.buildIntentPrompt(message))
+    public AiIntent parse(String message, List<AiChatRequest.HistoryMessage> history) {
+        AiIntent ollamaIntent = parseWithOllama(message, history);
+        if (ollamaIntent.getOperation() != AiOperation.UNKNOWN) {
+            enrichDeterministicSlots(message, history, ollamaIntent.getSlots());
+            return ollamaIntent;
+        }
+        return parseDeterministically(message, history);
+    }
+
+    private AiIntent parseWithOllama(String message, List<AiChatRequest.HistoryMessage> history) {
+        return ollamaClient.generate(promptBuilder.buildIntentPrompt(message, history))
                 .map(this::parseJsonIntent)
                 .orElseGet(() -> AiIntent.builder().operation(AiOperation.UNKNOWN).build());
     }
 
     private AiIntent parseJsonIntent(String rawJson) {
         try {
-            String json = rawJson == null ? "" : rawJson.trim()
-                    .replaceAll("^```json\\s*", "")
-                    .replaceAll("^```\\s*", "")
-                    .replaceAll("\\s*```$", "");
+            String json = extractJsonObject(rawJson);
             Map<String, Object> parsed = objectMapper.readValue(json, new TypeReference<Map<String, Object>>() {});
             String operationValue = String.valueOf(parsed.getOrDefault("operation", "UNKNOWN"));
             AiOperation operation = resolveOperation(operationValue);
@@ -54,56 +62,65 @@ public class AiIntentParser {
                     : new LinkedHashMap<>();
             return AiIntent.builder().operation(operation).slots(slots).build();
         } catch (JsonProcessingException | RuntimeException ex) {
+            log.warn("Unable to parse Ollama intent JSON: {}", ex.getMessage());
             return AiIntent.builder().operation(AiOperation.UNKNOWN).build();
         }
     }
 
-    private AiIntent parseDeterministically(String message) {
+    private AiIntent parseDeterministically(String message, List<AiChatRequest.HistoryMessage> history) {
         String text = message == null ? "" : message.trim();
         String lower = text.toLowerCase(Locale.ENGLISH);
         Map<String, Object> slots = new LinkedHashMap<>();
+        fillResponseLanguageSlot(text, history, slots);
+        AiOperation followUpOperation = inferFollowUpOperation(lower, history);
+        if (followUpOperation != AiOperation.UNKNOWN) {
+            fillFollowUpContextSlots(history, slots);
+            fillDateRangeSlots(lower, slots);
+            fillChartSlots(lower, slots);
+            return intent(followUpOperation, slots);
+        }
 
-        if (lower.contains("create invoice") || lower.contains("make invoice")) {
+        if (hasAny(lower, "create invoice", "make invoice", "invoice banao", "bill banao")) {
             fillInvoiceSlots(text, slots);
             return intent(AiOperation.CREATE_INVOICE, slots);
         }
-        if (lower.contains("record payment") || lower.contains("receive payment") || lower.contains("add payment")) {
+        if (hasAny(lower, "record payment", "receive payment", "add payment", "payment add", "payment entry")) {
             fillPaymentSlots(text, slots);
             return intent(AiOperation.RECORD_PAYMENT, slots);
         }
-        if (lower.contains("create customer") || lower.contains("add customer")) {
+        if (hasAny(lower, "create customer", "add customer", "customer add", "customer banao")) {
             fillCustomerSlots(text, slots);
             return intent(AiOperation.CREATE_CUSTOMER, slots);
         }
-        if (lower.contains("create product") || lower.contains("add product")) {
+        if (hasAny(lower, "create product", "add product", "product add", "product banao")) {
             fillProductSlots(text, slots);
             return intent(AiOperation.CREATE_PRODUCT, slots);
         }
-        if (lower.contains("stock") || lower.contains("inventory of")) {
+        if (hasAny(lower, "stock", "inventory of", "maal", "quantity", "qty", "available")) {
             slots.put("search", cleanupSearch(text.replaceAll("(?i)show|current|stock|of|inventory", " ")));
             fillChartSlots(lower, slots);
             return intent(AiOperation.CURRENT_STOCK, slots);
         }
-        if (lower.contains("outstanding")) {
+        if (hasAny(lower, "outstanding", "due", "baaki", "udhaar")) {
             slots.put("search", cleanupSearch(text.replaceAll("(?i)show|customers|customer|outstanding", " ")));
             return intent(AiOperation.OUTSTANDING_CUSTOMERS, slots);
         }
-        if (lower.contains("collection")) {
+        if (hasAny(lower, "collection", "collected", "vasooli", "payment received")) {
             fillDateRangeSlots(lower, slots);
             fillChartSlots(lower, slots);
             return intent(AiOperation.COLLECTION_SUMMARY, slots);
         }
-        if (lower.contains("expense")) {
+        if (hasAny(lower, "expense", "kharcha", "expenses", "spend", "spent")) {
             fillDateRangeSlots(lower, slots);
             fillChartSlots(lower, slots);
             return intent(AiOperation.EXPENSE_SUMMARY, slots);
         }
-        if (lower.contains("profit")) {
+        if (hasAny(lower, "profit", "munafa", "margin", "kamai")) {
             fillDateRangeSlots(lower, slots);
             fillChartSlots(lower, slots);
             return intent(AiOperation.PROFIT_SUMMARY, slots);
         }
-        if (lower.contains("sales")) {
+        if (hasAny(lower, "sales", "sale", "revenue", "bikri", "business", "turnover", "income", "earning", "becha")) {
             fillDateRangeSlots(lower, slots);
             fillChartSlots(lower, slots);
             return intent(AiOperation.SALES_SUMMARY, slots);
@@ -124,11 +141,92 @@ public class AiIntentParser {
             slots.put("search", cleanupSearch(text.replaceAll("(?i)show|find|search|customer|customers", " ")));
             return intent(AiOperation.CUSTOMER_SEARCH, slots);
         }
-        if (lower.contains("inventory")) {
+        if (hasAny(lower, "inventory", "stock summary")) {
             fillChartSlots(lower, slots);
             return intent(AiOperation.INVENTORY_SUMMARY, slots);
         }
         return intent(AiOperation.UNKNOWN, slots);
+    }
+
+    private void enrichDeterministicSlots(String message, List<AiChatRequest.HistoryMessage> history, Map<String, Object> slots) {
+        if (slots == null) {
+            return;
+        }
+        String lower = message == null ? "" : message.trim().toLowerCase(Locale.ENGLISH);
+        if (isFollowUp(lower)) {
+            fillFollowUpContextSlots(history, slots);
+        }
+        fillDateRangeSlots(lower, slots);
+        fillChartSlots(lower, slots);
+        fillResponseLanguageSlot(message, history, slots);
+    }
+
+    private AiOperation inferFollowUpOperation(String lower, List<AiChatRequest.HistoryMessage> history) {
+        if (!isFollowUp(lower) || history == null || history.isEmpty()) {
+            return AiOperation.UNKNOWN;
+        }
+        for (int index = history.size() - 1; index >= 0; index--) {
+            AiChatRequest.HistoryMessage item = history.get(index);
+            if (item == null || item.getContent() == null) {
+                continue;
+            }
+            AiOperation operation = operationFromText(item.getContent().toLowerCase(Locale.ENGLISH));
+            if (operation != AiOperation.UNKNOWN) {
+                return operation;
+            }
+        }
+        return AiOperation.UNKNOWN;
+    }
+
+    private boolean isFollowUp(String lower) {
+        if (lower == null || lower.isBlank()) {
+            return false;
+        }
+        return hasAny(lower, "aur", "also", "same", "uska", "iska", "iske", "uske", "woh", "yeh",
+                "again", "repeat", "compare", "comparison", "graph", "chart", "trend", "bar", "pie", "line",
+                "aaj", "today", "kal", "yesterday",
+                "this week", "last week", "this month", "is month", "iss month", "last month", "pichle month",
+                "previous month", "this year", "last year")
+                && !hasAny(lower, "customer", "product", "invoice", "payment", "stock", "sale", "sales", "expense", "profit", "collection", "outstanding", "bikri", "kharcha", "baaki");
+    }
+
+    private AiOperation operationFromText(String lower) {
+        if (hasAny(lower, "sales summary", "total sales", "sale", "sales", "revenue", "bikri", "business", "turnover", "सेल", "बिक्री")) {
+            return AiOperation.SALES_SUMMARY;
+        }
+        if (hasAny(lower, "collection summary", "collection", "collected", "vasooli", "वसूली", "कलेक्शन")) {
+            return AiOperation.COLLECTION_SUMMARY;
+        }
+        if (hasAny(lower, "expense summary", "expense", "kharcha", "spent", "खर्च", "खर्चा")) {
+            return AiOperation.EXPENSE_SUMMARY;
+        }
+        if (hasAny(lower, "profit summary", "profit", "munafa", "kamai", "मुनाफा", "कमाई")) {
+            return AiOperation.PROFIT_SUMMARY;
+        }
+        if (hasAny(lower, "outstanding customers", "outstanding", "baaki", "udhaar", "due", "बाकी", "उधार")) {
+            return AiOperation.OUTSTANDING_CUSTOMERS;
+        }
+        if (hasAny(lower, "current stock", "stock", "inventory")) {
+            return AiOperation.CURRENT_STOCK;
+        }
+        return AiOperation.UNKNOWN;
+    }
+
+    private void fillFollowUpContextSlots(List<AiChatRequest.HistoryMessage> history, Map<String, Object> slots) {
+        if (history == null || history.isEmpty()) {
+            return;
+        }
+        Map<String, Object> contextSlots = new LinkedHashMap<>();
+        for (int index = Math.max(0, history.size() - 8); index < history.size(); index++) {
+            AiChatRequest.HistoryMessage item = history.get(index);
+            if (item == null || item.getContent() == null || item.getContent().isBlank()) {
+                continue;
+            }
+            String lower = item.getContent().toLowerCase(Locale.ENGLISH);
+            fillDateRangeSlots(lower, contextSlots);
+            fillChartSlots(lower, contextSlots);
+        }
+        contextSlots.forEach(slots::putIfAbsent);
     }
 
     private void fillInvoiceSlots(String text, Map<String, Object> slots) {
@@ -189,28 +287,82 @@ public class AiIntentParser {
     }
 
     private void fillDateRangeSlots(String lower, Map<String, Object> slots) {
-        if (lower.contains("monthly") || lower.contains("this month") || lower.contains("current month")) {
+        if (hasAny(lower, "yesterday", "kal ka", "kal ki", "kal ke", "कल")) {
+            slots.put("dateRange", "YESTERDAY");
+        }
+        if (hasAny(lower, "today", "aaj", "आज")) {
+            slots.put("dateRange", "TODAY");
+        }
+        if (hasAny(lower, "last week", "previous week", "pichle week", "pichla week", "pichle hafte")) {
+            slots.put("dateRange", "LAST_WEEK");
+        }
+        if (hasAny(lower, "this week", "current week", "is week", "iss week", "is hafte", "iss hafte")) {
+            slots.put("dateRange", "THIS_WEEK");
+        }
+        if (hasAny(lower, "last month", "previous month", "pichle month", "pichla month", "last mahina", "pichle mahine")) {
+            slots.put("dateRange", "LAST_MONTH");
+        }
+        if (hasAny(lower, "monthly", "this month", "current month", "is month", "iss month", "mahina")) {
             slots.put("dateRange", "THIS_MONTH");
         }
-        if (lower.contains("today")) {
-            slots.put("dateRange", "TODAY");
+        if (hasAny(lower, "last year", "previous year", "pichle year", "pichla saal", "last saal")) {
+            slots.put("dateRange", "LAST_YEAR");
+        }
+        if (hasAny(lower, "this year", "current year", "is year", "iss year", "is saal", "iss saal")) {
+            slots.put("dateRange", "THIS_YEAR");
         }
     }
 
-    private void fillChartSlots(String lower, Map<String, Object> slots) {
-        if (!(lower.contains("graph") || lower.contains("chart"))) {
+    private void fillResponseLanguageSlot(String message, List<AiChatRequest.HistoryMessage> history, Map<String, Object> slots) {
+        String combined = ((message == null ? "" : message) + " " + recentUserHistory(history)).toLowerCase(Locale.ENGLISH);
+        if (Pattern.compile("\\p{InDevanagari}").matcher(combined).find()
+                || hasAny(combined, "bata", "bta", "kya", "kaise", "kitna", "kitni", "dikhao", "banao", "hai", "nahi", "haan", "bhai", "pichle", "aaj", "kal", "mahina", "saal")) {
+            slots.put("responseLanguage", "HI");
             return;
         }
+        slots.put("responseLanguage", "EN");
+    }
+
+    private String recentUserHistory(List<AiChatRequest.HistoryMessage> history) {
+        if (history == null || history.isEmpty()) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (int index = Math.max(0, history.size() - 4); index < history.size(); index++) {
+            AiChatRequest.HistoryMessage item = history.get(index);
+            if (item != null && !"assistant".equalsIgnoreCase(item.getRole()) && item.getContent() != null) {
+                builder.append(' ').append(item.getContent());
+            }
+        }
+        return builder.toString();
+    }
+
+    private void fillChartSlots(String lower, Map<String, Object> slots) {
         if (lower.contains("pie")) {
             slots.put("chartType", "PIE");
             return;
         }
-        if (lower.contains("bar")) {
+        boolean asksForVisual = hasAny(lower, "graph", "chart", "trend", "visual", "plot");
+        if (!asksForVisual) {
+            if (hasAny(lower, "bar me", "bar mein", "bar chart")) {
+                slots.put("chartType", "BAR");
+                return;
+            }
+            if (hasAny(lower, "line me", "line mein", "line chart")) {
+                slots.put("chartType", "LINE");
+            }
+            return;
+        }
+        if (lower.contains("bar") || lower.contains("column")) {
             slots.put("chartType", "BAR");
             return;
         }
-        if (lower.contains("line")) {
+        if (lower.contains("line") || lower.contains("trend")) {
             slots.put("chartType", "LINE");
+            return;
+        }
+        if (hasAny(lower, "category wise", "category-wise", "breakdown", "split", "mix", "share")) {
+            slots.put("chartType", "PIE");
             return;
         }
         slots.put("chartType", "LINE");
@@ -247,6 +399,33 @@ public class AiIntentParser {
         } catch (RuntimeException ex) {
             return AiOperation.UNKNOWN;
         }
+    }
+
+    private String extractJsonObject(String rawJson) {
+        String value = rawJson == null ? "" : rawJson.trim()
+                .replaceAll("(?is)<think>.*?</think>", "")
+                .replaceAll("^```json\\s*", "")
+                .replaceAll("^```\\s*", "")
+                .replaceAll("\\s*```$", "")
+                .trim();
+        int start = value.indexOf('{');
+        int end = value.lastIndexOf('}');
+        if (start >= 0 && end > start) {
+            return value.substring(start, end + 1);
+        }
+        return value;
+    }
+
+    private boolean hasAny(String value, String... keywords) {
+        if (value == null) {
+            return false;
+        }
+        for (String keyword : keywords) {
+            if (value.contains(keyword)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String cleanupSearch(String value) {

@@ -3,7 +3,7 @@
   "templateName": "GST Enterprise",
   "version": "1.0.0",
   "description": "Enterprise GST-heavy invoice with multi-section summaries and compliance-first presentation.",
-  "author": "BizFinity",
+  "author": "Bizio",
   "supportsWatermark": true,
   "supportsQr": true,
   "supportsSignature": true,
