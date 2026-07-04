@@ -53,12 +53,14 @@ public class AiPromptBuilder {
                 "baaki payment kiski hai" -> {"operation":"OUTSTANDING_CUSTOMERS","slots":{}}
                 "stock dikhao" -> {"operation":"CURRENT_STOCK","slots":{}}
                 "customer Ram search karo" -> {"operation":"CUSTOMER_SEARCH","slots":{"search":"Ram"}}
+                "show this month customer" -> {"operation":"CUSTOMER_SEARCH","slots":{"dateRange":"THIS_MONTH"}}
 
                 Use the conversation history to resolve follow-up questions.
                 If the user says "aur aaj ka", "this month ka", "uska", or a similarly short follow-up,
                 infer the operation/search topic from the most recent relevant user or assistant message.
                 If the latest message only changes chart type, such as "pie chart me" or "bar graph", keep the previous operation and previous dateRange.
                 The user may write in English, Hindi, Hinglish, or mixed language. Understand the meaning, not only exact words.
+                Treat common spelling mistakes in business terms as their closest domain word; do not map customer list/search requests to OUTSTANDING_CUSTOMERS unless due, baaki, udhaar, or outstanding is explicitly requested.
                 If the latest message is a follow-up, keep the same topic from history unless the latest message clearly changes it.
 
                 Conversation history:

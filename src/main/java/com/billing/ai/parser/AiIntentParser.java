@@ -27,6 +27,22 @@ public class AiIntentParser {
 
     private static final Pattern MONEY_PATTERN = Pattern.compile("(?:rs\\.?|inr|\\p{Sc})?\\s*(\\d+(?:\\.\\d{1,2})?)", Pattern.CASE_INSENSITIVE);
     private static final Pattern MOBILE_PATTERN = Pattern.compile("\\b(\\d{10})\\b");
+    private static final Pattern WORD_PATTERN = Pattern.compile("\\b[a-z][a-z0-9]*\\b", Pattern.CASE_INSENSITIVE);
+    private static final Map<String, List<String>> DOMAIN_TERM_ALIASES = Map.of(
+            "customer", List.of("customer", "customers", "client", "clients", "party", "parties"),
+            "product", List.of("product", "products", "item", "items", "maal"),
+            "invoice", List.of("invoice", "invoices", "bill", "bills"),
+            "payment", List.of("payment", "payments", "paymnt"),
+            "sales", List.of("sale", "sales", "revenue", "bikri"),
+            "expense", List.of("expense", "expenses", "kharcha"),
+            "profit", List.of("profit", "munafa", "kamai"),
+            "collection", List.of("collection", "collected", "vasooli"),
+            "outstanding", List.of("outstanding", "due", "baaki", "udhaar")
+    );
+    private static final List<String> FUZZY_EXCLUDED_TOKENS = List.of(
+            "add", "amount", "chart", "create", "current", "custom", "find", "graph", "month",
+            "record", "receive", "search", "show", "table", "today", "total", "view"
+    );
 
     private final OllamaClient ollamaClient;
     private final AiPromptBuilder promptBuilder;
@@ -40,7 +56,10 @@ public class AiIntentParser {
         AiIntent ollamaIntent = parseWithOllama(message, history);
         if (ollamaIntent.getOperation() != AiOperation.UNKNOWN) {
             enrichDeterministicSlots(message, history, ollamaIntent.getSlots());
-            return ollamaIntent;
+            return AiIntent.builder()
+                    .operation(correctOperationFromLatestMessage(message, ollamaIntent.getOperation()))
+                    .slots(ollamaIntent.getSlots())
+                    .build();
         }
         return parseDeterministically(message, history);
     }
@@ -69,7 +88,7 @@ public class AiIntentParser {
 
     private AiIntent parseDeterministically(String message, List<AiChatRequest.HistoryMessage> history) {
         String text = message == null ? "" : message.trim();
-        String lower = text.toLowerCase(Locale.ENGLISH);
+        String lower = normalizeDomainTerms(text.toLowerCase(Locale.ENGLISH));
         Map<String, Object> slots = new LinkedHashMap<>();
         fillResponseLanguageSlot(text, history, slots);
         AiOperation followUpOperation = inferFollowUpOperation(lower, history);
@@ -97,12 +116,12 @@ public class AiIntentParser {
             return intent(AiOperation.CREATE_PRODUCT, slots);
         }
         if (hasAny(lower, "stock", "inventory of", "maal", "quantity", "qty", "available")) {
-            slots.put("search", cleanupSearch(text.replaceAll("(?i)show|current|stock|of|inventory", " ")));
+            slots.put("search", cleanupSearch(normalizeDomainTerms(text).replaceAll("(?i)show|current|stock|of|inventory", " ")));
             fillChartSlots(lower, slots);
             return intent(AiOperation.CURRENT_STOCK, slots);
         }
         if (hasAny(lower, "outstanding", "due", "baaki", "udhaar")) {
-            slots.put("search", cleanupSearch(text.replaceAll("(?i)show|customers|customer|outstanding", " ")));
+            slots.put("search", cleanupSearch(normalizeDomainTerms(text).replaceAll("(?i)show|customers|customer|outstanding|due|baaki|udhaar", " ")));
             return intent(AiOperation.OUTSTANDING_CUSTOMERS, slots);
         }
         if (hasAny(lower, "collection", "collected", "vasooli", "payment received")) {
@@ -126,19 +145,20 @@ public class AiIntentParser {
             return intent(AiOperation.SALES_SUMMARY, slots);
         }
         if (lower.contains("invoice")) {
-            slots.put("search", cleanupSearch(text.replaceAll("(?i)show|find|search|invoice|invoices", " ")));
+            slots.put("search", cleanupSearch(normalizeDomainTerms(text).replaceAll("(?i)show|find|search|invoice|invoices", " ")));
             return intent(AiOperation.INVOICE_SEARCH, slots);
         }
         if (lower.contains("payment")) {
-            slots.put("search", cleanupSearch(text.replaceAll("(?i)show|find|search|payment|payments", " ")));
+            slots.put("search", cleanupSearch(normalizeDomainTerms(text).replaceAll("(?i)show|find|search|payment|payments", " ")));
             return intent(AiOperation.PAYMENT_SEARCH, slots);
         }
         if (lower.contains("product")) {
-            slots.put("search", cleanupSearch(text.replaceAll("(?i)show|find|search|product|products", " ")));
+            slots.put("search", cleanupSearch(normalizeDomainTerms(text).replaceAll("(?i)show|find|search|product|products", " ")));
             return intent(AiOperation.PRODUCT_SEARCH, slots);
         }
-        if (lower.contains("customer")) {
-            slots.put("search", cleanupSearch(text.replaceAll("(?i)show|find|search|customer|customers", " ")));
+        if (hasAny(lower, "customer", "customers")) {
+            fillDateRangeSlots(lower, slots);
+            slots.put("search", cleanupSearch(normalizeDomainTerms(text).replaceAll("(?i)show|find|search|customer|customers|this month|current month|is month|iss month|last month|previous month|today|aaj|this week|last week|this year|last year", " ")));
             return intent(AiOperation.CUSTOMER_SEARCH, slots);
         }
         if (hasAny(lower, "inventory", "stock summary")) {
@@ -152,7 +172,7 @@ public class AiIntentParser {
         if (slots == null) {
             return;
         }
-        String lower = message == null ? "" : message.trim().toLowerCase(Locale.ENGLISH);
+        String lower = normalizeDomainTerms(message == null ? "" : message.trim().toLowerCase(Locale.ENGLISH));
         if (isFollowUp(lower)) {
             fillFollowUpContextSlots(history, slots);
         }
@@ -170,7 +190,7 @@ public class AiIntentParser {
             if (item == null || item.getContent() == null) {
                 continue;
             }
-            AiOperation operation = operationFromText(item.getContent().toLowerCase(Locale.ENGLISH));
+            AiOperation operation = operationFromText(normalizeDomainTerms(item.getContent().toLowerCase(Locale.ENGLISH)));
             if (operation != AiOperation.UNKNOWN) {
                 return operation;
             }
@@ -187,7 +207,8 @@ public class AiIntentParser {
                 "aaj", "today", "kal", "yesterday",
                 "this week", "last week", "this month", "is month", "iss month", "last month", "pichle month",
                 "previous month", "this year", "last year")
-                && !hasAny(lower, "customer", "product", "invoice", "payment", "stock", "sale", "sales", "expense", "profit", "collection", "outstanding", "bikri", "kharcha", "baaki");
+                && !hasAny(lower, "customer", "customers", "product", "invoice", "payment", "stock",
+                "sale", "sales", "expense", "profit", "collection", "outstanding", "bikri", "kharcha", "baaki");
     }
 
     private AiOperation operationFromText(String lower) {
@@ -212,6 +233,14 @@ public class AiIntentParser {
         return AiOperation.UNKNOWN;
     }
 
+    private AiOperation correctOperationFromLatestMessage(String message, AiOperation operation) {
+        String lower = normalizeDomainTerms(message == null ? "" : message.toLowerCase(Locale.ENGLISH));
+        if (hasAny(lower, "customer", "customers") && !hasAny(lower, "outstanding", "due", "baaki", "udhaar")) {
+            return AiOperation.CUSTOMER_SEARCH;
+        }
+        return operation;
+    }
+
     private void fillFollowUpContextSlots(List<AiChatRequest.HistoryMessage> history, Map<String, Object> slots) {
         if (history == null || history.isEmpty()) {
             return;
@@ -222,7 +251,7 @@ public class AiIntentParser {
             if (item == null || item.getContent() == null || item.getContent().isBlank()) {
                 continue;
             }
-            String lower = item.getContent().toLowerCase(Locale.ENGLISH);
+            String lower = normalizeDomainTerms(item.getContent().toLowerCase(Locale.ENGLISH));
             fillDateRangeSlots(lower, contextSlots);
             fillChartSlots(lower, contextSlots);
         }
@@ -426,6 +455,75 @@ public class AiIntentParser {
             }
         }
         return false;
+    }
+
+    private String normalizeDomainTerms(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        Matcher matcher = WORD_PATTERN.matcher(value);
+        StringBuilder normalized = new StringBuilder();
+        while (matcher.find()) {
+            matcher.appendReplacement(normalized, Matcher.quoteReplacement(normalizeDomainToken(matcher.group())));
+        }
+        matcher.appendTail(normalized);
+        return normalized.toString();
+    }
+
+    private String normalizeDomainToken(String token) {
+        String lower = token == null ? "" : token.toLowerCase(Locale.ENGLISH);
+        for (Map.Entry<String, List<String>> entry : DOMAIN_TERM_ALIASES.entrySet()) {
+            if (entry.getValue().contains(lower)) {
+                return entry.getKey();
+            }
+        }
+        for (String canonical : DOMAIN_TERM_ALIASES.keySet()) {
+            if (isCloseDomainToken(lower, canonical)) {
+                return canonical;
+            }
+        }
+        return token;
+    }
+
+    private boolean isCloseDomainToken(String token, String canonical) {
+        if (FUZZY_EXCLUDED_TOKENS.contains(token)
+                || token.length() < 5
+                || canonical.length() < 6
+                || token.charAt(0) != canonical.charAt(0)) {
+            return false;
+        }
+        int lengthGap = Math.abs(token.length() - canonical.length());
+        if (lengthGap > 2) {
+            return false;
+        }
+        int allowedDistance = Math.min(2, Math.max(1, canonical.length() / 4));
+        return editDistanceAtMost(token, canonical, allowedDistance);
+    }
+
+    private boolean editDistanceAtMost(String left, String right, int maxDistance) {
+        int[] previous = new int[right.length() + 1];
+        int[] current = new int[right.length() + 1];
+        for (int index = 0; index <= right.length(); index++) {
+            previous[index] = index;
+        }
+        for (int leftIndex = 1; leftIndex <= left.length(); leftIndex++) {
+            current[0] = leftIndex;
+            int rowMin = current[0];
+            for (int rightIndex = 1; rightIndex <= right.length(); rightIndex++) {
+                int substitutionCost = left.charAt(leftIndex - 1) == right.charAt(rightIndex - 1) ? 0 : 1;
+                current[rightIndex] = Math.min(
+                        Math.min(current[rightIndex - 1] + 1, previous[rightIndex] + 1),
+                        previous[rightIndex - 1] + substitutionCost);
+                rowMin = Math.min(rowMin, current[rightIndex]);
+            }
+            if (rowMin > maxDistance) {
+                return false;
+            }
+            int[] swap = previous;
+            previous = current;
+            current = swap;
+        }
+        return previous[right.length()] <= maxDistance;
     }
 
     private String cleanupSearch(String value) {
