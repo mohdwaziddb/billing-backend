@@ -857,7 +857,7 @@ public class AiChatService {
 
     private boolean isProductRelated(String normalized) {
         return hasTerm(normalized,
-                "bizfinity", "product", "app", "software", "billing", "invoice", "invoices",
+                "bizio", "product", "app", "software", "billing", "invoice", "invoices",
                 "payment", "payments", "customer", "customers", "stock", "inventory",
                 "products", "sales", "sale", "expense", "expenses", "profit", "collection",
                 "outstanding", "report", "dashboard", "gst", "tax", "purchase", "supplier",
