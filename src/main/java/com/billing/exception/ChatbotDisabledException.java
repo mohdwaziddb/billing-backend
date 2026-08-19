@@ -1,8 +1,6 @@
 package com.billing.exception;
 
-import org.springframework.security.access.AccessDeniedException;
-
-public class ChatbotDisabledException extends AccessDeniedException {
+public class ChatbotDisabledException extends RuntimeException {
     public ChatbotDisabledException(String message) {
         super(message);
     }

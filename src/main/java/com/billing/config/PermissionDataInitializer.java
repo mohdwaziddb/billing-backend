@@ -79,8 +79,7 @@ public class PermissionDataInitializer implements ApplicationRunner {
             new MenuSeed("Invoice Templates", "INVOICE_TEMPLATES", "ReceiptText", "/setup/invoice-templates", 30, "SETUP"),
             new MenuSeed("Payment Hierarchy", "PAYMENT_HIERARCHY", "CreditCard", "/reports/payment-hierarchy", 31, "REPORTS"),
             new MenuSeed("Sales Referrals", "SALES_REFERRALS", "TrendingUp", "/reports/sales-referrals", 32, "REPORTS"),
-            new MenuSeed("GST Summary", "GST_SUMMARY", "ReceiptIndianRupee", "/reports/gst-summary", 33, "REPORTS"),
-            new MenuSeed("AI Assistant", "AI_ASSISTANT", "Bot", "", 34, null)
+            new MenuSeed("GST Summary", "GST_SUMMARY", "ReceiptIndianRupee", "/reports/gst-summary", 33, "REPORTS")
     );
 
     private static final List<ActionSeed> ACTIONS = List.of(

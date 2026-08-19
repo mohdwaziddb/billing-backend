@@ -1,33 +1,18 @@
 package com.billing.ai.dto;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
 
-import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 @Getter
 @Setter
 public class AiChatRequest {
-    @NotBlank
-    @Size(max = 2000)
+
+    @NotBlank(message = "Message is required")
     private String message;
 
-    @Size(max = 32)
-    private String channel;
-
-    @Size(max = 12)
-    private List<HistoryMessage> history = new ArrayList<>();
-
-    @Getter
-    @Setter
-    public static class HistoryMessage {
-        @Size(max = 16)
-        private String role;
-
-        @Size(max = 1000)
-        private String content;
-    }
+    private List<Map<String, String>> history;
 }

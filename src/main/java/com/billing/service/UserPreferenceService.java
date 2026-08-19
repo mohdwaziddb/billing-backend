@@ -10,10 +10,13 @@ import com.billing.exception.BadRequestException;
 import com.billing.exception.ResourceNotFoundException;
 import com.billing.repository.UserPreferenceRepository;
 import com.billing.repository.UserRepository;
+import com.billing.security.PlatformAdminPrincipal;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -52,10 +55,13 @@ public class UserPreferenceService {
 
     @Transactional(readOnly = true)
     public ColumnPreferenceResponse getColumnPreference(String email, String tableName) {
+        String normalizedTableName = normalizeTableName(tableName);
+        if (isPlatformAdminPrincipal()) {
+            return emptyColumnPreferenceResponse(normalizedTableName);
+        }
         User user = requireUser(email);
         UserPreference preference = userPreferenceRepository.findByUser(user)
                 .orElseGet(() -> UserPreference.builder().user(user).darkModeEnabled(false).build());
-        String normalizedTableName = normalizeTableName(tableName);
         Map<String, List<String>> preferences = readColumnPreferences(preference);
         return toColumnPreferenceResponse(preference, user, normalizedTableName,
                 preferences.getOrDefault(normalizedTableName, List.of()));
@@ -63,10 +69,13 @@ public class UserPreferenceService {
 
     @Transactional
     public ColumnPreferenceResponse updateColumnPreference(String email, String tableName, ColumnPreferenceRequest request) {
+        String normalizedTableName = normalizeTableName(tableName);
+        if (isPlatformAdminPrincipal()) {
+            return emptyColumnPreferenceResponse(normalizedTableName);
+        }
         User user = requireUser(email);
         UserPreference preference = userPreferenceRepository.findByUser(user)
                 .orElseGet(() -> UserPreference.builder().user(user).darkModeEnabled(false).build());
-        String normalizedTableName = normalizeTableName(tableName);
         List<String> normalizedColumns = normalizeVisibleColumns(request == null ? null : request.getVisibleColumns());
 
         Map<String, List<String>> preferences = new LinkedHashMap<>(readColumnPreferences(preference));
@@ -75,6 +84,18 @@ public class UserPreferenceService {
 
         UserPreference saved = userPreferenceRepository.save(preference);
         return toColumnPreferenceResponse(saved, user, normalizedTableName, normalizedColumns);
+    }
+
+    private boolean isPlatformAdminPrincipal() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        return authentication != null && authentication.getPrincipal() instanceof PlatformAdminPrincipal;
+    }
+
+    private ColumnPreferenceResponse emptyColumnPreferenceResponse(String tableName) {
+        return ColumnPreferenceResponse.builder()
+                .tableName(tableName)
+                .visibleColumns(List.of())
+                .build();
     }
 
     private User requireUser(String email) {

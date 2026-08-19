@@ -131,7 +131,7 @@ public class Company extends BaseEntity {
 
     @Builder.Default
     @Column(name = "is_chatbot_enabled", nullable = false)
-    private boolean chatbotEnabled = false;
+    private boolean chatbotEnabled = true;
 
     @Builder.Default
     @Enumerated(EnumType.STRING)

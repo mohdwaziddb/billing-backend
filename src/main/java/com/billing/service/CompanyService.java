@@ -244,9 +244,9 @@ public class CompanyService {
                 .signatureUrl(company.getSignatureUrl())
                 .invoiceNotes(company.getInvoiceNotes())
                 .invoiceTerms(company.getInvoiceTerms())
-                .chatbotEnabled(company.isChatbotEnabled())
                 .inventoryConsumptionMethod(company.getInventoryConsumptionMethod().name())
                 .inventoryPricingPolicy(company.getInventoryPricingPolicy().name())
+                .chatbotEnabled(company.isChatbotEnabled())
                 .build();
     }
 
