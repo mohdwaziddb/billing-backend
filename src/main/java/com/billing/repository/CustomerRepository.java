@@ -5,6 +5,7 @@ import com.billing.entity.Customer;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -70,4 +71,8 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
     boolean existsByCompanyAndMobileIgnoreCase(Company company, String mobile);
     boolean existsByCompanyAndEmailIgnoreCaseAndIdNot(Company company, String email, Long id);
     boolean existsByCompanyAndEmailIgnoreCase(Company company, String email);
+
+    @Modifying
+    @Query("update Customer c set c.currentBalance = c.currentBalance + :delta where c.id = :id and c.currentBalance + :delta >= 0")
+    int adjustBalance(@Param("id") Long id, @Param("delta") BigDecimal delta);
 }

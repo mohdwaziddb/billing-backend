@@ -22,6 +22,11 @@ import com.billing.repository.PaymentRepository;
 import com.billing.repository.ProductRepository;
 import com.billing.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -40,6 +45,9 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class InvoiceService {
 
+    private static final Logger log = LoggerFactory.getLogger(InvoiceService.class);
+    private static final int CREATE_MAX_ATTEMPTS = 3;
+
     private final InvoiceRepository invoiceRepository;
     private final ProductRepository productRepository;
     private final PaymentRepository paymentRepository;
@@ -53,8 +61,31 @@ public class InvoiceService {
     private final UserRepository userRepository;
     private final InventoryService inventoryService;
 
-    @Transactional
+    @Autowired
+    @Lazy
+    private InvoiceService self;
+
     public InvoiceResponse create(String email, InvoiceRequest request) {
+        BigDecimal originalPaidAmount = request.getPaidAmount();
+        DataIntegrityViolationException lastConflict = null;
+        for (int attempt = 1; attempt <= CREATE_MAX_ATTEMPTS; attempt++) {
+            try {
+                return self.createInvoice(email, request);
+            } catch (DataIntegrityViolationException ex) {
+                if (!isDuplicateInvoiceNumber(ex)) {
+                    throw ex;
+                }
+                lastConflict = ex;
+                log.warn("Duplicate invoice number on concurrent create (attempt {}/{}), retrying with a fresh number",
+                        attempt, CREATE_MAX_ATTEMPTS);
+                request.setPaidAmount(originalPaidAmount);
+            }
+        }
+        throw lastConflict;
+    }
+
+    @Transactional
+    public InvoiceResponse createInvoice(String email, InvoiceRequest request) {
         Company company = accessControlService.getCurrentCompany(email);
         Customer customer = customerService.getCustomerOrThrow(company, request.getCustomerId());
         if (!customer.isActive()) {
@@ -505,6 +536,18 @@ public class InvoiceService {
         String mobileSuffix = buildMobileSuffix(customer.getMobile());
         String dateSegment = invoiceDate.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE);
         return String.format("INV-%s-%s-%s-%03d", customerRef, mobileSuffix, dateSegment, nextSequence);
+    }
+
+    private boolean isDuplicateInvoiceNumber(DataIntegrityViolationException ex) {
+        Throwable cause = ex;
+        while (cause != null) {
+            String message = String.valueOf(cause.getMessage()).toLowerCase();
+            if (message.contains("duplicate") && message.contains("invoice")) {
+                return true;
+            }
+            cause = cause.getCause();
+        }
+        return false;
     }
 
     private InvoiceResponse toResponse(Invoice invoice) {
