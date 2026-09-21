@@ -23,6 +23,11 @@ import com.billing.repository.ProductRepository;
 import com.billing.repository.UserRepository;
 import com.billing.util.DataTypeUtility;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -41,6 +46,9 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class InvoiceService {
 
+    private static final Logger log = LoggerFactory.getLogger(InvoiceService.class);
+    private static final int CREATE_MAX_ATTEMPTS = 3;
+
     private final InvoiceRepository invoiceRepository;
     private final ProductRepository productRepository;
     private final PaymentRepository paymentRepository;
@@ -53,6 +61,10 @@ public class InvoiceService {
     private final PaymentModeMasterService paymentModeMasterService;
     private final UserRepository userRepository;
     private final InventoryService inventoryService;
+
+    @Autowired
+    @Lazy
+    private InvoiceService self;
 
     @Transactional
     public InvoiceResponse create(Map<String, Object> param, String email) {

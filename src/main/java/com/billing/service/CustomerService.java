@@ -19,6 +19,7 @@ import com.billing.exception.ResourceNotFoundException;
 import com.billing.repository.CustomerRepository;
 import com.billing.repository.InvoiceRepository;
 import com.billing.repository.PaymentRepository;
+import jakarta.persistence.EntityManager;
 import com.billing.util.DataTypeUtility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -47,6 +48,7 @@ public class CustomerService {
     private final AuditNameResolver auditNameResolver;
     private final AuditLogService auditLogService;
     private final StateMasterService stateMasterService;
+    private final EntityManager entityManager;
 
     @Transactional
     public CustomerResponse create(Map<String, Object> param, String email) {
@@ -404,21 +406,30 @@ public class CustomerService {
     }
 
     public void increaseBalance(Customer customer, BigDecimal amount) {
-        BigDecimal updated = customer.getCurrentBalance().add(amount);
-        if (updated.compareTo(BigDecimal.ZERO) < 0) {
-            throw new BadRequestException("Customer balance cannot become negative");
-        }
-        customer.setCurrentBalance(scale(updated));
-        customerRepository.save(customer);
+        adjustBalance(customer, amount, "Customer balance cannot become negative");
     }
 
     public void decreaseBalance(Customer customer, BigDecimal amount) {
-        BigDecimal updated = customer.getCurrentBalance().subtract(amount);
-        if (updated.compareTo(BigDecimal.ZERO) < 0) {
-            throw new BadRequestException("Payment exceeds customer outstanding balance");
+        adjustBalance(customer, amount.negate(), "Payment exceeds customer outstanding balance");
+    }
+
+    private void adjustBalance(Customer customer, BigDecimal delta, String negativeBalanceMessage) {
+        int updated = customerRepository.adjustBalance(customer.getId(), scale(delta));
+        if (updated == 0) {
+            throw new BadRequestException(negativeBalanceMessage);
         }
-        customer.setCurrentBalance(scale(updated));
-        customerRepository.save(customer);
+        syncBalanceState(customer);
+    }
+
+    private void syncBalanceState(Customer customer) {
+        if (entityManager.contains(customer)) {
+            entityManager.refresh(customer);
+            return;
+        }
+        BigDecimal freshBalance = customerRepository.findById(customer.getId())
+                .map(c -> scale(c.getCurrentBalance()))
+                .orElseThrow(() -> new ResourceNotFoundException("Customer not found"));
+        customer.setCurrentBalance(freshBalance);
     }
 
     private List<CustomerResponse> toResponses(Company company, List<Customer> customers) {

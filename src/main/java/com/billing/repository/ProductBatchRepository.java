@@ -5,7 +5,9 @@ import com.billing.entity.Product;
 import com.billing.entity.ProductBatch;
 import com.billing.entity.Purchase;
 import com.billing.entity.enums.ProductBatchStatus;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -22,6 +24,19 @@ public interface ProductBatchRepository extends JpaRepository<ProductBatch, Long
             order by b.batchDate asc, b.id asc
             """)
     List<ProductBatch> findByCompanyAndProductOrderByBatchDateAscIdAsc(@Param("company") Company company, @Param("product") Product product);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select b from ProductBatch b
+            where b.company = :company
+              and b.product = :product
+            order by b.batchDate asc, b.id asc
+            """)
+    List<ProductBatch> lockByCompanyAndProductOrderByBatchDateAscIdAsc(@Param("company") Company company, @Param("product") Product product);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select b from ProductBatch b where b.id = :id")
+    Optional<ProductBatch> lockById(@Param("id") Long id);
 
     @Query("""
             select b from ProductBatch b

@@ -177,7 +177,7 @@ public class InventoryService {
         Map<Long, Integer> batchBalances = new HashMap<>();
 
         for (InvoiceItem item : invoice.getItems()) {
-            List<ProductBatch> fifoBatches = productBatchRepository.findByCompanyAndProductOrderByBatchDateAscIdAsc(invoice.getCompany(), item.getProduct()).stream()
+            List<ProductBatch> fifoBatches = productBatchRepository.lockByCompanyAndProductOrderByBatchDateAscIdAsc(invoice.getCompany(), item.getProduct()).stream()
                     .filter(batch -> batch.getRemainingQty() > 0)
                     .toList();
             int pendingQty = item.getQty();
@@ -243,8 +243,17 @@ public class InventoryService {
     @Transactional
     public void releaseInvoiceAllocations(Invoice invoice, String remarks) {
         List<InvoiceItemAllocation> allocations = invoiceItemAllocationRepository.findByCompanyAndInvoiceAndActiveTrueOrderByIdAsc(invoice.getCompany(), invoice);
+        List<Long> orderedBatchIds = allocations.stream()
+                .map(allocation -> allocation.getProductBatch().getId())
+                .distinct()
+                .sorted()
+                .toList();
+        Map<Long, ProductBatch> lockedBatches = new HashMap<>();
+        for (Long batchId : orderedBatchIds) {
+            productBatchRepository.lockById(batchId).ifPresent(batch -> lockedBatches.put(batchId, batch));
+        }
         for (InvoiceItemAllocation allocation : allocations) {
-            ProductBatch batch = allocation.getProductBatch();
+            ProductBatch batch = lockedBatches.getOrDefault(allocation.getProductBatch().getId(), allocation.getProductBatch());
             int nextBalance = batch.getRemainingQty() + allocation.getAllocatedQty();
             batch.setRemainingQty(nextBalance);
             batch.setBatchStatus(ProductBatchStatus.ACTIVE);
