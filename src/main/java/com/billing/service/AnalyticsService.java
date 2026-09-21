@@ -25,6 +25,7 @@ import com.billing.repository.InvoiceRepository;
 import com.billing.repository.PaymentRepository;
 import com.billing.repository.ProductCategoryRepository;
 import com.billing.repository.ProductRepository;
+import com.billing.util.DataTypeUtility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -117,6 +118,142 @@ public class AnalyticsService {
                 .salesTrendPercentage(calculateTrendPercentage(thisMonthSales, lastMonthSales))
                 .trendStatus(resolveTrendStatus(thisMonthSales, lastMonthSales))
                 .build();
+    }
+
+    @Transactional(readOnly = true)
+    public AnalyticsSummaryResponse summary(Map<String, Object> param, String email) {
+        LocalDate startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "yyyy-MM-dd");
+        if (startDate == null) {
+            startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "dd-MM-yyyy");
+        }
+        LocalDate endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "yyyy-MM-dd");
+        if (endDate == null) {
+            endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "dd-MM-yyyy");
+        }
+        return summary(email, startDate, endDate);
+    }
+
+    @Transactional(readOnly = true)
+    public List<SalesChartPointResponse> dayWiseSales(Map<String, Object> param, String email) {
+        int parsedYear = DataTypeUtility.integerValue(param.get("year"));
+        int parsedMonth = DataTypeUtility.integerValue(param.get("month"));
+        int targetYear = parsedYear;
+        if (targetYear == 0) {
+            targetYear = LocalDate.now().getYear();
+        }
+        int targetMonth = parsedMonth;
+        if (targetMonth == 0) {
+            targetMonth = LocalDate.now().getMonthValue();
+        }
+        return dayWiseSales(email, targetYear, targetMonth);
+    }
+
+    @Transactional(readOnly = true)
+    public List<SalesChartPointResponse> monthWiseSales(Map<String, Object> param, String email) {
+        int parsedYear = DataTypeUtility.integerValue(param.get("year"));
+        int targetYear = parsedYear;
+        if (targetYear == 0) {
+            targetYear = LocalDate.now().getYear();
+        }
+        return monthWiseSales(email, targetYear);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<TopSellingProductResponse> topSellingProducts(Map<String, Object> param, String email) {
+        LocalDate startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "yyyy-MM-dd");
+        if (startDate == null) {
+            startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "dd-MM-yyyy");
+        }
+        LocalDate endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "yyyy-MM-dd");
+        if (endDate == null) {
+            endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "dd-MM-yyyy");
+        }
+        String search = DataTypeUtility.stringValue(param.get("search"));
+        if (search.length() == 0) {
+            search = null;
+        }
+        int page = DataTypeUtility.integerValue(param.get("page"));
+        int size = DataTypeUtility.integerValue(param.get("size"));
+        if (size == 0) {
+            size = 20;
+        }
+        return topSellingProducts(email, startDate, endDate, search, page, size);
+    }
+
+    @Transactional(readOnly = true)
+    public List<SalesByCategoryResponse> salesByCategory(Map<String, Object> param, String email) {
+        LocalDate startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "yyyy-MM-dd");
+        if (startDate == null) {
+            startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "dd-MM-yyyy");
+        }
+        LocalDate endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "yyyy-MM-dd");
+        if (endDate == null) {
+            endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "dd-MM-yyyy");
+        }
+        int limit = DataTypeUtility.integerValue(param.get("limit"));
+        if (limit == 0) {
+            limit = 7;
+        }
+        return salesByCategory(email, startDate, endDate, limit);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<SalesByCategoryResponse> salesByCategoryPage(Map<String, Object> param, String email) {
+        LocalDate startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "yyyy-MM-dd");
+        if (startDate == null) {
+            startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "dd-MM-yyyy");
+        }
+        LocalDate endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "yyyy-MM-dd");
+        if (endDate == null) {
+            endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "dd-MM-yyyy");
+        }
+        String search = DataTypeUtility.stringValue(param.get("search"));
+        if (search.length() == 0) {
+            search = null;
+        }
+        int page = DataTypeUtility.integerValue(param.get("page"));
+        int size = DataTypeUtility.integerValue(param.get("size"));
+        if (size == 0) {
+            size = 20;
+        }
+        return salesByCategoryPage(email, startDate, endDate, search, page, size);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<LowStockProductResponse> lowStockProducts(Map<String, Object> param, String email) {
+        int page = DataTypeUtility.integerValue(param.get("page"));
+        int size = DataTypeUtility.integerValue(param.get("size"));
+        if (size == 0) {
+            size = 20;
+        }
+        return lowStockProducts(email, page, size);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<CustomerDueResponse> customerDueList(Map<String, Object> param, String email) {
+        String search = DataTypeUtility.stringValue(param.get("search"));
+        if (search.length() == 0) {
+            search = null;
+        }
+        int page = DataTypeUtility.integerValue(param.get("page"));
+        int size = DataTypeUtility.integerValue(param.get("size"));
+        if (size == 0) {
+            size = 20;
+        }
+        return customerDueList(email, search, page, size);
+    }
+
+    @Transactional(readOnly = true)
+    public OwnerAnalyticsResponse ownerOverview(Map<String, Object> param, String email) {
+        LocalDate startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "yyyy-MM-dd");
+        if (startDate == null) {
+            startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "dd-MM-yyyy");
+        }
+        LocalDate endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "yyyy-MM-dd");
+        if (endDate == null) {
+            endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "dd-MM-yyyy");
+        }
+        return ownerOverview(email, startDate, endDate);
     }
 
     @Transactional(readOnly = true)

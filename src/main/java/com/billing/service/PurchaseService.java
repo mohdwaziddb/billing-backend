@@ -18,6 +18,7 @@ import com.billing.repository.InvoiceItemAllocationRepository;
 import com.billing.repository.PurchaseItemRepository;
 import com.billing.repository.PurchaseRepository;
 import com.billing.repository.ProductBatchRepository;
+import com.billing.util.DataTypeUtility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -106,11 +107,71 @@ public class PurchaseService {
         return toResponse(saved, batchesByPurchaseItemId);
     }
 
+    @Transactional
+    public PurchaseResponse create(Map<String, Object> param, String email) {
+        PurchaseRequest purchaseRequest = mapToPurchaseRequest(param);
+        return create(email, purchaseRequest);
+    }
+
     @Transactional(readOnly = true)
     public PageResponse<PurchaseResponse> page(String email, Boolean active, String search, LocalDate startDate, LocalDate endDate, int page, int size) {
         Company company = accessControlService.getCurrentCompany(email);
         return PageResponse.from(purchaseRepository.search(company, active, normalizeSearch(search), startDate, endDate, org.springframework.data.domain.PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 100))))
                 .map(purchase -> toResponse(purchase, Map.of())));
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<PurchaseResponse> page(Map<String, Object> param, String email) {
+        String searchFilter = DataTypeUtility.stringValue(param.get("search"));
+        if (searchFilter.length() == 0) {
+            searchFilter = null;
+        }
+        Boolean activeStatus = null;
+        Object activeObject = param.get("active");
+        if (activeObject != null) {
+            if (activeObject instanceof Boolean) {
+                activeStatus = (Boolean) activeObject;
+            } else {
+                String activeString = DataTypeUtility.stringValue(activeObject);
+                if (activeString.length() > 0) {
+                    activeStatus = DataTypeUtility.booleanValue(activeString);
+                }
+            }
+        }
+        String startDateString = DataTypeUtility.stringValue(param.get("startDate"));
+        if (startDateString.length() == 0) {
+            startDateString = DataTypeUtility.stringValue(param.get("start_date"));
+        }
+        LocalDate startDateValue = null;
+        if (startDateString.length() > 0) {
+            startDateValue = DataTypeUtility.parseLocalDate(startDateString, "yyyy-MM-dd");
+            if (startDateValue == null) {
+                startDateValue = DataTypeUtility.parseLocalDate(startDateString, "dd-MM-yyyy");
+            }
+            if (startDateValue == null) {
+                startDateValue = DataTypeUtility.parseLocalDate(startDateString, "yyyy/MM/dd");
+            }
+        }
+        String endDateString = DataTypeUtility.stringValue(param.get("endDate"));
+        if (endDateString.length() == 0) {
+            endDateString = DataTypeUtility.stringValue(param.get("end_date"));
+        }
+        LocalDate endDateValue = null;
+        if (endDateString.length() > 0) {
+            endDateValue = DataTypeUtility.parseLocalDate(endDateString, "yyyy-MM-dd");
+            if (endDateValue == null) {
+                endDateValue = DataTypeUtility.parseLocalDate(endDateString, "dd-MM-yyyy");
+            }
+            if (endDateValue == null) {
+                endDateValue = DataTypeUtility.parseLocalDate(endDateString, "yyyy/MM/dd");
+            }
+        }
+        int pageNumber = DataTypeUtility.integerValue(param.get("page"));
+        int pageSize = DataTypeUtility.integerValue(param.get("size"));
+        if (pageSize == 0) {
+            pageSize = 20;
+        }
+        return page(email, activeStatus, searchFilter, startDateValue, endDateValue, pageNumber, pageSize);
     }
 
     @Transactional(readOnly = true)
@@ -140,6 +201,74 @@ public class PurchaseService {
         purchase.setActive(false);
         purchaseRepository.save(purchase);
         auditLogService.logDelete(email, company, "Purchase", "Purchase", purchaseId, oldData);
+    }
+
+    private PurchaseRequest mapToPurchaseRequest(Map<String, Object> param) {
+        PurchaseRequest purchaseRequest = new PurchaseRequest();
+        String purchaseDateString = DataTypeUtility.stringValue(param.get("purchaseDate"));
+        if (purchaseDateString.length() == 0) {
+            purchaseDateString = DataTypeUtility.stringValue(param.get("purchase_date"));
+        }
+        LocalDate purchaseDateValue = null;
+        if (purchaseDateString.length() > 0) {
+            purchaseDateValue = DataTypeUtility.parseLocalDate(purchaseDateString, "yyyy-MM-dd");
+            if (purchaseDateValue == null) {
+                purchaseDateValue = DataTypeUtility.parseLocalDate(purchaseDateString, "dd-MM-yyyy");
+            }
+            if (purchaseDateValue == null) {
+                purchaseDateValue = DataTypeUtility.parseLocalDate(purchaseDateString, "yyyy/MM/dd");
+            }
+        }
+        purchaseRequest.setPurchaseDate(purchaseDateValue);
+        String supplierNameValue = DataTypeUtility.stringValue(param.get("supplierName"));
+        if (supplierNameValue.length() == 0) {
+            supplierNameValue = DataTypeUtility.stringValue(param.get("supplier_name"));
+        }
+        if (supplierNameValue.length() == 0) {
+            supplierNameValue = null;
+        }
+        purchaseRequest.setSupplierName(supplierNameValue);
+        String remarksValue = DataTypeUtility.stringValue(param.get("remarks"));
+        if (remarksValue.length() == 0) {
+            remarksValue = null;
+        }
+        purchaseRequest.setRemarks(remarksValue);
+        List<PurchaseItemRequest> purchaseItemList = new ArrayList<>();
+        Object itemsObject = param.get("items");
+        if (itemsObject instanceof List) {
+            for (Object itemObject : (List<?>) itemsObject) {
+                if (itemObject instanceof Map) {
+                    Map<String, Object> itemMap = (Map<String, Object>) itemObject;
+                    PurchaseItemRequest purchaseItemRequest = new PurchaseItemRequest();
+                    Long productIdValue = DataTypeUtility.getForeignKeyValue(itemMap.get("productId"));
+                    if (productIdValue == null) {
+                        productIdValue = DataTypeUtility.getForeignKeyValue(itemMap.get("product_id"));
+                    }
+                    purchaseItemRequest.setProductId(productIdValue);
+                    Integer qtyValue = DataTypeUtility.integerNullValue(itemMap.get("qty"));
+                    if (qtyValue == null) {
+                        qtyValue = DataTypeUtility.integerNullValue(itemMap.get("quantity"));
+                    }
+                    if (qtyValue == null) {
+                        qtyValue = DataTypeUtility.integerNullValue(itemMap.get("qtyValue"));
+                    }
+                    purchaseItemRequest.setQty(qtyValue);
+                    BigDecimal purchaseRateValue = DataTypeUtility.bigDecimalObjectValue(itemMap.get("purchaseRate"));
+                    if (purchaseRateValue == null) {
+                        purchaseRateValue = DataTypeUtility.bigDecimalObjectValue(itemMap.get("purchase_rate"));
+                    }
+                    purchaseItemRequest.setPurchaseRate(purchaseRateValue);
+                    BigDecimal sellingRateValue = DataTypeUtility.bigDecimalObjectValue(itemMap.get("sellingRate"));
+                    if (sellingRateValue == null) {
+                        sellingRateValue = DataTypeUtility.bigDecimalObjectValue(itemMap.get("selling_rate"));
+                    }
+                    purchaseItemRequest.setSellingRate(sellingRateValue);
+                    purchaseItemList.add(purchaseItemRequest);
+                }
+            }
+        }
+        purchaseRequest.setItems(purchaseItemList);
+        return purchaseRequest;
     }
 
     private PurchaseResponse toResponse(Purchase purchase, Map<Long, ProductBatch> createdBatches) {

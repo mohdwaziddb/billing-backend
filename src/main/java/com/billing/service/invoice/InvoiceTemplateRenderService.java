@@ -9,6 +9,7 @@ import com.billing.entity.Invoice;
 import com.billing.entity.InvoiceItem;
 import com.billing.service.AccessControlService;
 import com.billing.service.InvoiceService;
+import com.billing.util.DataTypeUtility;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import com.google.zxing.BarcodeFormat;
 import com.google.zxing.MultiFormatWriter;
@@ -86,6 +87,18 @@ public class InvoiceTemplateRenderService {
     }
 
     @Transactional(readOnly = true)
+    public InvoiceRenderResponse renderInvoice(Map<String, Object> param, String email, Long invoiceId) {
+        String requestedTemplateId = DataTypeUtility.stringValue(param.get("templateId"));
+        if (requestedTemplateId.length() == 0) {
+            requestedTemplateId = DataTypeUtility.stringValue(param.get("templateIdForRender"));
+        }
+        if (requestedTemplateId.length() == 0) {
+            requestedTemplateId = null;
+        }
+        return renderInvoice(email, invoiceId, requestedTemplateId);
+    }
+
+    @Transactional(readOnly = true)
     public InvoiceRenderResponse renderInvoice(String email, Long invoiceId, String requestedTemplateId) {
         Company company = accessControlService.getCurrentCompany(email);
         Invoice invoice = invoiceService.getInvoiceOrThrow(company, invoiceId);
@@ -100,6 +113,21 @@ public class InvoiceTemplateRenderService {
                 .templateName(definition.getTemplateName())
                 .html(html)
                 .build();
+    }
+
+    @Transactional(readOnly = true)
+    public InvoiceRenderResponse previewTemplate(Map<String, Object> param, String email, String templateId) {
+        Long invoiceId = DataTypeUtility.getForeignKeyValue(param.get("invoiceId"));
+        if (invoiceId == null) {
+            invoiceId = DataTypeUtility.getForeignKeyValue(param.get("invoice_id"));
+        }
+        return previewTemplate(email, templateId, invoiceId);
+    }
+
+    @Transactional(readOnly = true)
+    public InvoiceRenderResponse previewWithOverrides(Map<String, Object> param, String email, String templateId) {
+        InvoiceTemplatePreviewRequest invoiceTemplatePreviewRequest = mapToPreviewRequest(param);
+        return previewTemplate(email, templateId, invoiceTemplatePreviewRequest);
     }
 
     @Transactional(readOnly = true)
@@ -137,6 +165,15 @@ public class InvoiceTemplateRenderService {
                 .templateName(definition.getTemplateName())
                 .html(html)
                 .build();
+    }
+
+    @Transactional(readOnly = true)
+    public byte[] pdf(Map<String, Object> param, String email, Long invoiceId) {
+        String requestedTemplateId = DataTypeUtility.stringValue(param.get("templateId"));
+        if (requestedTemplateId.length() == 0) {
+            requestedTemplateId = null;
+        }
+        return pdf(email, invoiceId, requestedTemplateId);
     }
 
     @Transactional(readOnly = true)
@@ -509,6 +546,88 @@ public class InvoiceTemplateRenderService {
         } catch (Exception ex) {
             return null;
         }
+    }
+
+    private InvoiceTemplatePreviewRequest mapToPreviewRequest(Map<String, Object> param) {
+        InvoiceTemplatePreviewRequest invoiceTemplatePreviewRequest = new InvoiceTemplatePreviewRequest();
+        Long invoiceId = DataTypeUtility.getForeignKeyValue(param.get("invoiceId"));
+        if (invoiceId == null) {
+            invoiceId = DataTypeUtility.getForeignKeyValue(param.get("invoice_id"));
+        }
+        invoiceTemplatePreviewRequest.setInvoiceId(invoiceId);
+        Object showWatermarkObj = param.get("showWatermark");
+        if (showWatermarkObj != null) {
+            String showWatermarkStr = DataTypeUtility.stringValue(showWatermarkObj);
+            if (showWatermarkStr.length() > 0) {
+                invoiceTemplatePreviewRequest.setShowWatermark(DataTypeUtility.booleanValue(showWatermarkObj));
+            }
+        }
+        String watermarkText = DataTypeUtility.stringValue(param.get("watermarkText"));
+        if (watermarkText.length() == 0) {
+            watermarkText = null;
+        }
+        invoiceTemplatePreviewRequest.setWatermarkText(watermarkText);
+        Object showSignatureObj = param.get("showSignature");
+        if (showSignatureObj != null) {
+            String showSignatureStr = DataTypeUtility.stringValue(showSignatureObj);
+            if (showSignatureStr.length() > 0) {
+                invoiceTemplatePreviewRequest.setShowSignature(DataTypeUtility.booleanValue(showSignatureObj));
+            }
+        }
+        String signatureLabel = DataTypeUtility.stringValue(param.get("signatureLabel"));
+        if (signatureLabel.length() == 0) {
+            signatureLabel = null;
+        }
+        invoiceTemplatePreviewRequest.setSignatureLabel(signatureLabel);
+        String signatureHeading = DataTypeUtility.stringValue(param.get("signatureHeading"));
+        if (signatureHeading.length() == 0) {
+            signatureHeading = null;
+        }
+        invoiceTemplatePreviewRequest.setSignatureHeading(signatureHeading);
+        Object showQrObj = param.get("showQr");
+        if (showQrObj != null) {
+            String showQrStr = DataTypeUtility.stringValue(showQrObj);
+            if (showQrStr.length() > 0) {
+                invoiceTemplatePreviewRequest.setShowQr(DataTypeUtility.booleanValue(showQrObj));
+            }
+        }
+        Object showBankDetailsObj = param.get("showBankDetails");
+        if (showBankDetailsObj != null) {
+            String showBankDetailsStr = DataTypeUtility.stringValue(showBankDetailsObj);
+            if (showBankDetailsStr.length() > 0) {
+                invoiceTemplatePreviewRequest.setShowBankDetails(DataTypeUtility.booleanValue(showBankDetailsObj));
+            }
+        }
+        Object showTermsObj = param.get("showTerms");
+        if (showTermsObj != null) {
+            String showTermsStr = DataTypeUtility.stringValue(showTermsObj);
+            if (showTermsStr.length() > 0) {
+                invoiceTemplatePreviewRequest.setShowTerms(DataTypeUtility.booleanValue(showTermsObj));
+            }
+        }
+        Object showNotesObj = param.get("showNotes");
+        if (showNotesObj != null) {
+            String showNotesStr = DataTypeUtility.stringValue(showNotesObj);
+            if (showNotesStr.length() > 0) {
+                invoiceTemplatePreviewRequest.setShowNotes(DataTypeUtility.booleanValue(showNotesObj));
+            }
+        }
+        String noteText = DataTypeUtility.stringValue(param.get("noteText"));
+        if (noteText.length() == 0) {
+            noteText = null;
+        }
+        invoiceTemplatePreviewRequest.setNoteText(noteText);
+        String termsText = DataTypeUtility.stringValue(param.get("termsText"));
+        if (termsText.length() == 0) {
+            termsText = null;
+        }
+        invoiceTemplatePreviewRequest.setTermsText(termsText);
+        String footerCredit = DataTypeUtility.stringValue(param.get("footerCredit"));
+        if (footerCredit.length() == 0) {
+            footerCredit = null;
+        }
+        invoiceTemplatePreviewRequest.setFooterCredit(footerCredit);
+        return invoiceTemplatePreviewRequest;
     }
 
     private BigDecimal scale(BigDecimal value) {

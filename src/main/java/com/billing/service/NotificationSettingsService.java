@@ -27,6 +27,7 @@ import com.billing.service.whatsapp.CommonWhatsAppService;
 import com.billing.service.whatsapp.WhatsAppProviderFactory;
 import com.billing.service.whatsapp.WhatsAppSendResult;
 import com.billing.service.whatsapp.config.WhatsAppProviderConfigurationService;
+import com.billing.util.DataTypeUtility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -75,6 +76,20 @@ public class NotificationSettingsService {
 
     private List<ProviderSettingsResponse> emailSettingsForCompany(Company company) {
         return emailProviderSettingRepository.findByCompanyOrderByActiveDescProviderNameAsc(company).stream().map(this::toResponse).toList();
+    }
+
+    @Transactional
+    public ProviderSettingsResponse saveEmailSettings(Map<String, Object> param, String email) {
+        ProviderSettingsRequest providerSettingsRequest = mapToProviderRequest(param);
+        providerSettingsRequest.setId(null);
+        return saveEmailSettings(email, providerSettingsRequest);
+    }
+
+    @Transactional
+    public ProviderSettingsResponse saveEmailSettings(Map<String, Object> param, Long id, String email) {
+        ProviderSettingsRequest providerSettingsRequest = mapToProviderRequest(param);
+        providerSettingsRequest.setId(DataTypeUtility.getForeignKeyValue(id));
+        return saveEmailSettings(email, providerSettingsRequest);
     }
 
     @Transactional
@@ -128,6 +143,12 @@ public class NotificationSettingsService {
             logEvent(actorName, actorScopedAudit, company, "Email Provider", "EmailProviderSetting", saved.getId(), "EMAIL_PROVIDER_DEACTIVATED", snapshot(saved));
         }
         return toResponse(saved);
+    }
+
+    @Transactional(readOnly = true)
+    public ProviderSettingsResponse sendTestEmail(Map<String, Object> param, String email) {
+        EmailProviderTestRequest emailProviderTestRequest = mapToEmailTestRequest(param);
+        return sendTestEmail(email, emailProviderTestRequest);
     }
 
     @Transactional(readOnly = true)
@@ -185,6 +206,20 @@ public class NotificationSettingsService {
     }
 
     @Transactional
+    public ProviderSettingsResponse saveSmsSettings(Map<String, Object> param, String email) {
+        ProviderSettingsRequest providerSettingsRequest = mapToProviderRequest(param);
+        providerSettingsRequest.setId(null);
+        return saveSmsSettings(email, providerSettingsRequest);
+    }
+
+    @Transactional
+    public ProviderSettingsResponse saveSmsSettings(Map<String, Object> param, Long id, String email) {
+        ProviderSettingsRequest providerSettingsRequest = mapToProviderRequest(param);
+        providerSettingsRequest.setId(DataTypeUtility.getForeignKeyValue(id));
+        return saveSmsSettings(email, providerSettingsRequest);
+    }
+
+    @Transactional
     public ProviderSettingsResponse saveSmsSettings(String email, ProviderSettingsRequest request) {
         return saveSmsSettingsForCompany(accessControlService.getCurrentCompany(email), request, email, false);
     }
@@ -234,6 +269,12 @@ public class NotificationSettingsService {
     }
 
     @Transactional
+    public ProviderSettingsResponse sendTestSms(Map<String, Object> param, String email) {
+        SmsProviderTestRequest smsProviderTestRequest = mapToSmsTestRequest(param);
+        return sendTestSms(email, smsProviderTestRequest);
+    }
+
+    @Transactional
     public ProviderSettingsResponse sendTestSms(String email, SmsProviderTestRequest request) {
         return sendTestSmsForCompany(accessControlService.getCurrentCompany(email), request, email, false);
     }
@@ -276,6 +317,20 @@ public class NotificationSettingsService {
 
     private List<ProviderSettingsResponse> whatsAppSettingsForCompany(Company company) {
         return whatsAppProviderSettingRepository.findByCompanyOrderByActiveDescProviderNameAsc(company).stream().map(this::toResponse).toList();
+    }
+
+    @Transactional
+    public ProviderSettingsResponse saveWhatsAppSettings(Map<String, Object> param, String email) {
+        ProviderSettingsRequest providerSettingsRequest = mapToProviderRequest(param);
+        providerSettingsRequest.setId(null);
+        return saveWhatsAppSettings(email, providerSettingsRequest);
+    }
+
+    @Transactional
+    public ProviderSettingsResponse saveWhatsAppSettings(Map<String, Object> param, Long id, String email) {
+        ProviderSettingsRequest providerSettingsRequest = mapToProviderRequest(param);
+        providerSettingsRequest.setId(DataTypeUtility.getForeignKeyValue(id));
+        return saveWhatsAppSettings(email, providerSettingsRequest);
     }
 
     @Transactional
@@ -325,6 +380,12 @@ public class NotificationSettingsService {
             logEvent(actorName, actorScopedAudit, company, "WhatsApp Provider", "WhatsAppProviderSetting", saved.getId(), "WHATSAPP_PROVIDER_DEACTIVATED", snapshot(saved));
         }
         return toResponse(saved);
+    }
+
+    @Transactional
+    public ProviderSettingsResponse sendTestWhatsApp(Map<String, Object> param, String email) {
+        WhatsAppProviderTestRequest whatsAppProviderTestRequest = mapToWhatsAppTestRequest(param);
+        return sendTestWhatsApp(email, whatsAppProviderTestRequest);
     }
 
     @Transactional
@@ -714,6 +775,269 @@ public class NotificationSettingsService {
         probe.setProviderConfig(providerConfig);
         syncLegacyWhatsAppColumns(probe, providerType, whatsAppProviderConfigurationService.decrypted(probe));
         return probe;
+    }
+
+    private ProviderSettingsRequest mapToProviderRequest(Map<String, Object> param) {
+        ProviderSettingsRequest providerSettingsRequest = new ProviderSettingsRequest();
+        Long idValue = DataTypeUtility.getForeignKeyValue(param.get("id"));
+        providerSettingsRequest.setId(idValue);
+        String providerName = DataTypeUtility.stringValue(param.get("providerName"));
+        if (providerName.length() == 0) {
+            providerName = null;
+        }
+        providerSettingsRequest.setProviderName(providerName);
+        String senderEmail = DataTypeUtility.stringValue(param.get("senderEmail"));
+        if (senderEmail.length() == 0) {
+            senderEmail = null;
+        }
+        providerSettingsRequest.setSenderEmail(senderEmail);
+        String smtpHost = DataTypeUtility.stringValue(param.get("smtpHost"));
+        if (smtpHost.length() == 0) {
+            smtpHost = null;
+        }
+        providerSettingsRequest.setSmtpHost(smtpHost);
+        Object smtpPortObj = param.get("smtpPort");
+        if (smtpPortObj != null) {
+            String smtpPortStr = DataTypeUtility.stringValue(smtpPortObj);
+            if (smtpPortStr.length() > 0) {
+                try {
+                    providerSettingsRequest.setSmtpPort(Integer.parseInt(smtpPortStr));
+                } catch (Exception ignore) {
+                }
+            }
+        }
+        String smtpUsername = DataTypeUtility.stringValue(param.get("smtpUsername"));
+        if (smtpUsername.length() == 0) {
+            smtpUsername = null;
+        }
+        providerSettingsRequest.setSmtpUsername(smtpUsername);
+        String smtpPassword = DataTypeUtility.stringValue(param.get("smtpPassword"));
+        if (smtpPassword.length() == 0) {
+            smtpPassword = null;
+        }
+        providerSettingsRequest.setSmtpPassword(smtpPassword);
+        Object smtpTlsObj = param.get("smtpTlsEnabled");
+        if (smtpTlsObj != null) {
+            String smtpTlsStr = DataTypeUtility.stringValue(smtpTlsObj);
+            if (smtpTlsStr.length() > 0) {
+                providerSettingsRequest.setSmtpTlsEnabled(DataTypeUtility.booleanValue(smtpTlsObj));
+            }
+        }
+        String awsAccessKey = DataTypeUtility.stringValue(param.get("awsAccessKey"));
+        if (awsAccessKey.length() == 0) {
+            awsAccessKey = null;
+        }
+        providerSettingsRequest.setAwsAccessKey(awsAccessKey);
+        String awsSecretKey = DataTypeUtility.stringValue(param.get("awsSecretKey"));
+        if (awsSecretKey.length() == 0) {
+            awsSecretKey = null;
+        }
+        providerSettingsRequest.setAwsSecretKey(awsSecretKey);
+        String awsRegion = DataTypeUtility.stringValue(param.get("awsRegion"));
+        if (awsRegion.length() == 0) {
+            awsRegion = null;
+        }
+        providerSettingsRequest.setAwsRegion(awsRegion);
+        String sendgridApiKey = DataTypeUtility.stringValue(param.get("sendgridApiKey"));
+        if (sendgridApiKey.length() == 0) {
+            sendgridApiKey = null;
+        }
+        providerSettingsRequest.setSendgridApiKey(sendgridApiKey);
+        String apiUrl = DataTypeUtility.stringValue(param.get("apiUrl"));
+        if (apiUrl.length() == 0) {
+            apiUrl = null;
+        }
+        providerSettingsRequest.setApiUrl(apiUrl);
+        String providerType = DataTypeUtility.stringValue(param.get("providerType"));
+        if (providerType.length() == 0) {
+            providerType = null;
+        }
+        providerSettingsRequest.setProviderType(providerType);
+        String authKey = DataTypeUtility.stringValue(param.get("authKey"));
+        if (authKey.length() == 0) {
+            authKey = null;
+        }
+        providerSettingsRequest.setAuthKey(authKey);
+        String senderId = DataTypeUtility.stringValue(param.get("senderId"));
+        if (senderId.length() == 0) {
+            senderId = null;
+        }
+        providerSettingsRequest.setSenderId(senderId);
+        String templateId = DataTypeUtility.stringValue(param.get("templateId"));
+        if (templateId.length() == 0) {
+            templateId = null;
+        }
+        providerSettingsRequest.setTemplateId(templateId);
+        String whatsappNumber = DataTypeUtility.stringValue(param.get("whatsappNumber"));
+        if (whatsappNumber.length() == 0) {
+            whatsappNumber = null;
+        }
+        providerSettingsRequest.setWhatsappNumber(whatsappNumber);
+        String senderName = DataTypeUtility.stringValue(param.get("senderName"));
+        if (senderName.length() == 0) {
+            senderName = null;
+        }
+        providerSettingsRequest.setSenderName(senderName);
+        Object configValuesObj = param.get("configValues");
+        if (configValuesObj instanceof Map) {
+            @SuppressWarnings("unchecked")
+            Map<String, String> configMap = (Map<String, String>) configValuesObj;
+            providerSettingsRequest.setConfigValues(configMap);
+        }
+        Object activeObj = param.get("active");
+        if (activeObj != null) {
+            String activeStr = DataTypeUtility.stringValue(activeObj);
+            if (activeStr.length() > 0) {
+                providerSettingsRequest.setActive(DataTypeUtility.booleanValue(activeObj));
+            }
+        }
+        return providerSettingsRequest;
+    }
+
+    private EmailProviderTestRequest mapToEmailTestRequest(Map<String, Object> param) {
+        EmailProviderTestRequest emailProviderTestRequest = new EmailProviderTestRequest();
+        String recipientEmail = DataTypeUtility.stringValue(param.get("recipientEmail"));
+        if (recipientEmail.length() == 0) {
+            recipientEmail = DataTypeUtility.stringValue(param.get("recipient_email"));
+        }
+        if (recipientEmail.length() == 0) {
+            recipientEmail = null;
+        }
+        emailProviderTestRequest.setRecipientEmail(recipientEmail);
+        return emailProviderTestRequest;
+    }
+
+    private SmsProviderTestRequest mapToSmsTestRequest(Map<String, Object> param) {
+        SmsProviderTestRequest smsProviderTestRequest = new SmsProviderTestRequest();
+        String mobileNumber = DataTypeUtility.stringValue(param.get("mobileNumber"));
+        if (mobileNumber.length() == 0) {
+            mobileNumber = DataTypeUtility.stringValue(param.get("mobile_number"));
+        }
+        if (mobileNumber.length() == 0) {
+            mobileNumber = null;
+        }
+        smsProviderTestRequest.setMobileNumber(mobileNumber);
+        String providerName = DataTypeUtility.stringValue(param.get("providerName"));
+        if (providerName.length() == 0) {
+            providerName = null;
+        }
+        smsProviderTestRequest.setProviderName(providerName);
+        String providerType = DataTypeUtility.stringValue(param.get("providerType"));
+        if (providerType.length() == 0) {
+            providerType = null;
+        }
+        smsProviderTestRequest.setProviderType(providerType);
+        String apiUrl = DataTypeUtility.stringValue(param.get("apiUrl"));
+        if (apiUrl.length() == 0) {
+            apiUrl = null;
+        }
+        smsProviderTestRequest.setApiUrl(apiUrl);
+        Object configValuesObj = param.get("configValues");
+        if (configValuesObj instanceof Map) {
+            @SuppressWarnings("unchecked")
+            Map<String, String> configMap = (Map<String, String>) configValuesObj;
+            smsProviderTestRequest.setConfigValues(configMap);
+        }
+        return smsProviderTestRequest;
+    }
+
+    private WhatsAppProviderTestRequest mapToWhatsAppTestRequest(Map<String, Object> param) {
+        WhatsAppProviderTestRequest whatsAppProviderTestRequest = new WhatsAppProviderTestRequest();
+        String mobileNumber = DataTypeUtility.stringValue(param.get("mobileNumber"));
+        if (mobileNumber.length() == 0) {
+            mobileNumber = DataTypeUtility.stringValue(param.get("mobile_number"));
+        }
+        if (mobileNumber.length() == 0) {
+            mobileNumber = null;
+        }
+        whatsAppProviderTestRequest.setMobileNumber(mobileNumber);
+        String message = DataTypeUtility.stringValue(param.get("message"));
+        if (message.length() == 0) {
+            message = null;
+        }
+        whatsAppProviderTestRequest.setMessage(message);
+        String providerName = DataTypeUtility.stringValue(param.get("providerName"));
+        if (providerName.length() == 0) {
+            providerName = null;
+        }
+        whatsAppProviderTestRequest.setProviderName(providerName);
+        String providerType = DataTypeUtility.stringValue(param.get("providerType"));
+        if (providerType.length() == 0) {
+            providerType = null;
+        }
+        whatsAppProviderTestRequest.setProviderType(providerType);
+        String apiUrl = DataTypeUtility.stringValue(param.get("apiUrl"));
+        if (apiUrl.length() == 0) {
+            apiUrl = null;
+        }
+        whatsAppProviderTestRequest.setApiUrl(apiUrl);
+        Object configValuesObj = param.get("configValues");
+        if (configValuesObj instanceof Map) {
+            @SuppressWarnings("unchecked")
+            Map<String, String> configMap = (Map<String, String>) configValuesObj;
+            whatsAppProviderTestRequest.setConfigValues(configMap);
+        }
+        return whatsAppProviderTestRequest;
+    }
+
+    @Transactional
+    public ProviderSettingsResponse saveEmailSettingsForCompany(Map<String, Object> param, Long companyId, String actorName) {
+        ProviderSettingsRequest providerSettingsRequest = mapToProviderRequest(param);
+        providerSettingsRequest.setId(null);
+        return saveEmailSettingsForCompany(companyId, providerSettingsRequest, actorName);
+    }
+
+    @Transactional
+    public ProviderSettingsResponse saveEmailSettingsForCompany(Map<String, Object> param, Long companyId, Long id, String actorName) {
+        ProviderSettingsRequest providerSettingsRequest = mapToProviderRequest(param);
+        providerSettingsRequest.setId(DataTypeUtility.getForeignKeyValue(id));
+        return saveEmailSettingsForCompany(companyId, providerSettingsRequest, actorName);
+    }
+
+    @Transactional(readOnly = true)
+    public ProviderSettingsResponse sendTestEmailForCompany(Map<String, Object> param, Long companyId, String actorName) {
+        EmailProviderTestRequest emailProviderTestRequest = mapToEmailTestRequest(param);
+        return sendTestEmailForCompany(companyId, emailProviderTestRequest, actorName);
+    }
+
+    @Transactional
+    public ProviderSettingsResponse saveSmsSettingsForCompany(Map<String, Object> param, Long companyId, String actorName) {
+        ProviderSettingsRequest providerSettingsRequest = mapToProviderRequest(param);
+        providerSettingsRequest.setId(null);
+        return saveSmsSettingsForCompany(companyId, providerSettingsRequest, actorName);
+    }
+
+    @Transactional
+    public ProviderSettingsResponse saveSmsSettingsForCompany(Map<String, Object> param, Long companyId, Long id, String actorName) {
+        ProviderSettingsRequest providerSettingsRequest = mapToProviderRequest(param);
+        providerSettingsRequest.setId(DataTypeUtility.getForeignKeyValue(id));
+        return saveSmsSettingsForCompany(companyId, providerSettingsRequest, actorName);
+    }
+
+    @Transactional
+    public ProviderSettingsResponse sendTestSmsForCompany(Map<String, Object> param, Long companyId, String actorName) {
+        SmsProviderTestRequest smsProviderTestRequest = mapToSmsTestRequest(param);
+        return sendTestSmsForCompany(companyId, smsProviderTestRequest, actorName);
+    }
+
+    @Transactional
+    public ProviderSettingsResponse saveWhatsAppSettingsForCompany(Map<String, Object> param, Long companyId, String actorName) {
+        ProviderSettingsRequest providerSettingsRequest = mapToProviderRequest(param);
+        providerSettingsRequest.setId(null);
+        return saveWhatsAppSettingsForCompany(companyId, providerSettingsRequest, actorName);
+    }
+
+    @Transactional
+    public ProviderSettingsResponse saveWhatsAppSettingsForCompany(Map<String, Object> param, Long companyId, Long id, String actorName) {
+        ProviderSettingsRequest providerSettingsRequest = mapToProviderRequest(param);
+        providerSettingsRequest.setId(DataTypeUtility.getForeignKeyValue(id));
+        return saveWhatsAppSettingsForCompany(companyId, providerSettingsRequest, actorName);
+    }
+
+    @Transactional
+    public ProviderSettingsResponse sendTestWhatsAppForCompany(Map<String, Object> param, Long companyId, String actorName) {
+        WhatsAppProviderTestRequest whatsAppProviderTestRequest = mapToWhatsAppTestRequest(param);
+        return sendTestWhatsAppForCompany(companyId, whatsAppProviderTestRequest, actorName);
     }
 
     private void logCreate(String actorName, boolean actorScopedAudit, Company company, String moduleName, String entityName, Long entityId, Map<String, Object> newData) {

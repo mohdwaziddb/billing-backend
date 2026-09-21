@@ -29,10 +29,12 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.billing.util.DataTypeUtility;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -70,6 +72,28 @@ public class PlatformAdminService {
     }
 
     @Transactional(readOnly = true)
+    public PageResponse<PlatformAdminCompanyResponse> companies(Map<String, Object> param) {
+        String search = DataTypeUtility.stringValue(param.get("search"));
+        if (search.length() == 0) {
+            search = null;
+        }
+        Boolean active = null;
+        Object activeRaw = param.get("active");
+        if (activeRaw != null) {
+            String activeStr = DataTypeUtility.stringValue(activeRaw);
+            if (activeStr.length() > 0) {
+                active = DataTypeUtility.booleanValue(activeRaw);
+            }
+        }
+        int page = DataTypeUtility.integerValue(param.get("page"));
+        int size = DataTypeUtility.integerValue(param.get("size"));
+        if (size == 0) {
+            size = 20;
+        }
+        return companies(page, size, search, active);
+    }
+
+    @Transactional(readOnly = true)
     public PlatformAdminCompanyOverviewResponse companyOverview(String search, Boolean active) {
         PlatformAdminCompanyOverviewView overview = companyRepository.getPlatformAdminCompanyOverview(normalizeSearch(search), active);
         return PlatformAdminCompanyOverviewResponse.builder()
@@ -78,6 +102,23 @@ public class PlatformAdminService {
                 .adminCount(overview == null || overview.getAdminCount() == null ? 0 : overview.getAdminCount())
                 .userCount(overview == null || overview.getUserCount() == null ? 0 : overview.getUserCount())
                 .build();
+    }
+
+    @Transactional(readOnly = true)
+    public PlatformAdminCompanyOverviewResponse companyOverview(Map<String, Object> param) {
+        String search = DataTypeUtility.stringValue(param.get("search"));
+        if (search.length() == 0) {
+            search = null;
+        }
+        Boolean active = null;
+        Object activeRaw = param.get("active");
+        if (activeRaw != null) {
+            String activeStr = DataTypeUtility.stringValue(activeRaw);
+            if (activeStr.length() > 0) {
+                active = DataTypeUtility.booleanValue(activeRaw);
+            }
+        }
+        return companyOverview(search, active);
     }
 
     @Transactional
@@ -121,6 +162,12 @@ public class PlatformAdminService {
         taxMasterService.createDefaultTaxesForCompany(company);
 
         return toCompanyResponse(company);
+    }
+
+    @Transactional
+    public PlatformAdminCompanyResponse createCompany(Map<String, Object> param) {
+        PlatformAdminCompanyCreateRequest request = mapToCompanyCreateRequest(param);
+        return createCompany(request);
     }
 
     @Transactional
@@ -191,6 +238,12 @@ public class PlatformAdminService {
             setting.setPassword(passwordEncoder.encode(request.getPassword().trim()));
         }
         return toSettingsResponse(platformSettingRepository.save(setting));
+    }
+
+    @Transactional
+    public PlatformAdminSettingsResponse updateSettings(Map<String, Object> param) {
+        PlatformAdminSettingsRequest request = mapToPlatformAdminSettingsRequest(param);
+        return updateSettings(request);
     }
 
     private PlatformSetting requirePlatformSetting() {
@@ -324,5 +377,118 @@ public class PlatformAdminService {
             return null;
         }
         return value.trim();
+    }
+
+    private PlatformAdminCompanyCreateRequest mapToCompanyCreateRequest(Map<String, Object> param) {
+        PlatformAdminCompanyCreateRequest request = new PlatformAdminCompanyCreateRequest();
+        String companyName = DataTypeUtility.stringValue(param.get("companyName"));
+        if (companyName.length() == 0) {
+            companyName = DataTypeUtility.stringValue(param.get("company_name"));
+        }
+        if (companyName.length() == 0) {
+            companyName = DataTypeUtility.stringValue(param.get("name"));
+        }
+        request.setCompanyName(companyName);
+        String address = DataTypeUtility.stringValue(param.get("address"));
+        if (address.length() == 0) {
+            address = null;
+        }
+        request.setAddress(address);
+        String gstNumber = DataTypeUtility.stringValue(param.get("gstNumber"));
+        if (gstNumber.length() == 0) {
+            gstNumber = DataTypeUtility.stringValue(param.get("gst_number"));
+        }
+        if (gstNumber.length() == 0) {
+            gstNumber = DataTypeUtility.stringValue(param.get("taxId"));
+        }
+        if (gstNumber.length() == 0) {
+            gstNumber = null;
+        }
+        request.setGstNumber(gstNumber);
+        String mobile = DataTypeUtility.stringValue(param.get("mobile"));
+        if (mobile.length() == 0) {
+            mobile = DataTypeUtility.stringValue(param.get("phone"));
+        }
+        if (mobile.length() == 0) {
+            mobile = null;
+        }
+        request.setMobile(mobile);
+        String email = DataTypeUtility.stringValue(param.get("email"));
+        if (email.length() == 0) {
+            email = null;
+        }
+        request.setEmail(email);
+        String ownerName = DataTypeUtility.stringValue(param.get("ownerName"));
+        if (ownerName.length() == 0) {
+            ownerName = DataTypeUtility.stringValue(param.get("owner_name"));
+        }
+        if (ownerName.length() == 0) {
+            ownerName = null;
+        }
+        request.setOwnerName(ownerName);
+        String ownerUsername = DataTypeUtility.stringValue(param.get("ownerUsername"));
+        if (ownerUsername.length() == 0) {
+            ownerUsername = DataTypeUtility.stringValue(param.get("owner_username"));
+        }
+        if (ownerUsername.length() == 0) {
+            ownerUsername = null;
+        }
+        request.setOwnerUsername(ownerUsername);
+        String ownerEmail = DataTypeUtility.stringValue(param.get("ownerEmail"));
+        if (ownerEmail.length() == 0) {
+            ownerEmail = DataTypeUtility.stringValue(param.get("owner_email"));
+        }
+        if (ownerEmail.length() == 0) {
+            ownerEmail = null;
+        }
+        request.setOwnerEmail(ownerEmail);
+        String ownerMobile = DataTypeUtility.stringValue(param.get("ownerMobile"));
+        if (ownerMobile.length() == 0) {
+            ownerMobile = DataTypeUtility.stringValue(param.get("owner_mobile"));
+        }
+        if (ownerMobile.length() == 0) {
+            ownerMobile = null;
+        }
+        request.setOwnerMobile(ownerMobile);
+        String ownerPassword = DataTypeUtility.stringValue(param.get("ownerPassword"));
+        if (ownerPassword.length() == 0) {
+            ownerPassword = DataTypeUtility.stringValue(param.get("owner_password"));
+        }
+        if (ownerPassword.length() == 0) {
+            ownerPassword = null;
+        }
+        request.setOwnerPassword(ownerPassword);
+        return request;
+    }
+
+    private PlatformAdminSettingsRequest mapToPlatformAdminSettingsRequest(Map<String, Object> param) {
+        PlatformAdminSettingsRequest request = new PlatformAdminSettingsRequest();
+        String platformName = DataTypeUtility.stringValue(param.get("platformName"));
+        if (platformName.length() == 0) {
+            platformName = DataTypeUtility.stringValue(param.get("platform_name"));
+        }
+        if (platformName.length() > 0) {
+            request.setPlatformName(platformName);
+        }
+        String platformTagline = DataTypeUtility.stringValue(param.get("platformTagline"));
+        if (platformTagline.length() == 0) {
+            platformTagline = DataTypeUtility.stringValue(param.get("platform_tagline"));
+        }
+        if (platformTagline.length() > 0) {
+            request.setPlatformTagline(platformTagline);
+        } else {
+            if (param.containsKey("platformTagline") || param.containsKey("platform_tagline")) {
+                request.setPlatformTagline(null);
+            }
+        }
+        String username = DataTypeUtility.stringValue(param.get("username"));
+        if (username.length() > 0) {
+            request.setUsername(username);
+        }
+        String password = DataTypeUtility.stringValue(param.get("password"));
+        if (password.length() > 0) {
+            request.setPassword(password);
+        }
+        return request;
     }
 }

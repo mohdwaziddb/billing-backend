@@ -8,6 +8,7 @@ import com.billing.entity.Company;
 import com.billing.entity.User;
 import com.billing.repository.AuditLogRepository;
 import com.billing.exception.BadRequestException;
+import com.billing.util.DataTypeUtility;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -121,6 +122,46 @@ public class AuditLogService {
                 auditFilter(company, moduleName, entityId, userId, actionType, startDate, endDate, search),
                 PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 100)), Sort.by(Sort.Direction.DESC, "createdAt").and(Sort.by(Sort.Direction.DESC, "id")))
         ).map(this::toResponse));
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<AuditLogResponse> page(Map<String, Object> param, String email) {
+        String moduleNameValue = DataTypeUtility.stringValue(param.get("moduleName"));
+        if (moduleNameValue.length() == 0) {
+            moduleNameValue = null;
+        }
+        Long entityIdValue = DataTypeUtility.getForeignKeyValue(param.get("entityId"));
+        Long userIdValue = DataTypeUtility.getForeignKeyValue(param.get("userId"));
+        String actionTypeValue = DataTypeUtility.stringValue(param.get("actionType"));
+        if (actionTypeValue.length() == 0) {
+            actionTypeValue = null;
+        }
+        String startDateValue = DataTypeUtility.stringValue(param.get("startDate"));
+        if (startDateValue.length() == 0) {
+            startDateValue = null;
+        }
+        String endDateValue = DataTypeUtility.stringValue(param.get("endDate"));
+        if (endDateValue.length() == 0) {
+            endDateValue = null;
+        }
+        String searchValue = DataTypeUtility.stringValue(param.get("search"));
+        if (searchValue.length() == 0) {
+            searchValue = null;
+        }
+        int pageValue = DataTypeUtility.integerValue(param.get("page"));
+        int sizeValue = DataTypeUtility.integerValue(param.get("size"));
+        if (sizeValue == 0) {
+            sizeValue = 20;
+        }
+        return page(email, moduleNameValue, entityIdValue, userIdValue, actionTypeValue, startDateValue, endDateValue, searchValue, pageValue, sizeValue);
+    }
+
+    @Transactional(readOnly = true)
+    public List<AuditUserOptionResponse> users(Map<String, Object> param, String email) {
+        if (param == null) {
+            param = new java.util.HashMap<>();
+        }
+        return users(email);
     }
 
     @Transactional(readOnly = true)

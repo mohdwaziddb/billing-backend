@@ -11,6 +11,7 @@ import com.billing.exception.ResourceNotFoundException;
 import com.billing.repository.UserPreferenceRepository;
 import com.billing.repository.UserRepository;
 import com.billing.security.PlatformAdminPrincipal;
+import com.billing.util.DataTypeUtility;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -21,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -44,6 +46,22 @@ public class UserPreferenceService {
         return toResponse(preference);
     }
 
+    @Transactional(readOnly = true)
+    public UserPreferenceResponse getPreferences(Map<String, Object> param, String email) {
+        Map<String, Object> sanitizedParam = param;
+        if (sanitizedParam == null) {
+            sanitizedParam = Map.of();
+        }
+        String emailFilter = DataTypeUtility.stringValue(sanitizedParam.get("email"));
+        if (emailFilter.length() > 0) {
+            String normalizedEmail = emailFilter.trim();
+            if (normalizedEmail.length() > 0) {
+                // placeholder handling with braces
+            }
+        }
+        return getPreferences(email);
+    }
+
     @Transactional
     public UserPreferenceResponse updatePreferences(String email, UserPreferenceRequest request) {
         User user = requireUser(email);
@@ -51,6 +69,12 @@ public class UserPreferenceService {
                 .orElseGet(() -> UserPreference.builder().user(user).build());
         preference.setDarkModeEnabled(request.isDarkModeEnabled());
         return toResponse(userPreferenceRepository.save(preference));
+    }
+
+    @Transactional
+    public UserPreferenceResponse updatePreferences(Map<String, Object> param, String email) {
+        UserPreferenceRequest userPreferenceRequest = mapToUserPreferenceRequest(param);
+        return updatePreferences(email, userPreferenceRequest);
     }
 
     @Transactional(readOnly = true)
@@ -65,6 +89,58 @@ public class UserPreferenceService {
         Map<String, List<String>> preferences = readColumnPreferences(preference);
         return toColumnPreferenceResponse(preference, user, normalizedTableName,
                 preferences.getOrDefault(normalizedTableName, List.of()));
+    }
+
+    @Transactional(readOnly = true)
+    public ColumnPreferenceResponse getColumnPreference(Map<String, Object> param, String email, String tableName) {
+        String tableNameValue = DataTypeUtility.stringValue(tableName);
+        if (tableNameValue.length() == 0) {
+            tableNameValue = DataTypeUtility.stringValue(param.get("tableName"));
+        }
+        if (tableNameValue.length() == 0) {
+            tableNameValue = DataTypeUtility.stringValue(param.get("table_name"));
+        }
+        if (tableNameValue.length() == 0) {
+            tableNameValue = tableName;
+        }
+        return getColumnPreference(email, tableNameValue);
+    }
+
+    @Transactional
+    public ColumnPreferenceResponse updateColumnPreference(Map<String, Object> param, String email, String tableName) {
+        String tableNameValue = DataTypeUtility.stringValue(tableName);
+        if (tableNameValue.length() == 0) {
+            tableNameValue = DataTypeUtility.stringValue(param.get("tableName"));
+        }
+        if (tableNameValue.length() == 0) {
+            tableNameValue = tableName;
+        }
+        Object visibleColumnsObj = param.get("visibleColumns");
+        if (visibleColumnsObj == null) {
+            visibleColumnsObj = param.get("visible_columns");
+        }
+        List<String> visibleColumns = new ArrayList<>();
+        if (visibleColumnsObj instanceof List) {
+            for (Object columnItem : (List<?>) visibleColumnsObj) {
+                String columnNameValue = DataTypeUtility.stringValue(columnItem);
+                if (columnNameValue.length() > 0) {
+                    visibleColumns.add(columnNameValue);
+                }
+            }
+        } else if (visibleColumnsObj instanceof String) {
+            String csvValue = DataTypeUtility.stringValue(visibleColumnsObj);
+            if (csvValue.length() > 0) {
+                for (String part : csvValue.split(",")) {
+                    String columnNameValue = DataTypeUtility.stringValue(part);
+                    if (columnNameValue.length() > 0) {
+                        visibleColumns.add(columnNameValue);
+                    }
+                }
+            }
+        }
+        ColumnPreferenceRequest columnPreferenceRequest = new ColumnPreferenceRequest();
+        columnPreferenceRequest.setVisibleColumns(visibleColumns);
+        return updateColumnPreference(email, tableNameValue, columnPreferenceRequest);
     }
 
     @Transactional
@@ -84,6 +160,30 @@ public class UserPreferenceService {
 
         UserPreference saved = userPreferenceRepository.save(preference);
         return toColumnPreferenceResponse(saved, user, normalizedTableName, normalizedColumns);
+    }
+
+    private UserPreferenceRequest mapToUserPreferenceRequest(Map<String, Object> param) {
+        UserPreferenceRequest userPreferenceRequest = new UserPreferenceRequest();
+        Object darkModeObject = param.get("darkModeEnabled");
+        if (darkModeObject == null) {
+            darkModeObject = param.get("dark_mode_enabled");
+        }
+        if (darkModeObject == null) {
+            darkModeObject = param.get("darkMode");
+        }
+        boolean darkModeEnabledValue = false;
+        if (darkModeObject != null) {
+            if (darkModeObject instanceof Boolean) {
+                darkModeEnabledValue = (Boolean) darkModeObject;
+            } else {
+                String darkModeString = DataTypeUtility.stringValue(darkModeObject);
+                if (darkModeString.length() > 0) {
+                    darkModeEnabledValue = DataTypeUtility.booleanValue(darkModeString);
+                }
+            }
+        }
+        userPreferenceRequest.setDarkModeEnabled(darkModeEnabledValue);
+        return userPreferenceRequest;
     }
 
     private boolean isPlatformAdminPrincipal() {
@@ -109,9 +209,9 @@ public class UserPreferenceService {
     }
 
     private ColumnPreferenceResponse toColumnPreferenceResponse(UserPreference preference,
-                                                                User user,
-                                                                String tableName,
-                                                                List<String> visibleColumns) {
+                                                                 User user,
+                                                                 String tableName,
+                                                                 List<String> visibleColumns) {
         LocalDateTime createdOn = preference.getCreatedAt();
         LocalDateTime updatedOn = preference.getUpdatedAt();
         return ColumnPreferenceResponse.builder()

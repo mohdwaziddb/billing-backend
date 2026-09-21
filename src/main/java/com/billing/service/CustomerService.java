@@ -19,6 +19,7 @@ import com.billing.exception.ResourceNotFoundException;
 import com.billing.repository.CustomerRepository;
 import com.billing.repository.InvoiceRepository;
 import com.billing.repository.PaymentRepository;
+import com.billing.util.DataTypeUtility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -46,6 +47,119 @@ public class CustomerService {
     private final AuditNameResolver auditNameResolver;
     private final AuditLogService auditLogService;
     private final StateMasterService stateMasterService;
+
+    @Transactional
+    public CustomerResponse create(Map<String, Object> param, String email) {
+        CustomerRequest customerRequest = mapToRequest(param);
+        return create(email, customerRequest);
+    }
+
+    @Transactional
+    public CustomerResponse update(Map<String, Object> param, Long customerId, String email) {
+        CustomerRequest customerRequest = mapToRequest(param);
+        Long customerIdValue = DataTypeUtility.getForeignKeyValue(customerId);
+        if (customerIdValue == null) {
+            customerIdValue = DataTypeUtility.getForeignKeyValue(param.get("customerId"));
+        }
+        if (customerIdValue == null) {
+            customerIdValue = customerId;
+        }
+        return update(email, customerIdValue, customerRequest);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<CustomerResponse> page(Map<String, Object> param, String email) {
+        String searchValue = DataTypeUtility.stringValue(param.get("search"));
+        if (searchValue.length() == 0) {
+            searchValue = null;
+        }
+        Object activeObj = param.get("active");
+        Boolean activeValue = null;
+        if (activeObj != null) {
+            String activeStr = DataTypeUtility.stringValue(activeObj);
+            if (activeStr.length() > 0) {
+                if ("true".equalsIgnoreCase(activeStr) || "1".equals(activeStr) || "yes".equalsIgnoreCase(activeStr)) {
+                    activeValue = true;
+                } else if ("false".equalsIgnoreCase(activeStr) || "0".equals(activeStr) || "no".equalsIgnoreCase(activeStr)) {
+                    activeValue = false;
+                }
+            } else if (activeObj instanceof Boolean) {
+                activeValue = (Boolean) activeObj;
+            }
+        }
+        int pageValue = DataTypeUtility.integerValue(param.get("page"));
+        int sizeValue = DataTypeUtility.integerValue(param.get("size"));
+        if (sizeValue == 0) {
+            sizeValue = 20;
+        }
+        return page(email, searchValue, activeValue, pageValue, sizeValue);
+    }
+
+    @Transactional(readOnly = true)
+    public CustomerResponse getByMobile(Map<String, Object> param, String email) {
+        String mobileValue = DataTypeUtility.stringValue(param.get("mobile"));
+        if (mobileValue.length() == 0) {
+            mobileValue = DataTypeUtility.stringValue(param.get("phone"));
+        }
+        return getByMobile(email, mobileValue);
+    }
+
+    @Transactional(readOnly = true)
+    public CustomerResponse get(Map<String, Object> param, String email, Long customerId) {
+        Long customerIdValue = DataTypeUtility.getForeignKeyValue(customerId);
+        if (customerIdValue == null) {
+            customerIdValue = DataTypeUtility.getForeignKeyValue(param.get("customerId"));
+        }
+        if (customerIdValue == null) {
+            customerIdValue = DataTypeUtility.getForeignKeyValue(param.get("customer_id"));
+        }
+        if (customerIdValue == null) {
+            customerIdValue = customerId;
+        }
+        return get(email, customerIdValue);
+    }
+
+    @Transactional(readOnly = true)
+    public CustomerLedgerResponse ledger(Map<String, Object> param, String email, Long customerId) {
+        Long customerIdValue = DataTypeUtility.getForeignKeyValue(customerId);
+        if (customerIdValue == null) {
+            customerIdValue = DataTypeUtility.getForeignKeyValue(param.get("customerId"));
+        }
+        if (customerIdValue == null) {
+            customerIdValue = customerId;
+        }
+        int pageValue = DataTypeUtility.integerValue(param.get("page"));
+        int sizeValue = DataTypeUtility.integerValue(param.get("size"));
+        if (sizeValue == 0) {
+            sizeValue = 20;
+        }
+        return ledger(email, customerIdValue, pageValue, sizeValue);
+    }
+
+    @Transactional(readOnly = true)
+    public CustomerPurchaseHistoryResponse purchaseHistory(Map<String, Object> param, String email, Long customerId) {
+        Long customerIdValue = DataTypeUtility.getForeignKeyValue(customerId);
+        if (customerIdValue == null) {
+            customerIdValue = DataTypeUtility.getForeignKeyValue(param.get("customerId"));
+        }
+        if (customerIdValue == null) {
+            customerIdValue = customerId;
+        }
+        int pageValue = DataTypeUtility.integerValue(param.get("page"));
+        int sizeValue = DataTypeUtility.integerValue(param.get("size"));
+        if (sizeValue == 0) {
+            sizeValue = 20;
+        }
+        return purchaseHistory(email, customerIdValue, pageValue, sizeValue);
+    }
+
+    @Transactional(readOnly = true)
+    public List<CustomerResponse> outstanding(Map<String, Object> param, String email) {
+        if (param == null) {
+            param = new HashMap<>();
+        }
+        return outstanding(email);
+    }
 
     @Transactional
     public CustomerResponse create(String email, CustomerRequest request) {
@@ -526,6 +640,97 @@ public class CustomerService {
     private Company companyScope(String email) {
         User user = accessControlService.getCurrentUser(email);
         return accessControlService.requireCompany(user);
+    }
+
+    private CustomerRequest mapToRequest(Map<String, Object> param) {
+        CustomerRequest customerRequest = new CustomerRequest();
+        String nameValue = DataTypeUtility.stringValue(param.get("name"));
+        if (nameValue.length() == 0) {
+            nameValue = DataTypeUtility.stringValue(param.get("customer_name"));
+        }
+        customerRequest.setName(nameValue);
+        String mobileValue = DataTypeUtility.stringValue(param.get("mobile"));
+        if (mobileValue.length() == 0) {
+            mobileValue = DataTypeUtility.stringValue(param.get("phone"));
+        }
+        customerRequest.setMobile(mobileValue);
+        String emailValue = DataTypeUtility.stringValue(param.get("email"));
+        if (emailValue.length() == 0) {
+            emailValue = null;
+        }
+        customerRequest.setEmail(emailValue);
+        String addressValue = DataTypeUtility.stringValue(param.get("address"));
+        if (addressValue.length() == 0) {
+            addressValue = null;
+        }
+        customerRequest.setAddress(addressValue);
+        String cityValue = DataTypeUtility.stringValue(param.get("city"));
+        if (cityValue.length() == 0) {
+            cityValue = null;
+        }
+        customerRequest.setCity(cityValue);
+        String stateValue = DataTypeUtility.stringValue(param.get("state"));
+        if (stateValue.length() == 0) {
+            stateValue = null;
+        }
+        customerRequest.setState(stateValue);
+        Long stateIdValue = DataTypeUtility.getForeignKeyValue(param.get("stateId"));
+        if (stateIdValue == null) {
+            stateIdValue = DataTypeUtility.getForeignKeyValue(param.get("state_id"));
+        }
+        customerRequest.setStateId(stateIdValue);
+        String countryValue = DataTypeUtility.stringValue(param.get("country"));
+        if (countryValue.length() == 0) {
+            countryValue = null;
+        }
+        customerRequest.setCountry(countryValue);
+        String pincodeValue = DataTypeUtility.stringValue(param.get("pincode"));
+        if (pincodeValue.length() == 0) {
+            pincodeValue = null;
+        }
+        customerRequest.setPincode(pincodeValue);
+        String gstNoValue = DataTypeUtility.stringValue(param.get("gstNo"));
+        if (gstNoValue.length() == 0) {
+            gstNoValue = DataTypeUtility.stringValue(param.get("gst_no"));
+        }
+        if (gstNoValue.length() == 0) {
+            gstNoValue = DataTypeUtility.stringValue(param.get("gstin"));
+        }
+        if (gstNoValue.length() == 0) {
+            gstNoValue = null;
+        }
+        customerRequest.setGstNo(gstNoValue);
+        customerRequest.setGstin(gstNoValue);
+        Object gstRegisteredObj = param.get("gstRegistered");
+        if (gstRegisteredObj == null) {
+            gstRegisteredObj = param.get("gst_registered");
+        }
+        boolean gstRegisteredValue = false;
+        if (gstRegisteredObj != null) {
+            String gstRegisteredStr = DataTypeUtility.stringValue(gstRegisteredObj);
+            if (gstRegisteredStr.length() > 0) {
+                gstRegisteredValue = DataTypeUtility.booleanValue(gstRegisteredObj);
+            } else if (gstRegisteredObj instanceof Boolean) {
+                gstRegisteredValue = (Boolean) gstRegisteredObj;
+            }
+        }
+        customerRequest.setGstRegistered(gstRegisteredValue);
+        Object activeObj = param.get("active");
+        boolean activeValue = true;
+        if (activeObj != null) {
+            String activeStr = DataTypeUtility.stringValue(activeObj);
+            if (activeStr.length() > 0) {
+                if ("true".equalsIgnoreCase(activeStr) || "1".equals(activeStr) || "yes".equalsIgnoreCase(activeStr)) {
+                    activeValue = true;
+                } else if ("false".equalsIgnoreCase(activeStr) || "0".equals(activeStr) || "no".equalsIgnoreCase(activeStr)) {
+                    activeValue = false;
+                }
+            } else if (activeObj instanceof Boolean) {
+                activeValue = (Boolean) activeObj;
+            }
+        }
+        customerRequest.setActive(activeValue);
+        return customerRequest;
     }
 
     private static final class CustomerSummaryMetricsBuilderState {

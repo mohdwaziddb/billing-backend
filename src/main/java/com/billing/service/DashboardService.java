@@ -15,6 +15,7 @@ import com.billing.repository.ExpenseRepository;
 import com.billing.repository.InvoiceRepository;
 import com.billing.repository.PaymentRepository;
 import com.billing.repository.ProductRepository;
+import com.billing.util.DataTypeUtility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -176,6 +177,77 @@ public class DashboardService {
                 .totalCustomersTrendPercentage(calculateTrendPercentage(BigDecimal.valueOf(periodCustomerIds.size()), BigDecimal.valueOf(previousCustomerIds.size())))
                 .topCustomers(topCustomers)
                 .build();
+    }
+
+    @Transactional(readOnly = true)
+    public DashboardSummaryResponse summary(Map<String, Object> param, String email) {
+        LocalDate startDateValue = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "yyyy-MM-dd");
+        if (startDateValue == null) {
+            startDateValue = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "dd-MM-yyyy");
+        }
+        if (startDateValue == null) {
+            startDateValue = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("start_date")), "yyyy-MM-dd");
+        }
+        if (startDateValue == null) {
+            startDateValue = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("start_date")), "dd-MM-yyyy");
+        }
+        LocalDate endDateValue = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "yyyy-MM-dd");
+        if (endDateValue == null) {
+            endDateValue = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "dd-MM-yyyy");
+        }
+        if (endDateValue == null) {
+            endDateValue = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("end_date")), "yyyy-MM-dd");
+        }
+        if (endDateValue == null) {
+            endDateValue = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("end_date")), "dd-MM-yyyy");
+        }
+        return summary(email, startDateValue, endDateValue);
+    }
+
+    @Transactional(readOnly = true)
+    public DashboardDetailResponse details(Map<String, Object> param, String email) {
+        String cardValue = DataTypeUtility.stringValue(param.get("card"));
+        if (cardValue.length() == 0) {
+            cardValue = DataTypeUtility.stringValue(param.get("cardType"));
+        }
+        LocalDate startDateValue = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "yyyy-MM-dd");
+        if (startDateValue == null) {
+            startDateValue = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "dd-MM-yyyy");
+        }
+        if (startDateValue == null) {
+            startDateValue = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("start_date")), "yyyy-MM-dd");
+        }
+        LocalDate endDateValue = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "yyyy-MM-dd");
+        if (endDateValue == null) {
+            endDateValue = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "dd-MM-yyyy");
+        }
+        if (endDateValue == null) {
+            endDateValue = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("end_date")), "yyyy-MM-dd");
+        }
+        int pageValue = DataTypeUtility.integerValue(param.get("page"));
+        int sizeValue = DataTypeUtility.integerValue(param.get("size"));
+        if (sizeValue == 0) {
+            sizeValue = 20;
+        }
+        String sortByValue = DataTypeUtility.stringValue(param.get("sortBy"));
+        if (sortByValue.length() == 0) {
+            sortByValue = DataTypeUtility.stringValue(param.get("sort_by"));
+        }
+        if (sortByValue.length() == 0) {
+            sortByValue = "date";
+        }
+        String sortDirectionValue = DataTypeUtility.stringValue(param.get("sortDirection"));
+        if (sortDirectionValue.length() == 0) {
+            sortDirectionValue = DataTypeUtility.stringValue(param.get("sort_direction"));
+        }
+        if (sortDirectionValue.length() == 0) {
+            sortDirectionValue = "desc";
+        }
+        String searchValue = DataTypeUtility.stringValue(param.get("search"));
+        if (searchValue.length() == 0) {
+            searchValue = null;
+        }
+        return details(email, cardValue, startDateValue, endDateValue, pageValue, sizeValue, sortByValue, sortDirectionValue, searchValue);
     }
 
     @Transactional(readOnly = true)

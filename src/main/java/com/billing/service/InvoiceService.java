@@ -21,6 +21,7 @@ import com.billing.repository.InvoiceRepository;
 import com.billing.repository.PaymentRepository;
 import com.billing.repository.ProductRepository;
 import com.billing.repository.UserRepository;
+import com.billing.util.DataTypeUtility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -52,6 +53,12 @@ public class InvoiceService {
     private final PaymentModeMasterService paymentModeMasterService;
     private final UserRepository userRepository;
     private final InventoryService inventoryService;
+
+    @Transactional
+    public InvoiceResponse create(Map<String, Object> param, String email) {
+        InvoiceRequest invoiceRequest = mapToRequest(param);
+        return create(email, invoiceRequest);
+    }
 
     @Transactional
     public InvoiceResponse create(String email, InvoiceRequest request) {
@@ -118,6 +125,56 @@ public class InvoiceService {
     }
 
     @Transactional(readOnly = true)
+    public PageResponse<InvoiceResponse> page(Map<String, Object> param, String email) {
+        Long customerId = DataTypeUtility.getForeignKeyValue(param.get("customerId"));
+        String search = DataTypeUtility.stringValue(param.get("search"));
+        if (search.length() == 0) {
+            search = null;
+        }
+        String invoiceStatus = DataTypeUtility.stringValue(param.get("invoiceStatus"));
+        if (invoiceStatus.length() == 0) {
+            invoiceStatus = null;
+        }
+        String paymentStatus = DataTypeUtility.stringValue(param.get("paymentStatus"));
+        if (paymentStatus.length() == 0) {
+            paymentStatus = null;
+        }
+        LocalDate startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "yyyy-MM-dd");
+        if (startDate == null) {
+            startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "dd-MM-yyyy");
+        }
+        LocalDate endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "yyyy-MM-dd");
+        if (endDate == null) {
+            endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "dd-MM-yyyy");
+        }
+        String outstandingFilter = DataTypeUtility.stringValue(param.get("outstandingFilter"));
+        if (outstandingFilter.length() == 0) {
+            outstandingFilter = null;
+        }
+        BigDecimal minAmount = DataTypeUtility.bigDecimalObjectValue(param.get("minAmount"));
+        BigDecimal maxAmount = DataTypeUtility.bigDecimalObjectValue(param.get("maxAmount"));
+        Long categoryId = DataTypeUtility.getForeignKeyValue(param.get("categoryId"));
+        RoleName createdByRole = null;
+        String createdByRoleStr = DataTypeUtility.stringValue(param.get("createdByRole"));
+        if (createdByRoleStr.length() > 0) {
+            try {
+                createdByRole = RoleName.valueOf(createdByRoleStr);
+            } catch (Exception ignore) {
+            }
+        }
+        String recordStatus = DataTypeUtility.stringValue(param.get("recordStatus"));
+        if (recordStatus.length() == 0) {
+            recordStatus = "ACTIVE";
+        }
+        int page = DataTypeUtility.integerValue(param.get("page"));
+        int size = DataTypeUtility.integerValue(param.get("size"));
+        if (size == 0) {
+            size = 20;
+        }
+        return page(email, customerId, search, invoiceStatus, paymentStatus, startDate, endDate, outstandingFilter, minAmount, maxAmount, categoryId, createdByRole, recordStatus, page, size);
+    }
+
+    @Transactional(readOnly = true)
     public PageResponse<InvoiceResponse> page(String email,
                                               Long customerId,
                                               String search,
@@ -166,6 +223,12 @@ public class InvoiceService {
         User user = accessControlService.getCurrentUser(email);
         Company company = accessControlService.requireCompany(user);
         return toResponse(getInvoiceOrThrow(company, invoiceId));
+    }
+
+    @Transactional
+    public InvoiceResponse update(Map<String, Object> param, Long invoiceId, String email) {
+        InvoiceRequest invoiceRequest = mapToRequest(param);
+        return update(email, invoiceId, invoiceRequest);
     }
 
     @Transactional
@@ -676,6 +739,107 @@ public class InvoiceService {
 
     private BigDecimal zero() {
         return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private InvoiceRequest mapToRequest(Map<String, Object> param) {
+        InvoiceRequest invoiceRequest = new InvoiceRequest();
+        Long customerIdValue = DataTypeUtility.getForeignKeyValue(param.get("customerId"));
+        if (customerIdValue == null) {
+            customerIdValue = DataTypeUtility.getForeignKeyValue(param.get("customer_id"));
+        }
+        invoiceRequest.setCustomerId(customerIdValue);
+        String invoiceDateString = DataTypeUtility.stringValue(param.get("invoiceDate"));
+        if (invoiceDateString.length() == 0) {
+            invoiceDateString = DataTypeUtility.stringValue(param.get("invoice_date"));
+        }
+        LocalDate invoiceDateValue = null;
+        if (invoiceDateString.length() > 0) {
+            invoiceDateValue = DataTypeUtility.parseLocalDate(invoiceDateString, "yyyy-MM-dd");
+            if (invoiceDateValue == null) {
+                invoiceDateValue = DataTypeUtility.parseLocalDate(invoiceDateString, "dd-MM-yyyy");
+            }
+            if (invoiceDateValue == null) {
+                invoiceDateValue = DataTypeUtility.parseLocalDate(invoiceDateString, "yyyy/MM/dd");
+            }
+        }
+        invoiceRequest.setInvoiceDate(invoiceDateValue);
+        Long referByUserIdValue = DataTypeUtility.getForeignKeyValue(param.get("referByUserId"));
+        if (referByUserIdValue == null) {
+            referByUserIdValue = DataTypeUtility.getForeignKeyValue(param.get("refer_by_user_id"));
+        }
+        if (referByUserIdValue == null) {
+            referByUserIdValue = DataTypeUtility.getForeignKeyValue(param.get("referByUser"));
+        }
+        invoiceRequest.setReferByUserId(referByUserIdValue);
+        BigDecimal discountAmountValue = DataTypeUtility.bigDecimalObjectValue(param.get("discountAmount"));
+        if (discountAmountValue == null) {
+            discountAmountValue = DataTypeUtility.bigDecimalObjectValue(param.get("discount_amount"));
+        }
+        invoiceRequest.setDiscountAmount(discountAmountValue);
+        BigDecimal paidAmountValue = DataTypeUtility.bigDecimalObjectValue(param.get("paidAmount"));
+        if (paidAmountValue == null) {
+            paidAmountValue = DataTypeUtility.bigDecimalObjectValue(param.get("paid_amount"));
+        }
+        invoiceRequest.setPaidAmount(paidAmountValue);
+        String paymentModeValue = DataTypeUtility.stringValue(param.get("paymentMode"));
+        if (paymentModeValue.length() == 0) {
+            paymentModeValue = DataTypeUtility.stringValue(param.get("payment_mode"));
+        }
+        if (paymentModeValue.length() == 0) {
+            paymentModeValue = null;
+        }
+        invoiceRequest.setPaymentMode(paymentModeValue);
+        List<InvoiceItemRequest> invoiceItemList = new ArrayList<>();
+        Object itemsObject = param.get("items");
+        if (itemsObject instanceof List) {
+            for (Object itemObject : (List<?>) itemsObject) {
+                if (itemObject instanceof Map) {
+                    Map<String, Object> itemMap = (Map<String, Object>) itemObject;
+                    InvoiceItemRequest invoiceItemRequest = new InvoiceItemRequest();
+                    Long productIdValue = DataTypeUtility.getForeignKeyValue(itemMap.get("productId"));
+                    if (productIdValue == null) {
+                        productIdValue = DataTypeUtility.getForeignKeyValue(itemMap.get("product_id"));
+                    }
+                    invoiceItemRequest.setProductId(productIdValue);
+                    Integer qtyValue = DataTypeUtility.integerNullValue(itemMap.get("qty"));
+                    if (qtyValue == null) {
+                        qtyValue = DataTypeUtility.integerNullValue(itemMap.get("quantity"));
+                    }
+                    invoiceItemRequest.setQty(qtyValue);
+                    BigDecimal priceValue = DataTypeUtility.bigDecimalObjectValue(itemMap.get("price"));
+                    if (priceValue == null) {
+                        priceValue = DataTypeUtility.bigDecimalObjectValue(itemMap.get("unitPrice"));
+                    }
+                    invoiceItemRequest.setPrice(priceValue);
+                    BigDecimal taxPercentValue = DataTypeUtility.bigDecimalObjectValue(itemMap.get("taxPercent"));
+                    if (taxPercentValue == null) {
+                        taxPercentValue = DataTypeUtility.bigDecimalObjectValue(itemMap.get("tax_percent"));
+                    }
+                    invoiceItemRequest.setTaxPercent(taxPercentValue);
+                    BigDecimal discountPercentValue = DataTypeUtility.bigDecimalObjectValue(itemMap.get("discountPercent"));
+                    if (discountPercentValue == null) {
+                        discountPercentValue = DataTypeUtility.bigDecimalObjectValue(itemMap.get("discount_percent"));
+                    }
+                    invoiceItemRequest.setDiscountPercent(discountPercentValue);
+                    String discountTypeValue = DataTypeUtility.stringValue(itemMap.get("discountType"));
+                    if (discountTypeValue.length() == 0) {
+                        discountTypeValue = DataTypeUtility.stringValue(itemMap.get("discount_type"));
+                    }
+                    if (discountTypeValue.length() == 0) {
+                        discountTypeValue = null;
+                    }
+                    invoiceItemRequest.setDiscountType(discountTypeValue);
+                    BigDecimal discountValue = DataTypeUtility.bigDecimalObjectValue(itemMap.get("discountValue"));
+                    if (discountValue == null) {
+                        discountValue = DataTypeUtility.bigDecimalObjectValue(itemMap.get("discount_value"));
+                    }
+                    invoiceItemRequest.setDiscountValue(discountValue);
+                    invoiceItemList.add(invoiceItemRequest);
+                }
+            }
+        }
+        invoiceRequest.setItems(invoiceItemList);
+        return invoiceRequest;
     }
 
     private User resolveReferByUser(Company company, Long referByUserId) {

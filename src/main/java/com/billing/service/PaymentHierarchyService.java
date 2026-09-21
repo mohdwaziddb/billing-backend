@@ -16,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.billing.util.DataTypeUtility;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
@@ -150,6 +151,66 @@ public class PaymentHierarchyService {
                 .nodes(List.of())
                 .records(paymentRecords(payments))
                 .build();
+    }
+
+    @Transactional(readOnly = true)
+    public PaymentHierarchyResponse children(Map<String, Object> param, String email) {
+        String nodeType = DataTypeUtility.stringValue(param.get("nodeType"));
+        if (nodeType.length() == 0) {
+            nodeType = null;
+        }
+        String nodeId = DataTypeUtility.stringValue(param.get("nodeId"));
+        if (nodeId.length() == 0) {
+            nodeId = null;
+        }
+        String mode = DataTypeUtility.stringValue(param.get("mode"));
+        if (mode.length() == 0) {
+            mode = null;
+        }
+        Integer year = DataTypeUtility.integerNullValue(param.get("year"));
+        Integer month = DataTypeUtility.integerNullValue(param.get("month"));
+        LocalDate day = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("day")), "yyyy-MM-dd");
+        if (day == null) {
+            day = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("day")), "dd-MM-yyyy");
+        }
+        LocalDate startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "yyyy-MM-dd");
+        if (startDate == null) {
+            startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "dd-MM-yyyy");
+        }
+        LocalDate endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "yyyy-MM-dd");
+        if (endDate == null) {
+            endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "dd-MM-yyyy");
+        }
+        Integer financialYear = DataTypeUtility.integerNullValue(param.get("financialYear"));
+        Long customerId = DataTypeUtility.getForeignKeyValue(param.get("customerId"));
+        String collectedBy = DataTypeUtility.stringValue(param.get("collectedBy"));
+        if (collectedBy.length() == 0) {
+            collectedBy = null;
+        }
+        return children(email, nodeType, nodeId, mode, year, month, day, startDate, endDate, financialYear, customerId, collectedBy);
+    }
+
+    @Transactional(readOnly = true)
+    public PaymentHierarchyResponse summary(Map<String, Object> param, String email) {
+        LocalDate startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "yyyy-MM-dd");
+        if (startDate == null) {
+            startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "dd-MM-yyyy");
+        }
+        LocalDate endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "yyyy-MM-dd");
+        if (endDate == null) {
+            endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "dd-MM-yyyy");
+        }
+        Integer financialYear = DataTypeUtility.integerNullValue(param.get("financialYear"));
+        String mode = DataTypeUtility.stringValue(param.get("mode"));
+        if (mode.length() == 0) {
+            mode = null;
+        }
+        Long customerId = DataTypeUtility.getForeignKeyValue(param.get("customerId"));
+        String collectedBy = DataTypeUtility.stringValue(param.get("collectedBy"));
+        if (collectedBy.length() == 0) {
+            collectedBy = null;
+        }
+        return summary(email, startDate, endDate, financialYear, mode, customerId, collectedBy);
     }
 
     private List<PaymentHierarchyNodeResponse> topLevelNodes(List<Invoice> invoices, List<Payment> payments, DateRange range) {

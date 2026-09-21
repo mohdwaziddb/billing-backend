@@ -2,10 +2,14 @@ package com.billing.service.dataport;
 
 import com.billing.dto.dataport.DataPortPreviewResponse;
 import com.billing.dto.dataport.ImportResult;
+import com.billing.dto.dataport.ProductDataPortRow;
 import com.billing.dto.dataport.ValidatableImportRow;
 import com.billing.entity.Company;
 import com.billing.exception.BadRequestException;
 import com.billing.service.AccessControlService;
+import com.billing.util.DataTypeUtility;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -53,6 +57,31 @@ public class DataPortService {
     public <T extends ValidatableImportRow> DataPortPreviewResponse<T> previewRows(String email, String moduleKey, List<T> rows) {
         Company company = accessControlService.getCurrentCompany(email);
         return previewRowsInternal(email, company, moduleKey, rows);
+    }
+
+    @SuppressWarnings("unchecked")
+    public DataPortPreviewResponse<ProductDataPortRow> previewRows(Map<String, Object> param, String email, String moduleKey) {
+        List<ProductDataPortRow> productRows = extractProductRows(param);
+        return (DataPortPreviewResponse<ProductDataPortRow>) previewRowsInternal(email, accessControlService.getCurrentCompany(email), moduleKey, (List) productRows);
+    }
+
+    public ImportResult importRows(Map<String, Object> param, String email, String moduleKey) {
+        List<ProductDataPortRow> productRows = extractProductRows(param);
+        return importRows(email, moduleKey, (List) productRows);
+    }
+
+    public SampleFile downloadSample(Map<String, Object> param, String moduleKey) {
+        if (param == null) {
+            param = new LinkedHashMap<>();
+        }
+        return downloadSample(moduleKey);
+    }
+
+    public <T extends ValidatableImportRow> DataPortPreviewResponse<T> preview(Map<String, Object> param, String email, String moduleKey, MultipartFile file) {
+        if (param == null) {
+            param = new LinkedHashMap<>();
+        }
+        return preview(email, moduleKey, file);
     }
 
     public <T extends ValidatableImportRow> ImportResult importRows(String email, String moduleKey, List<T> rows) {
@@ -114,6 +143,38 @@ public class DataPortService {
     @SuppressWarnings("unchecked")
     private <T extends ValidatableImportRow, C> DataPortDefinition<T, C> getTypedDefinition(String moduleKey) {
         return (DataPortDefinition<T, C>) getDefinition(moduleKey);
+    }
+
+    private List<ProductDataPortRow> extractProductRows(Map<String, Object> param) {
+        Object rowsObj = param.get("rows");
+        if (rowsObj == null) {
+            rowsObj = param.get("data");
+        }
+        if (rowsObj == null) {
+            rowsObj = param.get("items");
+        }
+        if (rowsObj instanceof List) {
+            List<?> rawList = (List<?>) rowsObj;
+            List<ProductDataPortRow> typedRows = new ArrayList<>();
+            ObjectMapper objectMapper = new ObjectMapper();
+            for (Object rowItem : rawList) {
+                if (rowItem instanceof ProductDataPortRow) {
+                    typedRows.add((ProductDataPortRow) rowItem);
+                } else if (rowItem instanceof Map) {
+                    ProductDataPortRow productRow = objectMapper.convertValue(rowItem, ProductDataPortRow.class);
+                    String rowNumberStr = DataTypeUtility.stringValue(((Map<?, ?>) rowItem).get("rowNumber"));
+                    if (rowNumberStr.length() > 0) {
+                        int rowNumberValue = DataTypeUtility.integerValue(rowNumberStr);
+                        if (rowNumberValue > 0) {
+                            productRow.setRowNumber(rowNumberValue);
+                        }
+                    }
+                    typedRows.add(productRow);
+                }
+            }
+            return typedRows;
+        }
+        return List.of();
     }
 
     public record SampleFile(String fileName, byte[] content) {

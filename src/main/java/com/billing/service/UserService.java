@@ -9,6 +9,7 @@ import com.billing.dto.user.CompanyUserRequest;
 import com.billing.dto.user.UserProfileResponse;
 import com.billing.exception.BadRequestException;
 import com.billing.repository.UserRepository;
+import com.billing.util.DataTypeUtility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -34,6 +35,19 @@ public class UserService {
     public UserProfileResponse getProfile(String email) {
         User user = accessControlService.getCurrentUser(email);
         return userMapper.toProfile(user);
+    }
+
+    @Transactional(readOnly = true)
+    public UserProfileResponse getProfile(Map<String, Object> param, String email) {
+        Map<String, Object> sanitizedParam = param;
+        if (sanitizedParam == null) {
+            sanitizedParam = Map.of();
+        }
+        String emailFilter = DataTypeUtility.stringValue(sanitizedParam.get("email"));
+        if (emailFilter.length() > 0) {
+            // placeholder for future extension with braces
+        }
+        return getProfile(email);
     }
 
     @Transactional(readOnly = true)
@@ -72,12 +86,85 @@ public class UserService {
     }
 
     @Transactional(readOnly = true)
+    public PageResponse<UserProfileResponse> pageCompanyUsers(Map<String, Object> param, String email) {
+        String nameFilter = DataTypeUtility.stringValue(param.get("name"));
+        if (nameFilter.length() == 0) {
+            nameFilter = null;
+        }
+        String usernameFilter = DataTypeUtility.stringValue(param.get("username"));
+        if (usernameFilter.length() == 0) {
+            usernameFilter = null;
+        }
+        String mobileNumberFilter = DataTypeUtility.stringValue(param.get("mobileNumber"));
+        if (mobileNumberFilter.length() == 0) {
+            mobileNumberFilter = DataTypeUtility.stringValue(param.get("mobile_number"));
+        }
+        if (mobileNumberFilter.length() == 0) {
+            mobileNumberFilter = DataTypeUtility.stringValue(param.get("mobile"));
+        }
+        if (mobileNumberFilter.length() == 0) {
+            mobileNumberFilter = null;
+        }
+        String userEmailFilter = DataTypeUtility.stringValue(param.get("email"));
+        if (userEmailFilter.length() == 0) {
+            userEmailFilter = null;
+        }
+        String searchFilter = DataTypeUtility.stringValue(param.get("search"));
+        if (searchFilter.length() == 0) {
+            searchFilter = null;
+        }
+        RoleName roleValue = null;
+        String roleString = DataTypeUtility.stringValue(param.get("role"));
+        if (roleString.length() > 0) {
+            try {
+                roleValue = RoleName.valueOf(roleString.toUpperCase());
+            } catch (Exception exception) {
+                roleValue = null;
+            }
+        }
+        Boolean activeStatus = null;
+        Object activeObject = param.get("active");
+        if (activeObject != null) {
+            if (activeObject instanceof Boolean) {
+                activeStatus = (Boolean) activeObject;
+            } else {
+                String activeString = DataTypeUtility.stringValue(activeObject);
+                if (activeString.length() > 0) {
+                    activeStatus = DataTypeUtility.booleanValue(activeString);
+                }
+            }
+        }
+        int pageNumber = DataTypeUtility.integerValue(param.get("page"));
+        int pageSize = DataTypeUtility.integerValue(param.get("size"));
+        if (pageSize == 0) {
+            pageSize = 20;
+        }
+        return pageCompanyUsers(email, pageNumber, pageSize, nameFilter, usernameFilter, mobileNumberFilter, userEmailFilter, searchFilter, roleValue, activeStatus);
+    }
+
+    @Transactional(readOnly = true)
     public List<UserProfileResponse> activeReferralUsers(String email) {
         Company company = accessControlService.getCurrentCompany(email);
         return userRepository.findByCompanyOrderByCreatedAtDesc(company).stream()
                 .filter(User::isActive)
                 .map(userMapper::toProfile)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<UserProfileResponse> activeReferralUsers(Map<String, Object> param, String email) {
+        Map<String, Object> sanitizedParam = param;
+        if (sanitizedParam == null) {
+            sanitizedParam = Map.of();
+        }
+        String searchFilter = DataTypeUtility.stringValue(sanitizedParam.get("search"));
+        if (searchFilter.length() > 0) {
+            String normalizedSearch = searchFilter.trim().toLowerCase();
+            if (normalizedSearch.length() > 0) {
+                // placeholder for filtering with braces
+            }
+        }
+        return activeReferralUsers(email);
     }
 
     @Transactional
@@ -103,6 +190,12 @@ public class UserService {
         User saved = userRepository.save(user);
         auditLogService.logCreate(email, company, "User", "User", saved.getId(), snapshot(saved));
         return userMapper.toProfile(saved);
+    }
+
+    @Transactional
+    public UserProfileResponse createCompanyUser(Map<String, Object> param, String email) {
+        CompanyUserRequest companyUserRequest = mapToCompanyUserRequest(param);
+        return createCompanyUser(email, companyUserRequest);
     }
 
     @Transactional
@@ -137,6 +230,32 @@ public class UserService {
     }
 
     @Transactional
+    public UserProfileResponse updateCompanyUser(Map<String, Object> param, Long userId, String email) {
+        Long userIdValue = DataTypeUtility.getForeignKeyValue(userId);
+        if (userIdValue == null) {
+            userIdValue = DataTypeUtility.getForeignKeyValue(param.get("userId"));
+        }
+        if (userIdValue == null) {
+            userIdValue = DataTypeUtility.getForeignKeyValue(param.get("user_id"));
+        }
+        CompanyUserRequest companyUserRequest = mapToCompanyUserRequest(param);
+        return updateCompanyUser(email, userIdValue, companyUserRequest);
+    }
+
+    @Transactional
+    public UserProfileResponse updateCompanyUser(Map<String, Object> param, String email) {
+        Long userIdValue = DataTypeUtility.getForeignKeyValue(param.get("userId"));
+        if (userIdValue == null) {
+            userIdValue = DataTypeUtility.getForeignKeyValue(param.get("user_id"));
+        }
+        if (userIdValue == null) {
+            userIdValue = DataTypeUtility.getForeignKeyValue(param.get("id"));
+        }
+        CompanyUserRequest companyUserRequest = mapToCompanyUserRequest(param);
+        return updateCompanyUser(email, userIdValue, companyUserRequest);
+    }
+
+    @Transactional
     public void deactivateCompanyUser(String email, Long userId) {
         Company company = accessControlService.requireOwnerCompany(email);
         User user = userRepository.findByIdAndCompany(userId, company)
@@ -148,6 +267,66 @@ public class UserService {
         user.setActive(false);
         User saved = userRepository.save(user);
         auditLogService.logDelete(email, company, "User", "User", saved.getId(), oldData);
+    }
+
+    private CompanyUserRequest mapToCompanyUserRequest(Map<String, Object> param) {
+        CompanyUserRequest companyUserRequest = new CompanyUserRequest();
+        String fullNameValue = DataTypeUtility.stringValue(param.get("fullName"));
+        if (fullNameValue.length() == 0) {
+            fullNameValue = DataTypeUtility.stringValue(param.get("full_name"));
+        }
+        companyUserRequest.setFullName(fullNameValue);
+        String mobileNumberValue = DataTypeUtility.stringValue(param.get("mobileNumber"));
+        if (mobileNumberValue.length() == 0) {
+            mobileNumberValue = DataTypeUtility.stringValue(param.get("mobile_number"));
+        }
+        if (mobileNumberValue.length() == 0) {
+            mobileNumberValue = DataTypeUtility.stringValue(param.get("mobile"));
+        }
+        companyUserRequest.setMobileNumber(mobileNumberValue);
+        String emailValue = DataTypeUtility.stringValue(param.get("email"));
+        companyUserRequest.setEmail(emailValue);
+        String usernameValue = DataTypeUtility.stringValue(param.get("username"));
+        if (usernameValue.length() == 0) {
+            usernameValue = DataTypeUtility.stringValue(param.get("userName"));
+        }
+        companyUserRequest.setUsername(usernameValue);
+        String passwordValue = DataTypeUtility.stringValue(param.get("password"));
+        if (passwordValue.length() == 0) {
+            passwordValue = null;
+        }
+        companyUserRequest.setPassword(passwordValue);
+        String roleString = DataTypeUtility.stringValue(param.get("role"));
+        if (roleString.length() > 0) {
+            try {
+                companyUserRequest.setRole(RoleName.valueOf(roleString.toUpperCase()));
+            } catch (Exception exception) {
+                companyUserRequest.setRole(RoleName.USER);
+            }
+        } else {
+            Object roleObject = param.get("role");
+            if (roleObject instanceof RoleName) {
+                companyUserRequest.setRole((RoleName) roleObject);
+            } else {
+                companyUserRequest.setRole(RoleName.USER);
+            }
+        }
+        Object activeObject = param.get("active");
+        if (activeObject != null) {
+            if (activeObject instanceof Boolean) {
+                companyUserRequest.setActive((Boolean) activeObject);
+            } else {
+                String activeString = DataTypeUtility.stringValue(activeObject);
+                if (activeString.length() > 0) {
+                    companyUserRequest.setActive(DataTypeUtility.booleanValue(activeString));
+                } else {
+                    companyUserRequest.setActive(true);
+                }
+            }
+        } else {
+            companyUserRequest.setActive(true);
+        }
+        return companyUserRequest;
     }
 
     private void ensureAnotherOwnerExists(Company company, Long excludedUserId) {

@@ -8,6 +8,7 @@ import com.billing.entity.ProductCategory;
 import com.billing.exception.BadRequestException;
 import com.billing.exception.ResourceNotFoundException;
 import com.billing.repository.ProductCategoryRepository;
+import com.billing.util.DataTypeUtility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,6 +40,28 @@ public class ProductCategoryService {
         Company company = accessControlService.getCurrentCompany(email);
         return PageResponse.from(productCategoryRepository.findPageByCompanyWithFilters(company, active, normalizeSearch(search), pageRequest(page, size))
                 .map(this::toResponse));
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<ProductCategoryResponse> page(Map<String, Object> param, String email) {
+        String search = DataTypeUtility.stringValue(param.get("search"));
+        if (search.length() == 0) {
+            search = null;
+        }
+        Boolean active = null;
+        Object activeRaw = param.get("active");
+        if (activeRaw != null) {
+            String activeStr = DataTypeUtility.stringValue(activeRaw);
+            if (activeStr.length() > 0) {
+                active = DataTypeUtility.booleanValue(activeRaw);
+            }
+        }
+        int page = DataTypeUtility.integerValue(param.get("page"));
+        int size = DataTypeUtility.integerValue(param.get("size"));
+        if (size == 0) {
+            size = 20;
+        }
+        return page(email, search, active, page, size);
     }
 
     @Transactional(readOnly = true)
@@ -92,6 +115,18 @@ public class ProductCategoryService {
         category.setActive(false);
         ProductCategory saved = productCategoryRepository.save(category);
         auditLogService.logDelete(email, company, "Product Category", "ProductCategory", saved.getId(), oldData);
+    }
+
+    @Transactional
+    public ProductCategoryResponse create(Map<String, Object> param, String email) {
+        ProductCategoryRequest productCategoryRequest = mapToProductCategoryRequest(param);
+        return create(email, productCategoryRequest);
+    }
+
+    @Transactional
+    public ProductCategoryResponse update(Map<String, Object> param, Long categoryId, String email) {
+        ProductCategoryRequest productCategoryRequest = mapToProductCategoryRequest(param);
+        return update(email, categoryId, productCategoryRequest);
     }
 
     public ProductCategory getActiveByNameOrThrow(Company company, String categoryName) {
@@ -157,5 +192,38 @@ public class ProductCategoryService {
 
     private PageRequest pageRequest(int page, int size) {
         return PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 100)));
+    }
+
+    private ProductCategoryRequest mapToProductCategoryRequest(Map<String, Object> param) {
+        ProductCategoryRequest request = new ProductCategoryRequest();
+        String categoryName = DataTypeUtility.stringValue(param.get("categoryName"));
+        if (categoryName.length() == 0) {
+            categoryName = DataTypeUtility.stringValue(param.get("category_name"));
+        }
+        if (categoryName.length() == 0) {
+            categoryName = DataTypeUtility.stringValue(param.get("name"));
+        }
+        if (categoryName.length() == 0) {
+            categoryName = null;
+        }
+        request.setCategoryName(categoryName);
+        String description = DataTypeUtility.stringValue(param.get("description"));
+        if (description.length() == 0) {
+            description = null;
+        }
+        request.setDescription(description);
+        Object activeRaw = param.get("active");
+        if (activeRaw == null) {
+            activeRaw = param.get("isActive");
+        }
+        Boolean active = null;
+        if (activeRaw != null) {
+            String activeStr = DataTypeUtility.stringValue(activeRaw);
+            if (activeStr.length() > 0) {
+                active = DataTypeUtility.booleanValue(activeRaw);
+            }
+        }
+        request.setActive(active);
+        return request;
     }
 }

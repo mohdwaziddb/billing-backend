@@ -6,9 +6,12 @@ import com.billing.entity.Company;
 import com.billing.entity.CompanyInvoiceSetting;
 import com.billing.repository.CompanyInvoiceSettingRepository;
 import com.billing.service.AccessControlService;
+import com.billing.util.DataTypeUtility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -22,6 +25,12 @@ public class CompanyInvoiceSettingsService {
     public CompanyInvoiceSettingsResponse get(String email) {
         Company company = accessControlService.getCurrentCompany(email);
         return toResponse(resolveOrDefault(company));
+    }
+
+    @Transactional
+    public CompanyInvoiceSettingsResponse update(Map<String, Object> param, String email) {
+        CompanyInvoiceSettingsRequest companyInvoiceSettingsRequest = mapToRequest(param);
+        return update(email, companyInvoiceSettingsRequest);
     }
 
     @Transactional
@@ -116,5 +125,87 @@ public class CompanyInvoiceSettingsService {
 
     private String defaultIfNull(String value, String defaultValue) {
         return value == null ? defaultValue : value;
+    }
+
+    private CompanyInvoiceSettingsRequest mapToRequest(Map<String, Object> param) {
+        CompanyInvoiceSettingsRequest companyInvoiceSettingsRequest = new CompanyInvoiceSettingsRequest();
+        String defaultTemplateId = DataTypeUtility.stringValue(param.get("defaultTemplateId"));
+        if (defaultTemplateId.length() == 0) {
+            defaultTemplateId = null;
+        }
+        companyInvoiceSettingsRequest.setDefaultTemplateId(defaultTemplateId);
+        Object showWatermarkObj = param.get("showWatermark");
+        if (showWatermarkObj != null) {
+            String showWatermarkStr = DataTypeUtility.stringValue(showWatermarkObj);
+            if (showWatermarkStr.length() > 0) {
+                companyInvoiceSettingsRequest.setShowWatermark(DataTypeUtility.booleanValue(showWatermarkObj));
+            }
+        }
+        String watermarkText = DataTypeUtility.stringValue(param.get("watermarkText"));
+        if (watermarkText.length() == 0) {
+            watermarkText = null;
+        }
+        companyInvoiceSettingsRequest.setWatermarkText(watermarkText);
+        Object showSignatureObj = param.get("showSignature");
+        if (showSignatureObj != null) {
+            String showSignatureStr = DataTypeUtility.stringValue(showSignatureObj);
+            if (showSignatureStr.length() > 0) {
+                companyInvoiceSettingsRequest.setShowSignature(DataTypeUtility.booleanValue(showSignatureObj));
+            }
+        }
+        String signatureLabel = DataTypeUtility.stringValue(param.get("signatureLabel"));
+        if (signatureLabel.length() == 0) {
+            signatureLabel = null;
+        }
+        companyInvoiceSettingsRequest.setSignatureLabel(signatureLabel);
+        String signatureHeading = DataTypeUtility.stringValue(param.get("signatureHeading"));
+        if (signatureHeading.length() == 0) {
+            signatureHeading = null;
+        }
+        companyInvoiceSettingsRequest.setSignatureHeading(signatureHeading);
+        Object showQrObj = param.get("showQr");
+        if (showQrObj != null) {
+            String showQrStr = DataTypeUtility.stringValue(showQrObj);
+            if (showQrStr.length() > 0) {
+                companyInvoiceSettingsRequest.setShowQr(DataTypeUtility.booleanValue(showQrObj));
+            }
+        }
+        Object showBankDetailsObj = param.get("showBankDetails");
+        if (showBankDetailsObj != null) {
+            String showBankDetailsStr = DataTypeUtility.stringValue(showBankDetailsObj);
+            if (showBankDetailsStr.length() > 0) {
+                companyInvoiceSettingsRequest.setShowBankDetails(DataTypeUtility.booleanValue(showBankDetailsObj));
+            }
+        }
+        Object showTermsObj = param.get("showTerms");
+        if (showTermsObj != null) {
+            String showTermsStr = DataTypeUtility.stringValue(showTermsObj);
+            if (showTermsStr.length() > 0) {
+                companyInvoiceSettingsRequest.setShowTerms(DataTypeUtility.booleanValue(showTermsObj));
+            }
+        }
+        Object showNotesObj = param.get("showNotes");
+        if (showNotesObj != null) {
+            String showNotesStr = DataTypeUtility.stringValue(showNotesObj);
+            if (showNotesStr.length() > 0) {
+                companyInvoiceSettingsRequest.setShowNotes(DataTypeUtility.booleanValue(showNotesObj));
+            }
+        }
+        String noteText = DataTypeUtility.stringValue(param.get("noteText"));
+        if (noteText.length() == 0) {
+            noteText = null;
+        }
+        companyInvoiceSettingsRequest.setNoteText(noteText);
+        String termsText = DataTypeUtility.stringValue(param.get("termsText"));
+        if (termsText.length() == 0) {
+            termsText = null;
+        }
+        companyInvoiceSettingsRequest.setTermsText(termsText);
+        String footerCredit = DataTypeUtility.stringValue(param.get("footerCredit"));
+        if (footerCredit.length() == 0) {
+            footerCredit = null;
+        }
+        companyInvoiceSettingsRequest.setFooterCredit(footerCredit);
+        return companyInvoiceSettingsRequest;
     }
 }

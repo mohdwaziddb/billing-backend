@@ -21,6 +21,7 @@ import com.billing.repository.ExpenseRepository;
 import com.billing.repository.InvoiceRepository;
 import com.billing.repository.InvoiceItemAllocationRepository;
 import com.billing.repository.PaymentRepository;
+import com.billing.util.DataTypeUtility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -55,16 +56,16 @@ public class ExpenseService {
 
     @Transactional(readOnly = true)
     public PageResponse<ExpenseResponse> page(String email,
-                                              String search,
-                                              ExpenseType expenseType,
-                                              Long categoryId,
-                                              Long customerId,
-                                              Long invoiceId,
-                                              LocalDate startDate,
-                                              LocalDate endDate,
-                                              RoleName createdByRole,
-                                              int page,
-                                              int size) {
+                                               String search,
+                                               ExpenseType expenseType,
+                                               Long categoryId,
+                                               Long customerId,
+                                               Long invoiceId,
+                                               LocalDate startDate,
+                                               LocalDate endDate,
+                                               RoleName createdByRole,
+                                               int page,
+                                               int size) {
         User user = accessControlService.getCurrentUser(email);
         Company company = accessControlService.requireCompany(user);
         return PageResponse.from(expenseRepository.searchExpenses(
@@ -82,10 +83,57 @@ public class ExpenseService {
     }
 
     @Transactional(readOnly = true)
+    public PageResponse<ExpenseResponse> page(Map<String, Object> param, String email) {
+        String search = DataTypeUtility.stringValue(param.get("search"));
+        if (search.length() == 0) {
+            search = null;
+        }
+        ExpenseType expenseType = null;
+        String expenseTypeStr = DataTypeUtility.stringValue(param.get("expenseType"));
+        if (expenseTypeStr.length() > 0) {
+            try {
+                expenseType = ExpenseType.valueOf(expenseTypeStr);
+            } catch (Exception ignore) {
+            }
+        }
+        Long categoryId = DataTypeUtility.getForeignKeyValue(param.get("categoryId"));
+        Long customerId = DataTypeUtility.getForeignKeyValue(param.get("customerId"));
+        Long invoiceId = DataTypeUtility.getForeignKeyValue(param.get("invoiceId"));
+        LocalDate startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "yyyy-MM-dd");
+        if (startDate == null) {
+            startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "dd-MM-yyyy");
+        }
+        LocalDate endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "yyyy-MM-dd");
+        if (endDate == null) {
+            endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "dd-MM-yyyy");
+        }
+        RoleName createdByRole = null;
+        String roleStr = DataTypeUtility.stringValue(param.get("createdByRole"));
+        if (roleStr.length() > 0) {
+            try {
+                createdByRole = RoleName.valueOf(roleStr);
+            } catch (Exception ignore) {
+            }
+        }
+        int page = DataTypeUtility.integerValue(param.get("page"));
+        int size = DataTypeUtility.integerValue(param.get("size"));
+        if (size == 0) {
+            size = 20;
+        }
+        return page(email, search, expenseType, categoryId, customerId, invoiceId, startDate, endDate, createdByRole, page, size);
+    }
+
+    @Transactional(readOnly = true)
     public ExpenseResponse get(String email, Long expenseId) {
         User user = accessControlService.getCurrentUser(email);
         Company company = accessControlService.requireCompany(user);
         return toResponse(getExpenseOrThrow(company, expenseId));
+    }
+
+    @Transactional
+    public ExpenseResponse create(Map<String, Object> param, String email) {
+        ExpenseRequest expenseRequest = mapToRequest(param);
+        return create(email, expenseRequest);
     }
 
     @Transactional
@@ -97,6 +145,12 @@ public class ExpenseService {
         Expense saved = expenseRepository.save(expense);
         auditLogService.logCreate(email, company, "Expense", "Expense", saved.getId(), snapshot(saved));
         return toResponse(saved);
+    }
+
+    @Transactional
+    public ExpenseResponse update(Map<String, Object> param, Long expenseId, String email) {
+        ExpenseRequest expenseRequest = mapToRequest(param);
+        return update(email, expenseId, expenseRequest);
     }
 
     @Transactional
@@ -117,6 +171,19 @@ public class ExpenseService {
         Map<String, Object> oldData = snapshot(expense);
         expenseRepository.delete(expense);
         auditLogService.logDelete(email, company, "Expense", "Expense", expenseId, oldData);
+    }
+
+    @Transactional(readOnly = true)
+    public ProfitabilityResponse customerProfitability(Map<String, Object> param, String email, Long customerId) {
+        LocalDate startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "yyyy-MM-dd");
+        if (startDate == null) {
+            startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "dd-MM-yyyy");
+        }
+        LocalDate endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "yyyy-MM-dd");
+        if (endDate == null) {
+            endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "dd-MM-yyyy");
+        }
+        return customerProfitability(email, customerId, startDate, endDate);
     }
 
     @Transactional(readOnly = true)
@@ -147,6 +214,38 @@ public class ExpenseService {
                 .map(Expense::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         return profitability(invoiceId, invoice.getInvoiceNo(), revenue, costOfGoodsSold, expense);
+    }
+
+    @Transactional(readOnly = true)
+    public ProfitLossReportResponse profitLossReport(Map<String, Object> param, String email) {
+        ExpenseType expenseType = null;
+        String expenseTypeStr = DataTypeUtility.stringValue(param.get("expenseType"));
+        if (expenseTypeStr.length() > 0) {
+            try {
+                expenseType = ExpenseType.valueOf(expenseTypeStr);
+            } catch (Exception ignore) {
+            }
+        }
+        Long categoryId = DataTypeUtility.getForeignKeyValue(param.get("categoryId"));
+        Long customerId = DataTypeUtility.getForeignKeyValue(param.get("customerId"));
+        Long invoiceId = DataTypeUtility.getForeignKeyValue(param.get("invoiceId"));
+        LocalDate startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "yyyy-MM-dd");
+        if (startDate == null) {
+            startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "dd-MM-yyyy");
+        }
+        LocalDate endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "yyyy-MM-dd");
+        if (endDate == null) {
+            endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "dd-MM-yyyy");
+        }
+        RoleName createdByRole = null;
+        String roleStr = DataTypeUtility.stringValue(param.get("createdByRole"));
+        if (roleStr.length() > 0) {
+            try {
+                createdByRole = RoleName.valueOf(roleStr);
+            } catch (Exception ignore) {
+            }
+        }
+        return profitLossReport(email, expenseType, categoryId, customerId, invoiceId, startDate, endDate, createdByRole);
     }
 
     @Transactional(readOnly = true)
@@ -216,6 +315,48 @@ public class ExpenseService {
                 .expenseByCategory(expenseByCategory)
                 .revenueVsExpense(revenueVsExpense)
                 .build();
+    }
+
+    private ExpenseRequest mapToRequest(Map<String, Object> param) {
+        ExpenseRequest expenseRequest = new ExpenseRequest();
+        String expenseTypeStr = DataTypeUtility.stringValue(param.get("expenseType"));
+        if (expenseTypeStr.length() > 0) {
+            try {
+                expenseRequest.setExpenseType(ExpenseType.valueOf(expenseTypeStr));
+            } catch (Exception ignore) {
+                expenseRequest.setExpenseType(null);
+            }
+        }
+        expenseRequest.setCategoryId(DataTypeUtility.getForeignKeyValue(param.get("categoryId")));
+        expenseRequest.setCustomerId(DataTypeUtility.getForeignKeyValue(param.get("customerId")));
+        expenseRequest.setInvoiceId(DataTypeUtility.getForeignKeyValue(param.get("invoiceId")));
+        expenseRequest.setAmount(DataTypeUtility.bigDecimalObjectValue(param.get("amount")));
+        if (expenseRequest.getAmount() == null) {
+            Double amountValue = DataTypeUtility.doubleObjectValue(param.get("amount"));
+            if (amountValue != null) {
+                expenseRequest.setAmount(BigDecimal.valueOf(amountValue));
+            }
+        }
+        String expenseDateStr = DataTypeUtility.stringValue(param.get("expenseDate"));
+        LocalDate parsedExpenseDate = DataTypeUtility.parseLocalDate(expenseDateStr, "yyyy-MM-dd");
+        if (parsedExpenseDate == null) {
+            parsedExpenseDate = DataTypeUtility.parseLocalDate(expenseDateStr, "dd-MM-yyyy");
+        }
+        if (parsedExpenseDate == null) {
+            parsedExpenseDate = DataTypeUtility.parseLocalDate(expenseDateStr, "yyyy/MM/dd");
+        }
+        expenseRequest.setExpenseDate(parsedExpenseDate);
+        String description = DataTypeUtility.stringValue(param.get("description"));
+        if (description != null && description.isEmpty()) {
+            description = null;
+        }
+        expenseRequest.setDescription(description);
+        String attachmentUrl = DataTypeUtility.stringValue(param.get("attachmentUrl"));
+        if (attachmentUrl != null && attachmentUrl.isEmpty()) {
+            attachmentUrl = null;
+        }
+        expenseRequest.setAttachmentUrl(attachmentUrl);
+        return expenseRequest;
     }
 
     private void applyRequest(Company company, Expense expense, ExpenseRequest request) {

@@ -19,6 +19,7 @@ import com.billing.exception.BadRequestException;
 import com.billing.repository.InventoryLedgerRepository;
 import com.billing.repository.InvoiceItemAllocationRepository;
 import com.billing.repository.ProductBatchRepository;
+import com.billing.util.DataTypeUtility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -39,10 +40,35 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class InventoryService {
 
+    private final AccessControlService accessControlService;
     private final ProductBatchRepository productBatchRepository;
     private final InventoryLedgerRepository inventoryLedgerRepository;
     private final InvoiceItemAllocationRepository invoiceItemAllocationRepository;
     private final AuditNameResolver auditNameResolver;
+
+    @Transactional(readOnly = true)
+    public PageResponse<InventoryLedgerEntryResponse> ledgerPage(Map<String, Object> param, String email) {
+        Company company = accessControlService.getCurrentCompany(email);
+        Long productId = DataTypeUtility.getForeignKeyValue(param.get("productId"));
+        LocalDate startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "yyyy-MM-dd");
+        if (startDate == null) {
+            startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "dd-MM-yyyy");
+        }
+        LocalDate endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "yyyy-MM-dd");
+        if (endDate == null) {
+            endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "dd-MM-yyyy");
+        }
+        String search = DataTypeUtility.stringValue(param.get("search"));
+        if (search.length() == 0) {
+            search = null;
+        }
+        int page = DataTypeUtility.integerValue(param.get("page"));
+        int size = DataTypeUtility.integerValue(param.get("size"));
+        if (size == 0) {
+            size = 20;
+        }
+        return ledgerPage(email, company, productId, startDate, endDate, search, page, size);
+    }
 
     @Transactional(readOnly = true)
     public PageResponse<InventoryLedgerEntryResponse> ledgerPage(String email, Company company, Long productId, LocalDate startDate, LocalDate endDate, String search, int page, int size) {

@@ -23,6 +23,7 @@ import com.billing.repository.RoleMenuActionPermissionRepository;
 import com.billing.repository.RoleMenuPermissionRepository;
 import com.billing.repository.UserPermissionRepository;
 import com.billing.repository.UserRepository;
+import com.billing.util.DataTypeUtility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
@@ -30,6 +31,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -211,6 +213,121 @@ public class PermissionService {
             }
         }
         return userMatrix(ownerEmail, user.getId());
+    }
+
+    @Transactional(readOnly = true)
+    public PermissionMatrixResponse roleMatrix(Map<String, Object> param, String ownerEmail) {
+        String roleCode = DataTypeUtility.stringValue(param.get("roleCode"));
+        if (roleCode.length() == 0) {
+            roleCode = DataTypeUtility.stringValue(param.get("role_code"));
+        }
+        if (roleCode.length() == 0) {
+            roleCode = null;
+        }
+        return roleMatrix(ownerEmail, roleCode);
+    }
+
+    @Transactional(readOnly = true)
+    public PermissionMatrixResponse userMatrix(Map<String, Object> param, String ownerEmail) {
+        Long userId = DataTypeUtility.getForeignKeyValue(param.get("userId"));
+        if (userId == null) {
+            userId = DataTypeUtility.getForeignKeyValue(param.get("user_id"));
+        }
+        return userMatrix(ownerEmail, userId);
+    }
+
+    @Transactional
+    public PermissionMatrixResponse saveRoleMatrix(Map<String, Object> param, String ownerEmail) {
+        PermissionMatrixRequest permissionMatrixRequest = mapToPermissionMatrixRequest(param);
+        return saveRoleMatrix(ownerEmail, permissionMatrixRequest);
+    }
+
+    @Transactional
+    public PermissionMatrixResponse saveUserMatrix(Map<String, Object> param, String ownerEmail) {
+        PermissionMatrixRequest permissionMatrixRequest = mapToPermissionMatrixRequest(param);
+        return saveUserMatrix(ownerEmail, permissionMatrixRequest);
+    }
+
+    private PermissionMatrixRequest mapToPermissionMatrixRequest(Map<String, Object> param) {
+        PermissionMatrixRequest request = new PermissionMatrixRequest();
+        String roleCode = DataTypeUtility.stringValue(param.get("roleCode"));
+        if (roleCode.length() == 0) {
+            roleCode = DataTypeUtility.stringValue(param.get("role_code"));
+        }
+        if (roleCode.length() > 0) {
+            request.setRoleCode(roleCode);
+        }
+        Long userId = DataTypeUtility.getForeignKeyValue(param.get("userId"));
+        if (userId == null) {
+            userId = DataTypeUtility.getForeignKeyValue(param.get("user_id"));
+        }
+        request.setUserId(userId);
+        Object menusObj = param.get("menus");
+        if (menusObj instanceof List<?> && DataTypeUtility.requireNonNullCollection((Collection<?>) menusObj)) {
+            List<MenuPermissionRequest> menus = new ArrayList<>();
+            for (Object menuObj : (List<?>) menusObj) {
+                if (menuObj instanceof Map<?, ?>) {
+                    Map<?, ?> menuMap = (Map<?, ?>) menuObj;
+                    MenuPermissionRequest menuRequest = new MenuPermissionRequest();
+                    Object menuIdRaw = menuMap.get("menuId");
+                    if (menuIdRaw == null) {
+                        menuIdRaw = menuMap.get("menu_id");
+                    }
+                    if (menuIdRaw == null) {
+                        menuIdRaw = menuMap.get("id");
+                    }
+                    menuRequest.setMenuId(DataTypeUtility.getForeignKeyValue(menuIdRaw));
+                    Object canViewRaw = menuMap.get("canView");
+                    if (canViewRaw == null) {
+                        canViewRaw = menuMap.get("can_view");
+                    }
+                    menuRequest.setCanView(DataTypeUtility.booleanValue(canViewRaw));
+                    Object actionsObj = menuMap.get("actions");
+                    List<ActionPermissionRequest> actions = new ArrayList<>();
+                    if (actionsObj instanceof List<?> && DataTypeUtility.requireNonNullCollection((Collection<?>) actionsObj)) {
+                        for (Object actionObj : (List<?>) actionsObj) {
+                            if (actionObj instanceof Map<?, ?>) {
+                                Map<?, ?> actionMap = (Map<?, ?>) actionObj;
+                                ActionPermissionRequest actionRequest = new ActionPermissionRequest();
+                                Object actionIdRaw = actionMap.get("actionId");
+                                if (actionIdRaw == null) {
+                                    actionIdRaw = actionMap.get("action_id");
+                                }
+                                if (actionIdRaw == null) {
+                                    actionIdRaw = actionMap.get("id");
+                                }
+                                actionRequest.setActionId(DataTypeUtility.getForeignKeyValue(actionIdRaw));
+                                Object allowedRaw = actionMap.get("allowed");
+                                actionRequest.setAllowed(DataTypeUtility.booleanValue(allowedRaw));
+                                Object overrideRaw = actionMap.get("overrideAllowed");
+                                if (overrideRaw == null) {
+                                    overrideRaw = actionMap.get("override_allowed");
+                                }
+                                if (overrideRaw != null) {
+                                    String overrideStr = DataTypeUtility.stringValue(overrideRaw);
+                                    if (overrideStr.length() > 0) {
+                                        if ("null".equalsIgnoreCase(overrideStr)) {
+                                            actionRequest.setOverrideAllowed(null);
+                                        } else {
+                                            actionRequest.setOverrideAllowed(DataTypeUtility.booleanValue(overrideRaw));
+                                        }
+                                    } else {
+                                        actionRequest.setOverrideAllowed(null);
+                                    }
+                                } else {
+                                    actionRequest.setOverrideAllowed(null);
+                                }
+                                actions.add(actionRequest);
+                            }
+                        }
+                    }
+                    menuRequest.setActions(actions);
+                    menus.add(menuRequest);
+                }
+            }
+            request.setMenus(menus);
+        }
+        return request;
     }
 
     private List<MenuPermissionResponse> allMenus(boolean allowAll, User user, RoleMaster role, Company company, boolean onlyVisible) {

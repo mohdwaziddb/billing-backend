@@ -11,6 +11,7 @@ import com.billing.entity.Invoice;
 import com.billing.entity.InvoiceItem;
 import com.billing.entity.User;
 import com.billing.repository.InvoiceRepository;
+import com.billing.util.DataTypeUtility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,6 +34,19 @@ public class GstReportService {
 
     private final AccessControlService accessControlService;
     private final InvoiceRepository invoiceRepository;
+
+    @Transactional(readOnly = true)
+    public GstReportResponse summary(Map<String, Object> param, String email) {
+        LocalDate startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "yyyy-MM-dd");
+        if (startDate == null) {
+            startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "dd-MM-yyyy");
+        }
+        LocalDate endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "yyyy-MM-dd");
+        if (endDate == null) {
+            endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "dd-MM-yyyy");
+        }
+        return summary(email, startDate, endDate);
+    }
 
     @Transactional(readOnly = true)
     public GstReportResponse summary(String email, LocalDate startDate, LocalDate endDate) {

@@ -8,6 +8,7 @@ import com.billing.entity.ExpenseCategory;
 import com.billing.exception.BadRequestException;
 import com.billing.exception.ResourceNotFoundException;
 import com.billing.repository.ExpenseCategoryRepository;
+import com.billing.util.DataTypeUtility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -33,9 +34,37 @@ public class ExpenseCategoryService {
     }
 
     @Transactional(readOnly = true)
+    public PageResponse<ExpenseCategoryResponse> page(Map<String, Object> param, String email) {
+        String search = DataTypeUtility.stringValue(param.get("search"));
+        if (search.length() == 0) {
+            search = null;
+        }
+        Boolean active = null;
+        Object activeObj = param.get("active");
+        if (activeObj != null) {
+            String activeStr = DataTypeUtility.stringValue(activeObj);
+            if (activeStr.length() > 0) {
+                active = DataTypeUtility.booleanValue(activeObj);
+            }
+        }
+        int page = DataTypeUtility.integerValue(param.get("page"));
+        int size = DataTypeUtility.integerValue(param.get("size"));
+        if (size == 0) {
+            size = 20;
+        }
+        return page(email, search, active, page, size);
+    }
+
+    @Transactional(readOnly = true)
     public ExpenseCategoryResponse get(String email, Long categoryId) {
         Company company = accessControlService.getCurrentCompany(email);
         return toResponse(getCategoryOrThrow(company, categoryId));
+    }
+
+    @Transactional
+    public ExpenseCategoryResponse create(Map<String, Object> param, String email) {
+        ExpenseCategoryRequest expenseCategoryRequest = mapToRequest(param);
+        return create(email, expenseCategoryRequest);
     }
 
     @Transactional
@@ -54,6 +83,12 @@ public class ExpenseCategoryService {
         ExpenseCategory saved = expenseCategoryRepository.save(category);
         auditLogService.logCreate(email, company, "Expense Category", "ExpenseCategory", saved.getId(), snapshot(saved));
         return toResponse(saved);
+    }
+
+    @Transactional
+    public ExpenseCategoryResponse update(Map<String, Object> param, Long categoryId, String email) {
+        ExpenseCategoryRequest expenseCategoryRequest = mapToRequest(param);
+        return update(email, categoryId, expenseCategoryRequest);
     }
 
     @Transactional
@@ -118,6 +153,30 @@ public class ExpenseCategoryService {
         data.put("description", category.getDescription());
         data.put("active", category.isActive());
         return data;
+    }
+
+    private ExpenseCategoryRequest mapToRequest(Map<String, Object> param) {
+        ExpenseCategoryRequest expenseCategoryRequest = new ExpenseCategoryRequest();
+        String categoryName = DataTypeUtility.stringValue(param.get("categoryName"));
+        if (categoryName.length() == 0) {
+            categoryName = null;
+        }
+        expenseCategoryRequest.setCategoryName(categoryName);
+        String description = DataTypeUtility.stringValue(param.get("description"));
+        if (description.length() == 0) {
+            description = null;
+        }
+        expenseCategoryRequest.setDescription(description);
+        Object activeObj = param.get("active");
+        Boolean active = null;
+        if (activeObj != null) {
+            String activeStr = DataTypeUtility.stringValue(activeObj);
+            if (activeStr.length() > 0) {
+                active = DataTypeUtility.booleanValue(activeObj);
+            }
+        }
+        expenseCategoryRequest.setActive(active);
+        return expenseCategoryRequest;
     }
 
     private String normalizeName(String value) {

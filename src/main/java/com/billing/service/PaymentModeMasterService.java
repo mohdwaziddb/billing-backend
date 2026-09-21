@@ -8,6 +8,7 @@ import com.billing.entity.PaymentModeMaster;
 import com.billing.exception.BadRequestException;
 import com.billing.exception.ResourceNotFoundException;
 import com.billing.repository.PaymentModeMasterRepository;
+import com.billing.util.DataTypeUtility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -45,6 +46,28 @@ public class PaymentModeMasterService {
         ensureDefaults(company);
         return PageResponse.from(paymentModeMasterRepository.findPageByCompanyWithFilters(company, active, normalizeSearch(search), pageRequest(page, size))
                 .map(this::toResponse));
+    }
+
+    @Transactional
+    public PageResponse<PaymentModeResponse> page(Map<String, Object> param, String email) {
+        String search = DataTypeUtility.stringValue(param.get("search"));
+        if (search.length() == 0) {
+            search = null;
+        }
+        Boolean active = null;
+        Object activeRaw = param.get("active");
+        if (activeRaw != null) {
+            String activeStr = DataTypeUtility.stringValue(activeRaw);
+            if (activeStr.length() > 0) {
+                active = DataTypeUtility.booleanValue(activeRaw);
+            }
+        }
+        int page = DataTypeUtility.integerValue(param.get("page"));
+        int size = DataTypeUtility.integerValue(param.get("size"));
+        if (size == 0) {
+            size = 20;
+        }
+        return page(email, search, active, page, size);
     }
 
     @Transactional(readOnly = true)
@@ -98,6 +121,18 @@ public class PaymentModeMasterService {
         mode.setActive(false);
         PaymentModeMaster saved = paymentModeMasterRepository.save(mode);
         auditLogService.logDelete(email, company, "Payment Mode", "PaymentMode", saved.getId(), oldData);
+    }
+
+    @Transactional
+    public PaymentModeResponse create(Map<String, Object> param, String email) {
+        PaymentModeRequest paymentModeRequest = mapToPaymentModeRequest(param);
+        return create(email, paymentModeRequest);
+    }
+
+    @Transactional
+    public PaymentModeResponse update(Map<String, Object> param, Long modeId, String email) {
+        PaymentModeRequest paymentModeRequest = mapToPaymentModeRequest(param);
+        return update(email, modeId, paymentModeRequest);
     }
 
     @Transactional
@@ -199,5 +234,35 @@ public class PaymentModeMasterService {
 
     private PageRequest pageRequest(int page, int size) {
         return PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 100)));
+    }
+
+    private PaymentModeRequest mapToPaymentModeRequest(Map<String, Object> param) {
+        PaymentModeRequest paymentModeRequest = new PaymentModeRequest();
+        String modeName = DataTypeUtility.stringValue(param.get("modeName"));
+        if (modeName.length() == 0) {
+            modeName = DataTypeUtility.stringValue(param.get("name"));
+        }
+        if (modeName.length() == 0) {
+            modeName = null;
+        }
+        paymentModeRequest.setModeName(modeName);
+        String description = DataTypeUtility.stringValue(param.get("description"));
+        if (description.length() == 0) {
+            description = null;
+        }
+        paymentModeRequest.setDescription(description);
+        Object activeRaw = param.get("active");
+        if (activeRaw == null) {
+            activeRaw = param.get("isActive");
+        }
+        Boolean active = null;
+        if (activeRaw != null) {
+            String activeStr = DataTypeUtility.stringValue(activeRaw);
+            if (activeStr.length() > 0) {
+                active = DataTypeUtility.booleanValue(activeRaw);
+            }
+        }
+        paymentModeRequest.setActive(active);
+        return paymentModeRequest;
     }
 }

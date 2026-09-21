@@ -18,6 +18,7 @@ import com.billing.exception.BadRequestException;
 import com.billing.repository.CustomerRepository;
 import com.billing.repository.InvoiceRepository;
 import com.billing.repository.ReminderLogRepository;
+import com.billing.util.DataTypeUtility;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -82,6 +83,40 @@ public class ReminderService {
         return PageResponse.from(new PageImpl<>(allRecords.subList(fromIndex, toIndex), pageable, allRecords.size()));
     }
 
+    @Transactional(readOnly = true)
+    public PageResponse<OverdueCustomerResponse> getOverdueCustomers(Map<String, Object> param, String email) {
+        String searchFilter = DataTypeUtility.stringValue(param.get("search"));
+        if (searchFilter.length() == 0) {
+            searchFilter = null;
+        }
+        BigDecimal minBalanceValue = DataTypeUtility.bigDecimalObjectValue(param.get("minBalance"));
+        if (minBalanceValue == null) {
+            minBalanceValue = DataTypeUtility.bigDecimalObjectValue(param.get("min_balance"));
+        }
+        if (minBalanceValue == null) {
+            Double doubleValue = DataTypeUtility.doubleObjectValue(param.get("minBalance"));
+            if (doubleValue != null) {
+                minBalanceValue = BigDecimal.valueOf(doubleValue);
+            }
+        }
+        Integer overdueDaysValue = DataTypeUtility.integerNullValue(param.get("overdueDays"));
+        if (overdueDaysValue == null) {
+            overdueDaysValue = DataTypeUtility.integerNullValue(param.get("overdue_days"));
+        }
+        if (overdueDaysValue == null) {
+            Long longValue = DataTypeUtility.longValue(param.get("overdueDays"));
+            if (longValue != null) {
+                overdueDaysValue = longValue.intValue();
+            }
+        }
+        int pageNumber = DataTypeUtility.integerValue(param.get("page"));
+        int pageSize = DataTypeUtility.integerValue(param.get("size"));
+        if (pageSize == 0) {
+            pageSize = 20;
+        }
+        return getOverdueCustomers(email, searchFilter, minBalanceValue, overdueDaysValue, pageNumber, pageSize);
+    }
+
     @Transactional
     public ReminderHistoryResponse sendReminder(String email, ReminderSendRequest request) {
         Company company = accessControlService.getCurrentCompany(email);
@@ -142,12 +177,49 @@ public class ReminderService {
         return toHistoryResponse(savedLog);
     }
 
+    @Transactional
+    public ReminderHistoryResponse sendReminder(Map<String, Object> param, String email) {
+        ReminderSendRequest reminderSendRequest = mapToReminderSendRequest(param);
+        return sendReminder(email, reminderSendRequest);
+    }
+
     @Transactional(readOnly = true)
     public PageResponse<ReminderHistoryResponse> history(String email, Long customerId, int page, int size) {
         Company company = accessControlService.getCurrentCompany(email);
         Customer customer = customerService.getCustomerOrThrow(company, customerId);
         return PageResponse.from(reminderLogRepository.findByCompanyAndCustomerOrderByCreatedAtDesc(company, customer, pageRequest(page, size))
                 .map(this::toHistoryResponse));
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<ReminderHistoryResponse> history(Map<String, Object> param, String email, Long customerId) {
+        Long customerIdValue = DataTypeUtility.getForeignKeyValue(customerId);
+        if (customerIdValue == null) {
+            customerIdValue = DataTypeUtility.getForeignKeyValue(param.get("customerId"));
+        }
+        if (customerIdValue == null) {
+            customerIdValue = DataTypeUtility.getForeignKeyValue(param.get("customer_id"));
+        }
+        int pageNumber = DataTypeUtility.integerValue(param.get("page"));
+        int pageSize = DataTypeUtility.integerValue(param.get("size"));
+        if (pageSize == 0) {
+            pageSize = 20;
+        }
+        return history(email, customerIdValue, pageNumber, pageSize);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<ReminderHistoryResponse> history(Map<String, Object> param, String email) {
+        Long customerIdValue = DataTypeUtility.getForeignKeyValue(param.get("customerId"));
+        if (customerIdValue == null) {
+            customerIdValue = DataTypeUtility.getForeignKeyValue(param.get("customer_id"));
+        }
+        int pageNumber = DataTypeUtility.integerValue(param.get("page"));
+        int pageSize = DataTypeUtility.integerValue(param.get("size"));
+        if (pageSize == 0) {
+            pageSize = 20;
+        }
+        return history(email, customerIdValue, pageNumber, pageSize);
     }
 
     @Scheduled(cron = "0 0 8 * * *", zone = "Asia/Kolkata")
@@ -157,6 +229,34 @@ public class ReminderService {
                 .filter(customer -> customer.getCurrentBalance().compareTo(BigDecimal.ZERO) > 0)
                 .count();
         log.info("Prepared {} due customers for reminder review", dueCustomerCount);
+    }
+
+    private ReminderSendRequest mapToReminderSendRequest(Map<String, Object> param) {
+        ReminderSendRequest reminderSendRequest = new ReminderSendRequest();
+        Long customerIdValue = DataTypeUtility.getForeignKeyValue(param.get("customerId"));
+        if (customerIdValue == null) {
+            customerIdValue = DataTypeUtility.getForeignKeyValue(param.get("customer_id"));
+        }
+        reminderSendRequest.setCustomerId(customerIdValue);
+        String channelString = DataTypeUtility.stringValue(param.get("channel"));
+        if (channelString.length() > 0) {
+            try {
+                reminderSendRequest.setChannel(ReminderChannel.valueOf(channelString.toUpperCase(Locale.ENGLISH)));
+            } catch (Exception exception) {
+                reminderSendRequest.setChannel(null);
+            }
+        } else {
+            Object channelObject = param.get("channel");
+            if (channelObject instanceof ReminderChannel) {
+                reminderSendRequest.setChannel((ReminderChannel) channelObject);
+            }
+        }
+        Long templateIdValue = DataTypeUtility.getForeignKeyValue(param.get("templateId"));
+        if (templateIdValue == null) {
+            templateIdValue = DataTypeUtility.getForeignKeyValue(param.get("template_id"));
+        }
+        reminderSendRequest.setTemplateId(templateIdValue);
+        return reminderSendRequest;
     }
 
     private List<OverdueCustomerResponse> buildOverdueCustomers(Company company, String search, BigDecimal minBalance, Integer overdueDays) {

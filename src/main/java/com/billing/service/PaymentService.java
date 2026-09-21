@@ -12,6 +12,7 @@ import com.billing.entity.Invoice;
 import com.billing.entity.User;
 import com.billing.exception.BadRequestException;
 import com.billing.repository.PaymentRepository;
+import com.billing.util.DataTypeUtility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -82,6 +83,58 @@ public class PaymentService {
     @Transactional(readOnly = true)
     public PageResponse<PaymentResponse> page(String email, int page, int size) {
         return page(email, null, null, null, null, null, null, null, null, null, "ACTIVE", page, size);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<PaymentResponse> page(Map<String, Object> param, String email) {
+        String search = DataTypeUtility.stringValue(param.get("search"));
+        if (search.length() == 0) {
+            search = null;
+        }
+        String paymentStatus = DataTypeUtility.stringValue(param.get("paymentStatus"));
+        if (paymentStatus.length() == 0) {
+            paymentStatus = null;
+        }
+        LocalDate startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "yyyy-MM-dd");
+        if (startDate == null) {
+            startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "dd-MM-yyyy");
+        }
+        LocalDate endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "yyyy-MM-dd");
+        if (endDate == null) {
+            endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "dd-MM-yyyy");
+        }
+        BigDecimal minAmount = DataTypeUtility.bigDecimalObjectValue(param.get("minAmount"));
+        BigDecimal maxAmount = DataTypeUtility.bigDecimalObjectValue(param.get("maxAmount"));
+        String mode = DataTypeUtility.stringValue(param.get("mode"));
+        if (mode.length() == 0) {
+            mode = null;
+        }
+        Boolean invoiceLinked = null;
+        Object invoiceLinkedRaw = param.get("invoiceLinked");
+        if (invoiceLinkedRaw != null) {
+            String invoiceLinkedStr = DataTypeUtility.stringValue(invoiceLinkedRaw);
+            if (invoiceLinkedStr.length() > 0) {
+                invoiceLinked = DataTypeUtility.booleanValue(invoiceLinkedRaw);
+            }
+        }
+        RoleName createdByRole = null;
+        String createdByRoleStr = DataTypeUtility.stringValue(param.get("createdByRole"));
+        if (createdByRoleStr.length() > 0) {
+            try {
+                createdByRole = RoleName.valueOf(createdByRoleStr);
+            } catch (Exception ignore) {
+            }
+        }
+        String recordStatus = DataTypeUtility.stringValue(param.get("recordStatus"));
+        if (recordStatus.length() == 0) {
+            recordStatus = "ACTIVE";
+        }
+        int page = DataTypeUtility.integerValue(param.get("page"));
+        int size = DataTypeUtility.integerValue(param.get("size"));
+        if (size == 0) {
+            size = 20;
+        }
+        return page(email, search, paymentStatus, startDate, endDate, minAmount, maxAmount, mode, invoiceLinked, createdByRole, recordStatus, page, size);
     }
 
     @Transactional(readOnly = true)
@@ -177,6 +230,18 @@ public class PaymentService {
             invoiceService.logPaymentUpdated(email, company, invoice, amount, nextOldOutstanding, invoice.getBalanceAmount(), saved.getMode());
         }
         return toResponse(saved);
+    }
+
+    @Transactional
+    public PaymentResponse create(Map<String, Object> param, String email) {
+        PaymentRequest paymentRequest = mapToPaymentRequest(param);
+        return create(email, paymentRequest);
+    }
+
+    @Transactional
+    public PaymentResponse update(Map<String, Object> param, Long paymentId, String email) {
+        PaymentRequest paymentRequest = mapToPaymentRequest(param);
+        return update(email, paymentId, paymentRequest);
     }
 
     @Transactional
@@ -330,5 +395,38 @@ public class PaymentService {
             throw new BadRequestException("Payment amount must be greater than 0");
         }
         return amount;
+    }
+
+    private PaymentRequest mapToPaymentRequest(Map<String, Object> param) {
+        PaymentRequest paymentRequest = new PaymentRequest();
+        paymentRequest.setCustomerId(DataTypeUtility.getForeignKeyValue(param.get("customerId")));
+        paymentRequest.setInvoiceId(DataTypeUtility.getForeignKeyValue(param.get("invoiceId")));
+        paymentRequest.setAmount(DataTypeUtility.bigDecimalObjectValue(param.get("amount")));
+        if (paymentRequest.getAmount() == null) {
+            Double amountDouble = DataTypeUtility.doubleObjectValue(param.get("amount"));
+            if (amountDouble != null) {
+                paymentRequest.setAmount(BigDecimal.valueOf(amountDouble));
+            }
+        }
+        String paymentDateStr = DataTypeUtility.stringValue(param.get("paymentDate"));
+        LocalDate parsedPaymentDate = DataTypeUtility.parseLocalDate(paymentDateStr, "yyyy-MM-dd");
+        if (parsedPaymentDate == null) {
+            parsedPaymentDate = DataTypeUtility.parseLocalDate(paymentDateStr, "dd-MM-yyyy");
+        }
+        if (parsedPaymentDate == null) {
+            parsedPaymentDate = DataTypeUtility.parseLocalDate(paymentDateStr, "yyyy/MM/dd");
+        }
+        paymentRequest.setPaymentDate(parsedPaymentDate);
+        String mode = DataTypeUtility.stringValue(param.get("mode"));
+        if (mode.length() == 0) {
+            mode = null;
+        }
+        paymentRequest.setMode(mode);
+        String remarks = DataTypeUtility.stringValue(param.get("remarks"));
+        if (remarks.length() == 0) {
+            remarks = null;
+        }
+        paymentRequest.setRemarks(remarks);
+        return paymentRequest;
     }
 }

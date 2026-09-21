@@ -13,6 +13,7 @@ import com.billing.exception.BadRequestException;
 import com.billing.exception.ResourceNotFoundException;
 import com.billing.repository.EmailLogRepository;
 import com.billing.repository.EmailTemplateRepository;
+import com.billing.util.DataTypeUtility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -42,6 +43,28 @@ public class EmailTemplateService {
     }
 
     @Transactional(readOnly = true)
+    public PageResponse<EmailTemplateResponse> page(Map<String, Object> param, String email) {
+        String search = DataTypeUtility.stringValue(param.get("search"));
+        if (search.length() == 0) {
+            search = null;
+        }
+        Boolean active = null;
+        Object activeObj = param.get("active");
+        if (activeObj != null) {
+            String activeStr = DataTypeUtility.stringValue(activeObj);
+            if (activeStr.length() > 0) {
+                active = DataTypeUtility.booleanValue(activeObj);
+            }
+        }
+        int page = DataTypeUtility.integerValue(param.get("page"));
+        int size = DataTypeUtility.integerValue(param.get("size"));
+        if (size == 0) {
+            size = 20;
+        }
+        return page(email, search, active, page, size);
+    }
+
+    @Transactional(readOnly = true)
     public List<EmailTemplateResponse> activeTemplates(String email) {
         Company company = accessControlService.getCurrentCompany(email);
         return emailTemplateRepository.findByCompanyAndActiveTrueOrderByTemplateNameAsc(company).stream()
@@ -53,6 +76,12 @@ public class EmailTemplateService {
     public EmailTemplateResponse get(String email, Long templateId) {
         Company company = accessControlService.getCurrentCompany(email);
         return toResponse(getTemplateOrThrow(company, templateId));
+    }
+
+    @Transactional
+    public EmailTemplateResponse create(Map<String, Object> param, String email) {
+        EmailTemplateRequest emailTemplateRequest = mapToTemplateRequest(param);
+        return create(email, emailTemplateRequest);
     }
 
     @Transactional
@@ -72,6 +101,12 @@ public class EmailTemplateService {
         EmailTemplate saved = emailTemplateRepository.save(template);
         auditLogService.logCreate(email, company, "Email Template", "EmailTemplate", saved.getId(), snapshot(saved));
         return toResponse(saved);
+    }
+
+    @Transactional
+    public EmailTemplateResponse update(Map<String, Object> param, Long templateId, String email) {
+        EmailTemplateRequest emailTemplateRequest = mapToTemplateRequest(param);
+        return update(email, templateId, emailTemplateRequest);
     }
 
     @Transactional
@@ -103,6 +138,25 @@ public class EmailTemplateService {
     }
 
     @Transactional(readOnly = true)
+    public EmailPreviewResponse preview(Map<String, Object> param, Long templateId, String email) {
+        EmailRenderRequest emailRenderRequest = new EmailRenderRequest();
+        Object variablesObj = param.get("variables");
+        if (variablesObj instanceof Map) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> variablesMap = (Map<String, Object>) variablesObj;
+            emailRenderRequest.setVariables(variablesMap);
+        } else {
+            Object variablesData = param.get("variablesData");
+            if (variablesData instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> variablesMap = (Map<String, Object>) variablesData;
+                emailRenderRequest.setVariables(variablesMap);
+            }
+        }
+        return preview(email, templateId, emailRenderRequest);
+    }
+
+    @Transactional(readOnly = true)
     public EmailPreviewResponse preview(String email, Long templateId, EmailRenderRequest request) {
         Company company = accessControlService.getCurrentCompany(email);
         EmailTemplate template = getTemplateOrThrow(company, templateId);
@@ -114,11 +168,27 @@ public class EmailTemplateService {
     }
 
     @Transactional
+    public EmailLogResponse send(Map<String, Object> param, String email) {
+        EmailSendRequest emailSendRequest = mapToSendRequest(param);
+        return send(email, emailSendRequest);
+    }
+
+    @Transactional
     public EmailLogResponse send(String email, EmailSendRequest request) {
         Company company = accessControlService.getCurrentCompany(email);
         EmailTemplate template = emailTemplateRepository.findByIdAndCompanyAndActiveTrue(request.getTemplateId(), company)
                 .orElseThrow(() -> new ResourceNotFoundException("Active email template not found"));
         return emailService.sendTemplateEmail(email, company, template, request);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<EmailLogResponse> logs(Map<String, Object> param, String email) {
+        int page = DataTypeUtility.integerValue(param.get("page"));
+        int size = DataTypeUtility.integerValue(param.get("size"));
+        if (size == 0) {
+            size = 20;
+        }
+        return logs(email, page, size);
     }
 
     @Transactional(readOnly = true)
@@ -131,6 +201,53 @@ public class EmailTemplateService {
     @Transactional(readOnly = true)
     public Map<String, String> variables() {
         return EmailTemplateVariableService.AVAILABLE_VARIABLES;
+    }
+
+    private EmailTemplateRequest mapToTemplateRequest(Map<String, Object> param) {
+        EmailTemplateRequest emailTemplateRequest = new EmailTemplateRequest();
+        String templateName = DataTypeUtility.stringValue(param.get("templateName"));
+        if (templateName.length() == 0) {
+            templateName = null;
+        }
+        emailTemplateRequest.setTemplateName(templateName);
+        String subject = DataTypeUtility.stringValue(param.get("subject"));
+        if (subject.length() == 0) {
+            subject = null;
+        }
+        emailTemplateRequest.setSubject(subject);
+        String emailBody = DataTypeUtility.stringValue(param.get("emailBody"));
+        if (emailBody.length() == 0) {
+            emailBody = null;
+        }
+        emailTemplateRequest.setEmailBody(emailBody);
+        Object activeObj = param.get("active");
+        Boolean active = null;
+        if (activeObj != null) {
+            String activeStr = DataTypeUtility.stringValue(activeObj);
+            if (activeStr.length() > 0) {
+                active = DataTypeUtility.booleanValue(activeObj);
+            }
+        }
+        emailTemplateRequest.setActive(active);
+        return emailTemplateRequest;
+    }
+
+    private EmailSendRequest mapToSendRequest(Map<String, Object> param) {
+        EmailSendRequest emailSendRequest = new EmailSendRequest();
+        Long templateId = DataTypeUtility.getForeignKeyValue(param.get("templateId"));
+        emailSendRequest.setTemplateId(templateId);
+        String recipientEmail = DataTypeUtility.stringValue(param.get("recipientEmail"));
+        if (recipientEmail.length() == 0) {
+            recipientEmail = null;
+        }
+        emailSendRequest.setRecipientEmail(recipientEmail);
+        Object variablesObj = param.get("variables");
+        if (variablesObj instanceof Map) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> variablesMap = (Map<String, Object>) variablesObj;
+            emailSendRequest.setVariables(variablesMap);
+        }
+        return emailSendRequest;
     }
 
     private EmailTemplate getTemplateOrThrow(Company company, Long templateId) {

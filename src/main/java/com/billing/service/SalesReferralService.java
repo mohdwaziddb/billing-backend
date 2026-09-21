@@ -7,6 +7,7 @@ import com.billing.entity.Company;
 import com.billing.entity.Invoice;
 import com.billing.entity.User;
 import com.billing.repository.InvoiceRepository;
+import com.billing.util.DataTypeUtility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -70,6 +71,39 @@ public class SalesReferralService {
                 .referredInvoices(referredInvoiceRows)
                 .thisMonthInvoices(thisMonthRows)
                 .build();
+    }
+
+    @Transactional(readOnly = true)
+    public SalesReferralReportResponse report(Map<String, Object> param, String email) {
+        String startDateString = DataTypeUtility.stringValue(param.get("startDate"));
+        if (startDateString.length() == 0) {
+            startDateString = DataTypeUtility.stringValue(param.get("start_date"));
+        }
+        LocalDate startDateValue = null;
+        if (startDateString.length() > 0) {
+            startDateValue = DataTypeUtility.parseLocalDate(startDateString, "yyyy-MM-dd");
+            if (startDateValue == null) {
+                startDateValue = DataTypeUtility.parseLocalDate(startDateString, "dd-MM-yyyy");
+            }
+            if (startDateValue == null) {
+                startDateValue = DataTypeUtility.parseLocalDate(startDateString, "yyyy/MM/dd");
+            }
+        }
+        String endDateString = DataTypeUtility.stringValue(param.get("endDate"));
+        if (endDateString.length() == 0) {
+            endDateString = DataTypeUtility.stringValue(param.get("end_date"));
+        }
+        LocalDate endDateValue = null;
+        if (endDateString.length() > 0) {
+            endDateValue = DataTypeUtility.parseLocalDate(endDateString, "yyyy-MM-dd");
+            if (endDateValue == null) {
+                endDateValue = DataTypeUtility.parseLocalDate(endDateString, "dd-MM-yyyy");
+            }
+            if (endDateValue == null) {
+                endDateValue = DataTypeUtility.parseLocalDate(endDateString, "yyyy/MM/dd");
+            }
+        }
+        return report(email, startDateValue, endDateValue);
     }
 
     private SalesReferralUserSummaryResponse toUserSummary(List<Invoice> invoices) {

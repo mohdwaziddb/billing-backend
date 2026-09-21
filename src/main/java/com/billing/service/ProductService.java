@@ -13,6 +13,7 @@ import com.billing.entity.User;
 import com.billing.exception.BadRequestException;
 import com.billing.exception.ResourceNotFoundException;
 import com.billing.repository.ProductRepository;
+import com.billing.util.DataTypeUtility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -20,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -87,6 +89,36 @@ public class ProductService {
     }
 
     @Transactional(readOnly = true)
+    public PageResponse<ProductResponse> page(Map<String, Object> param, String email) {
+        Long categoryId = DataTypeUtility.getForeignKeyValue(param.get("categoryId"));
+        if (categoryId == null) {
+            categoryId = DataTypeUtility.getForeignKeyValue(param.get("category_id"));
+        }
+        Long subCategoryId = DataTypeUtility.getForeignKeyValue(param.get("subCategoryId"));
+        if (subCategoryId == null) {
+            subCategoryId = DataTypeUtility.getForeignKeyValue(param.get("sub_category_id"));
+        }
+        String search = DataTypeUtility.stringValue(param.get("search"));
+        if (search.length() == 0) {
+            search = null;
+        }
+        Boolean active = null;
+        Object activeRaw = param.get("active");
+        if (activeRaw != null) {
+            String activeStr = DataTypeUtility.stringValue(activeRaw);
+            if (activeStr.length() > 0) {
+                active = DataTypeUtility.booleanValue(activeRaw);
+            }
+        }
+        int page = DataTypeUtility.integerValue(param.get("page"));
+        int size = DataTypeUtility.integerValue(param.get("size"));
+        if (size == 0) {
+            size = 20;
+        }
+        return page(email, categoryId, subCategoryId, search, active, page, size);
+    }
+
+    @Transactional(readOnly = true)
     public ProductResponse get(String email, Long productId) {
         User user = accessControlService.getCurrentUser(email);
         Company company = accessControlService.requireCompany(user);
@@ -130,6 +162,45 @@ public class ProductService {
         product.setActive(false);
         Product saved = productRepository.save(product);
         auditLogService.logDelete(email, company, "Product", "Product", saved.getId(), oldData);
+    }
+
+    @Transactional
+    public ProductResponse create(Map<String, Object> param, String email) {
+        ProductRequest productRequest = mapToProductRequest(param);
+        return create(email, productRequest);
+    }
+
+    @Transactional
+    public ProductResponse update(Map<String, Object> param, Long productId, String email) {
+        ProductRequest productRequest = mapToProductRequest(param);
+        return update(email, productId, productRequest);
+    }
+
+    public com.billing.dto.BulkDeleteResponse deleteBulk(Map<String, Object> param, String email) {
+        List<Long> ids = new ArrayList<>();
+        Object idsObj = param.get("ids");
+        if (idsObj instanceof List<?>) {
+            for (Object idObj : (List<?>) idsObj) {
+                Long parsedId = DataTypeUtility.getForeignKeyValue(idObj);
+                if (parsedId != null) {
+                    ids.add(parsedId);
+                }
+            }
+        } else {
+            String idsStr = DataTypeUtility.stringValue(idsObj);
+            if (idsStr.length() > 0) {
+                ids = new ArrayList<>(DataTypeUtility.getListFromCommaValue(idsStr));
+            } else {
+                Object singleId = param.get("id");
+                if (singleId != null) {
+                    Long parsedSingle = DataTypeUtility.getForeignKeyValue(singleId);
+                    if (parsedSingle != null) {
+                        ids.add(parsedSingle);
+                    }
+                }
+            }
+        }
+        return deleteBulk(email, ids);
     }
 
     public com.billing.dto.BulkDeleteResponse deleteBulk(String email, java.util.List<Long> ids) {
@@ -258,5 +329,87 @@ public class ProductService {
     private Company companyScope(String email) {
         User user = accessControlService.getCurrentUser(email);
         return accessControlService.requireCompany(user);
+    }
+
+    private ProductRequest mapToProductRequest(Map<String, Object> param) {
+        ProductRequest request = new ProductRequest();
+        String name = DataTypeUtility.stringValue(param.get("name"));
+        if (name.length() == 0) {
+            name = null;
+        }
+        request.setName(name);
+        Long categoryId = DataTypeUtility.getForeignKeyValue(param.get("categoryId"));
+        if (categoryId == null) {
+            categoryId = DataTypeUtility.getForeignKeyValue(param.get("category_id"));
+        }
+        request.setCategoryId(categoryId);
+        Long subCategoryId = DataTypeUtility.getForeignKeyValue(param.get("subCategoryId"));
+        if (subCategoryId == null) {
+            subCategoryId = DataTypeUtility.getForeignKeyValue(param.get("sub_category_id"));
+        }
+        if (subCategoryId == null) {
+            subCategoryId = DataTypeUtility.getForeignKeyValue(param.get("subCategory_id"));
+        }
+        request.setSubCategoryId(subCategoryId);
+        String brand = DataTypeUtility.stringValue(param.get("brand"));
+        if (brand.length() == 0) {
+            brand = null;
+        }
+        request.setBrand(brand);
+        String sku = DataTypeUtility.stringValue(param.get("sku"));
+        if (sku.length() == 0) {
+            sku = null;
+        }
+        request.setSku(sku);
+        String hsnCode = DataTypeUtility.stringValue(param.get("hsnCode"));
+        if (hsnCode.length() == 0) {
+            hsnCode = DataTypeUtility.stringValue(param.get("hsn_code"));
+        }
+        if (hsnCode.length() == 0) {
+            hsnCode = null;
+        }
+        request.setHsnCode(hsnCode);
+        Long taxMasterId = DataTypeUtility.getForeignKeyValue(param.get("taxMasterId"));
+        if (taxMasterId == null) {
+            taxMasterId = DataTypeUtility.getForeignKeyValue(param.get("tax_master_id"));
+        }
+        if (taxMasterId == null) {
+            taxMasterId = DataTypeUtility.getForeignKeyValue(param.get("taxId"));
+        }
+        request.setTaxMasterId(taxMasterId);
+        Object minStockRaw = param.get("minStockQty");
+        if (minStockRaw == null) {
+            minStockRaw = param.get("min_stock_qty");
+        }
+        Integer minStockQty = null;
+        if (minStockRaw != null) {
+            String minStockStr = DataTypeUtility.stringValue(minStockRaw);
+            if (minStockStr.length() > 0) {
+                minStockQty = DataTypeUtility.integerNullValue(minStockRaw);
+            }
+        }
+        request.setMinStockQty(minStockQty);
+        Object taxableRaw = param.get("taxable");
+        Boolean taxable = null;
+        if (taxableRaw != null) {
+            String taxableStr = DataTypeUtility.stringValue(taxableRaw);
+            if (taxableStr.length() > 0) {
+                taxable = DataTypeUtility.booleanValue(taxableRaw);
+            }
+        }
+        request.setTaxable(taxable);
+        Object activeRaw = param.get("active");
+        if (activeRaw == null) {
+            activeRaw = param.get("isActive");
+        }
+        Boolean active = null;
+        if (activeRaw != null) {
+            String activeStr = DataTypeUtility.stringValue(activeRaw);
+            if (activeStr.length() > 0) {
+                active = DataTypeUtility.booleanValue(activeRaw);
+            }
+        }
+        request.setActive(active);
+        return request;
     }
 }
