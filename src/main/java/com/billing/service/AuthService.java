@@ -14,6 +14,7 @@ import com.billing.repository.RefreshTokenRepository;
 import com.billing.repository.UserRepository;
 import com.billing.security.CustomUserDetails;
 import com.billing.security.JwtService;
+import com.billing.util.DataTypeUtility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -41,12 +42,22 @@ public class AuthService {
     private long refreshTokenExpiration;
 
     @Transactional
+    public AuthResponse login(Map<String, Object> param) {
+        return login(mapToLoginRequest(param));
+    }
+
+    @Transactional
     public AuthResponse login(LoginRequest request) {
         String loginIdentifier = request.getLoginIdentifier();
         User user = findAuthenticatedUser(loginIdentifier, request.getPassword())
                 .orElseThrow(() -> new UnauthorizedException("Invalid Mobile Number/Email ID or Password."));
         validateCompanyActiveForLogin(user);
         return buildAuthResponse(user);
+    }
+
+    @Transactional
+    public AuthResponse refresh(Map<String, Object> param) {
+        return refresh(mapToRefreshRequest(param));
     }
 
     @Transactional
@@ -64,8 +75,22 @@ public class AuthService {
     }
 
     @Transactional
+    public void logout(Map<String, Object> param) {
+        String refreshToken = extractRefreshToken(param);
+        if (refreshToken == null || refreshToken.isBlank()) {
+            return;
+        }
+        logout(refreshToken);
+    }
+
+    @Transactional
     public void logout(String refreshToken) {
         refreshTokenRepository.findByToken(refreshToken).ifPresent(refreshTokenRepository::delete);
+    }
+
+    @Transactional
+    public void forgotPassword(Map<String, Object> param) {
+        forgotPassword(mapToForgotPasswordRequest(param));
     }
 
     @Transactional
@@ -80,6 +105,91 @@ public class AuthService {
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
         refreshTokenRepository.deleteByUser(user);
+    }
+
+    private LoginRequest mapToLoginRequest(Map<String, Object> param) {
+        LoginRequest request = new LoginRequest();
+        String identifier = extractLoginIdentifier(param);
+        if (identifier == null || identifier.isBlank()) {
+            throw new BadRequestException("Email / Mobile / Username is required");
+        }
+        request.setUsername(identifier);
+        String password = trimmedOrNull(param != null ? param.get("password") : null);
+        if (password == null || password.isBlank()) {
+            throw new BadRequestException("Password is required");
+        }
+        request.setPassword(password);
+        return request;
+    }
+
+    private RefreshTokenRequest mapToRefreshRequest(Map<String, Object> param) {
+        String refreshToken = extractRefreshToken(param);
+        if (refreshToken == null || refreshToken.isBlank()) {
+            throw new BadRequestException("Refresh token is required");
+        }
+        RefreshTokenRequest request = new RefreshTokenRequest();
+        request.setRefreshToken(refreshToken);
+        return request;
+    }
+
+    private ForgotPasswordRequest mapToForgotPasswordRequest(Map<String, Object> param) {
+        ForgotPasswordRequest request = new ForgotPasswordRequest();
+        String identifier = extractLoginIdentifier(param);
+        if (identifier == null || identifier.isBlank()) {
+            throw new BadRequestException("Email / Mobile / Username is required");
+        }
+        request.setUsername(identifier);
+        Object rawNewPassword = param != null
+                ? (param.get("newPassword") != null ? param.get("newPassword") : param.get("password"))
+                : null;
+        String newPassword = trimmedOrNull(rawNewPassword);
+        if (newPassword == null || newPassword.isBlank()) {
+            throw new BadRequestException("New password is required");
+        }
+        if (newPassword.length() < 6) {
+            throw new BadRequestException("New password must be at least 6 characters");
+        }
+        request.setNewPassword(newPassword);
+        return request;
+    }
+
+    private String extractLoginIdentifier(Map<String, Object> param) {
+        if (param == null) {
+            return null;
+        }
+        String identifier = trimmedOrNull(param.get("username"));
+        if (identifier == null || identifier.isBlank()) {
+            identifier = trimmedOrNull(param.get("email"));
+        }
+        if (identifier == null || identifier.isBlank()) {
+            identifier = trimmedOrNull(param.get("loginIdentifier"));
+        }
+        if (identifier == null || identifier.isBlank()) {
+            identifier = trimmedOrNull(param.get("mobileNumber"));
+        }
+        if (identifier == null || identifier.isBlank()) {
+            identifier = trimmedOrNull(param.get("mobile"));
+        }
+        return identifier;
+    }
+
+    private String extractRefreshToken(Map<String, Object> param) {
+        if (param == null) {
+            return null;
+        }
+        String token = trimmedOrNull(param.get("refreshToken"));
+        if (token == null || token.isBlank()) {
+            token = trimmedOrNull(param.get("refresh_token"));
+        }
+        if (token == null || token.isBlank()) {
+            token = trimmedOrNull(param.get("token"));
+        }
+        return token;
+    }
+
+    private String trimmedOrNull(Object value) {
+        String text = DataTypeUtility.stringValue(value);
+        return text.isEmpty() ? null : text.trim();
     }
 
     private AuthResponse buildAuthResponse(User user) {
