@@ -1,7 +1,9 @@
 package com.billing.service;
 
+import com.billing.entity.Company;
 import com.billing.entity.RefreshToken;
 import com.billing.entity.User;
+import com.billing.multitenancy.TenantContextHolder;
 import com.billing.dto.auth.AuthResponse;
 import com.billing.dto.auth.ForgotPasswordRequest;
 import com.billing.dto.auth.LoginRequest;
@@ -10,6 +12,7 @@ import com.billing.dto.user.UserProfileResponse;
 import com.billing.exception.BadRequestException;
 import com.billing.exception.CompanyInactiveException;
 import com.billing.exception.UnauthorizedException;
+import com.billing.repository.CompanyRepository;
 import com.billing.repository.RefreshTokenRepository;
 import com.billing.repository.UserRepository;
 import com.billing.security.CustomUserDetails;
@@ -25,6 +28,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -33,6 +37,7 @@ import java.util.UUID;
 public class AuthService {
 
     private final UserRepository userRepository;
+    private final CompanyRepository companyRepository;
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
@@ -196,7 +201,17 @@ public class AuthService {
         validateCompanyActiveForApi(user);
         refreshTokenRepository.deleteByUser(user);
 
-        CustomUserDetails userDetails = new CustomUserDetails(user);
+        // DATABASE-per-tenant: User.company is @Transient, so resolve tenant company
+        // explicitly from the current tenant connection (TSM-like JWT claims).
+        Company tenantCompany = resolveTenantCompany().orElse(null);
+        String tenantDb = tenantCompany != null && tenantCompany.getDatabaseName() != null
+                && !tenantCompany.getDatabaseName().isBlank()
+                ? tenantCompany.getDatabaseName()
+                : resolveTenantDatabaseName();
+        String tenantCode = tenantCompany != null && tenantCompany.getCode() != null
+                ? tenantCompany.getCode()
+                : tenantDb.toUpperCase(Locale.ROOT);
+        CustomUserDetails userDetails = new CustomUserDetails(user, tenantCode, tenantDb);
         String accessToken = jwtService.generateAccessToken(userDetails);
         String refreshTokenValue = UUID.randomUUID().toString() + UUID.randomUUID();
 
@@ -207,7 +222,7 @@ public class AuthService {
                 .build();
         refreshTokenRepository.save(refreshToken);
 
-        UserProfileResponse profileResponse = userMapper.toProfile(user);
+        UserProfileResponse profileResponse = userMapper.toProfile(user, tenantCompany);
 
         return AuthResponse.builder()
                 .accessToken(accessToken)
@@ -216,6 +231,27 @@ public class AuthService {
                 .expiresIn(jwtService.getAccessTokenExpiration())
                 .user(profileResponse)
                 .build();
+    }
+
+    private String resolveTenantDatabaseName() {
+        String tenant = TenantContextHolder.getTenant();
+        if (tenant == null || tenant.isBlank()) {
+            throw new BadRequestException("Unable to resolve company database for this request. Please contact administrator.");
+        }
+        String base = tenant.replace("_read", "").replace("_write", "").trim();
+        if (base.isEmpty()) {
+            throw new BadRequestException("Unable to resolve company database for this request. Please contact administrator.");
+        }
+        return base;
+    }
+
+    private java.util.Optional<Company> resolveTenantCompany() {
+        String db = resolveTenantDatabaseName();
+        try {
+            return companyRepository.findByCodeIgnoreCase(db.toUpperCase(Locale.ROOT));
+        } catch (Exception ignored) {
+            return java.util.Optional.empty();
+        }
     }
 
     private java.util.Optional<User> findByLoginIdentifier(String loginIdentifier) {

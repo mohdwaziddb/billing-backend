@@ -190,7 +190,7 @@ public class ExpenseService {
     public ProfitabilityResponse customerProfitability(String email, Long customerId, LocalDate startDate, LocalDate endDate) {
         Company company = accessControlService.getCurrentCompany(email);
         Customer customer = customerService.getCustomerOrThrow(company, customerId);
-        BigDecimal revenue = invoiceRepository.findByCompanyAndCustomerOrderByInvoiceDateDescIdDesc(company, customer).stream()
+        BigDecimal revenue = invoiceRepository.findByCustomerOrderByInvoiceDateDescIdDesc( customer).stream()
                 .filter(invoice -> inRange(invoice.getInvoiceDate(), startDate, endDate))
                 .map(Invoice::getTotalAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -390,7 +390,7 @@ public class ExpenseService {
     }
 
     private Expense getExpenseOrThrow(Company company, Long expenseId) {
-        return expenseRepository.findByIdAndCompany(expenseId, company)
+        return expenseRepository.findById(expenseId)
                 .orElseThrow(() -> new ResourceNotFoundException("Expense not found"));
     }
 

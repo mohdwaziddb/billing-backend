@@ -13,6 +13,15 @@ public class PlatformAdminCompanyCreateRequest {
     @NotBlank
     private String companyName;
 
+    @NotBlank(message = "Company code is required")
+    private String companyCode;
+
+    @NotBlank(message = "Database name is required")
+    private String databaseName;
+
+    @NotBlank(message = "Domain is required")
+    private String domain;
+
     @NotBlank
     private String address;
 

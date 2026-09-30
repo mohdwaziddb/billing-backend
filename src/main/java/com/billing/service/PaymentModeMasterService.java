@@ -163,7 +163,7 @@ public class PaymentModeMasterService {
     }
 
     private PaymentModeMaster getModeOrThrow(Company company, Long modeId) {
-        return paymentModeMasterRepository.findByIdAndCompany(modeId, company)
+        return paymentModeMasterRepository.findById(modeId)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment mode not found"));
     }
 

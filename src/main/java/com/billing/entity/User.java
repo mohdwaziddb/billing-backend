@@ -12,14 +12,13 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import jakarta.persistence.UniqueConstraint;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import org.hibernate.annotations.Filter;
-
 @Getter
 @Setter
 @Builder
@@ -27,11 +26,10 @@ import org.hibernate.annotations.Filter;
 @AllArgsConstructor
 @Entity
 @Table(name = "users", uniqueConstraints = {
-        @UniqueConstraint(name = "uk_users_company_mobile", columnNames = {"company_id", "mobile_number"}),
-        @UniqueConstraint(name = "uk_users_company_email", columnNames = {"company_id", "email_id"}),
-        @UniqueConstraint(name = "uk_users_company_username", columnNames = {"company_id", "username"})
+        @UniqueConstraint(name = "uk_users_mobile", columnNames = {"mobile_number"}),
+        @UniqueConstraint(name = "uk_users_email", columnNames = {"email_id"}),
+        @UniqueConstraint(name = "uk_users_username", columnNames = {"username"})
 })
-@Filter(name = "tenantFilter", condition = "company_id = :companyId")
 public class User extends BaseEntity {
 
     @Id
@@ -61,7 +59,6 @@ public class User extends BaseEntity {
     @Column(nullable = false)
     private boolean active = true;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "company_id")
+    @Transient
     private Company company;
 }

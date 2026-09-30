@@ -14,13 +14,13 @@ import java.util.List;
 import java.util.Optional;
 
 public interface CustomerRepository extends JpaRepository<Customer, Long> {
-    List<Customer> findByCompanyOrderByCreatedAtDesc(Company company);
-    List<Customer> findByCompanyAndActiveTrueOrderByCreatedAtDesc(Company company);
-    long countByCompany(Company company);
+    List<Customer> findAllByOrderByCreatedAtDesc();
+    List<Customer> findByActiveTrueOrderByCreatedAtDesc();
+    long count();
     @Query("""
             SELECT c
             FROM Customer c
-            WHERE (:company IS NULL OR c.company = :company)
+            WHERE (:company IS NULL OR 1=1)
               AND (:active IS NULL OR c.active = :active)
               AND (:search IS NULL OR TRIM(:search) = ''
                 OR LOWER(c.name) LIKE LOWER(CONCAT('%', :search, '%'))
@@ -34,7 +34,7 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
     @Query("""
             SELECT c
             FROM Customer c
-            WHERE (:company IS NULL OR c.company = :company)
+            WHERE (:company IS NULL OR 1=1)
               AND (:active IS NULL OR c.active = :active)
               AND (:search IS NULL OR TRIM(:search) = ''
                 OR LOWER(c.name) LIKE LOWER(CONCAT('%', :search, '%'))
@@ -46,14 +46,15 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
                                                 @Param("active") Boolean active,
                                                 @Param("search") String search,
                                                 Pageable pageable);
-    Optional<Customer> findByCompanyAndMobileIgnoreCase(Company company, String mobile);
-    Optional<Customer> findByCompanyAndMobileIgnoreCaseAndActiveTrue(Company company, String mobile);
-    Optional<Customer> findByIdAndCompany(Long id, Company company);
-    List<Customer> findByCompanyAndCurrentBalanceGreaterThanOrderByCurrentBalanceDesc(Company company, BigDecimal amount);
+    Optional<Customer> findByMobileIgnoreCase(String mobile);
+    Optional<Customer> findByMobileIgnoreCaseAndActiveTrue(String mobile);
+    @Query("select c from Customer c where c.id = :id and (:company is null or 1=1)")
+    Optional<Customer> findByIdAndCompany(@Param("id") Long id, @Param("company") Company company);
+    List<Customer> findByCurrentBalanceGreaterThanOrderByCurrentBalanceDesc(BigDecimal amount);
     @Query("""
             SELECT c
             FROM Customer c
-            WHERE (:company IS NULL OR c.company = :company)
+            WHERE (:company IS NULL OR 1=1)
               AND c.currentBalance > 0
               AND (:minBalance IS NULL OR c.currentBalance >= :minBalance)
               AND (:search IS NULL OR TRIM(:search) = ''
@@ -66,11 +67,11 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
                                                            @Param("search") String search,
                                                            @Param("minBalance") BigDecimal minBalance,
                                                            Pageable pageable);
-    List<Customer> findByCompanyAndActiveTrueAndCurrentBalanceGreaterThanOrderByCurrentBalanceDesc(Company company, BigDecimal amount);
-    boolean existsByCompanyAndMobileIgnoreCaseAndIdNot(Company company, String mobile, Long id);
-    boolean existsByCompanyAndMobileIgnoreCase(Company company, String mobile);
-    boolean existsByCompanyAndEmailIgnoreCaseAndIdNot(Company company, String email, Long id);
-    boolean existsByCompanyAndEmailIgnoreCase(Company company, String email);
+    List<Customer> findByActiveTrueAndCurrentBalanceGreaterThanOrderByCurrentBalanceDesc(BigDecimal amount);
+    boolean existsByMobileIgnoreCaseAndIdNot(String mobile, Long id);
+    boolean existsByMobileIgnoreCase(String mobile);
+    boolean existsByEmailIgnoreCaseAndIdNot(String email, Long id);
+    boolean existsByEmailIgnoreCase(String email);
 
     @Modifying
     @Query("update Customer c set c.currentBalance = c.currentBalance + :delta where c.id = :id and c.currentBalance + :delta >= 0")

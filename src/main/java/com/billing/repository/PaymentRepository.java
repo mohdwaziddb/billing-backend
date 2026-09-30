@@ -19,26 +19,30 @@ import java.time.LocalDate;
 
 public interface PaymentRepository extends JpaRepository<Payment, Long> {
     @EntityGraph(attributePaths = {"customer", "invoice"})
-    @Query("select p from Payment p where p.company = :company and p.deleted = false order by p.paymentDate desc, p.id desc")
+    @Query("select p from Payment p where (:company is null or 1=1) and p.deleted = false order by p.paymentDate desc, p.id desc")
     List<Payment> findByCompanyOrderByPaymentDateDescIdDesc(@Param("company") Company company);
     @EntityGraph(attributePaths = {"customer", "invoice"})
     @Query("select p from Payment p where p.deleted = false order by p.paymentDate desc, p.id desc")
-    List<Payment> findAllByOrderByPaymentDateDescIdDesc();
-    @EntityGraph(attributePaths = {"customer", "invoice"})
-    @Query("select p from Payment p where p.company = :company and p.deleted = false")
+    List<Payment> findAllByOrderByPaymentDateDescIdDesc();    @EntityGraph(attributePaths = {"customer", "invoice"})
+    @Query("select p from Payment p where (:company is null or 1=1) and p.deleted = false")
     Page<Payment> findByCompany(@Param("company") Company company, Pageable pageable);
-    Optional<Payment> findByIdAndCompany(Long id, Company company);
-    @Query("select p from Payment p where p.company = :company and p.customer = :customer and p.deleted = false order by p.paymentDate desc, p.id desc")
+    @Query("select p from Payment p where p.id = :id and (:company is null or 1=1)")
+    Optional<Payment> findByIdAndCompany(@Param("id") Long id, @Param("company") Company company);
+    @Query("select p from Payment p where (:company is null or 1=1) and p.customer = :customer and p.deleted = false order by p.paymentDate desc, p.id desc")
     List<Payment> findByCompanyAndCustomerOrderByPaymentDateDescIdDesc(@Param("company") Company company, @Param("customer") Customer customer);
-    @Query("select p from Payment p where p.company = :company and p.customer = :customer and p.amount > :amount and p.deleted = false order by p.paymentDate desc, p.id desc")
+    @Query("select p from Payment p where p.customer = :customer and p.deleted = false order by p.paymentDate desc, p.id desc")
+    List<Payment> findByCustomerOrderByPaymentDateDescIdDesc(@Param("customer") Customer customer);
+    @Query("select p from Payment p where (:company is null or 1=1) and p.customer = :customer and p.amount > :amount and p.deleted = false order by p.paymentDate desc, p.id desc")
     List<Payment> findByCompanyAndCustomerAndAmountGreaterThanOrderByPaymentDateDescIdDesc(@Param("company") Company company, @Param("customer") Customer customer, @Param("amount") BigDecimal amount);
+    @Query("select p from Payment p where p.customer = :customer and p.amount > :amount and p.deleted = false order by p.paymentDate desc, p.id desc")
+    List<Payment> findByCustomerAndAmountGreaterThanOrderByPaymentDateDescIdDesc(@Param("customer") Customer customer, @Param("amount") BigDecimal amount);
     boolean existsByInvoiceAndDeletedFalse(Invoice invoice);
 
     @Query(
             value = """
                     select p from Payment p
                     left join p.invoice invoice
-                    where (:company is null or p.company = :company)
+                    where (:company is null or 1=1)
                       and (:deleted is null or p.deleted = :deleted)
                       and (:search is null
                         or str(p.id) like concat('%', :search, '%')
@@ -55,7 +59,7 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
                         or (:invoiceLinked = false and p.invoice is null))
                       and (:createdByRole is null or exists (
                         select 1 from User u
-                        where u.company = p.company
+                        where 1=1
                           and (str(u.id) = p.createdBy or lower(u.email) = lower(p.createdBy))
                           and u.role = :createdByRole
                       ))
@@ -63,7 +67,7 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
             countQuery = """
                     select count(p) from Payment p
                     left join p.invoice invoice
-                    where (:company is null or p.company = :company)
+                    where (:company is null or 1=1)
                       and (:deleted is null or p.deleted = :deleted)
                       and (:search is null
                         or str(p.id) like concat('%', :search, '%')
@@ -80,7 +84,7 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
                         or (:invoiceLinked = false and p.invoice is null))
                       and (:createdByRole is null or exists (
                         select 1 from User u
-                        where u.company = p.company
+                        where 1=1
                           and (str(u.id) = p.createdBy or lower(u.email) = lower(p.createdBy))
                           and u.role = :createdByRole
                       ))

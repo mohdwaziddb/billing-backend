@@ -16,8 +16,7 @@ public interface PaymentModeMasterRepository extends JpaRepository<PaymentModeMa
     @Query("""
             SELECT m
             FROM PaymentModeMaster m
-            WHERE m.company = :company
-              AND (:active IS NULL OR m.active = :active)
+            where (:company is null or 1=1) and (:active IS NULL OR m.active = :active)
               AND (
                     :search IS NULL
                     OR TRIM(:search) = ''
@@ -34,8 +33,7 @@ public interface PaymentModeMasterRepository extends JpaRepository<PaymentModeMa
     @Query("""
             SELECT m
             FROM PaymentModeMaster m
-            WHERE m.company = :company
-              AND (:active IS NULL OR m.active = :active)
+            where (:company is null or 1=1) and (:active IS NULL OR m.active = :active)
               AND (
                     :search IS NULL
                     OR TRIM(:search) = ''
@@ -50,17 +48,21 @@ public interface PaymentModeMasterRepository extends JpaRepository<PaymentModeMa
                                                          @Param("search") String search,
                                                          Pageable pageable);
 
-    Optional<PaymentModeMaster> findByIdAndCompany(Long id, Company company);
+    @Query("select m from PaymentModeMaster m where (:company is null or 1=1) and lower(m.modeCode)=lower(:modeCode)")
+    Optional<PaymentModeMaster> findByCompanyAndModeCodeIgnoreCase(@Param("company") Company company, @Param("modeCode") String modeCode);
 
-    Optional<PaymentModeMaster> findByCompanyAndModeCodeIgnoreCase(Company company, String modeCode);
+    @Query("select m from PaymentModeMaster m where (:company is null or 1=1) and lower(m.modeCode)=lower(:modeCode) and m.active=true")
+    Optional<PaymentModeMaster> findByCompanyAndModeCodeIgnoreCaseAndActiveTrue(@Param("company") Company company, @Param("modeCode") String modeCode);
 
-    Optional<PaymentModeMaster> findByCompanyAndModeCodeIgnoreCaseAndActiveTrue(Company company, String modeCode);
+    @Query("select case when count(m)>0 then true else false end from PaymentModeMaster m where (:company is null or 1=1) and lower(m.modeCode)=lower(:modeCode)")
+    boolean existsByCompanyAndModeCodeIgnoreCase(@Param("company") Company company, @Param("modeCode") String modeCode);
 
-    boolean existsByCompanyAndModeCodeIgnoreCase(Company company, String modeCode);
+    @Query("select case when count(m)>0 then true else false end from PaymentModeMaster m where (:company is null or 1=1) and lower(m.modeName)=lower(:modeName)")
+    boolean existsByCompanyAndModeNameIgnoreCase(@Param("company") Company company, @Param("modeName") String modeName);
 
-    boolean existsByCompanyAndModeNameIgnoreCase(Company company, String modeName);
+    @Query("select case when count(m)>0 then true else false end from PaymentModeMaster m where (:company is null or 1=1) and lower(m.modeCode)=lower(:modeCode) and m.id <> :id")
+    boolean existsByCompanyAndModeCodeIgnoreCaseAndIdNot(@Param("company") Company company, @Param("modeCode") String modeCode, @Param("id") Long id);
 
-    boolean existsByCompanyAndModeCodeIgnoreCaseAndIdNot(Company company, String modeCode, Long id);
-
-    boolean existsByCompanyAndModeNameIgnoreCaseAndIdNot(Company company, String modeName, Long id);
+    @Query("select case when count(m)>0 then true else false end from PaymentModeMaster m where (:company is null or 1=1) and lower(m.modeName)=lower(:modeName) and m.id <> :id")
+    boolean existsByCompanyAndModeNameIgnoreCaseAndIdNot(@Param("company") Company company, @Param("modeName") String modeName, @Param("id") Long id);
 }

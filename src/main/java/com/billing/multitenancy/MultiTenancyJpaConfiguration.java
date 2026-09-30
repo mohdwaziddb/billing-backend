@@ -12,8 +12,10 @@ import org.hibernate.context.spi.CurrentTenantIdentifierResolver;
 import org.hibernate.engine.jdbc.connections.spi.AbstractDataSourceBasedMultiTenantConnectionProviderImpl;
 import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.orm.jpa.JpaProperties;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.context.annotation.*;
 import org.springframework.orm.jpa.JpaTransactionManager;
 import org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean;
@@ -25,6 +27,7 @@ import javax.sql.DataSource;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 @Configuration
@@ -57,7 +60,7 @@ public class MultiTenancyJpaConfiguration {
         config.addDataSourceProperty("useServerPrepStmts", "true");
         String poolName = tenant + (isRead ? "-READ" : "-WRITE");
         config.setPoolName(poolName);
-        if (isRead) {
+        if (isRead && com.billing.core.Registry.IS_ONLINE) {
             config.setReadOnly(true);
         }
         HikariDataSource dataSource = new HikariDataSource(config);
@@ -66,7 +69,8 @@ public class MultiTenancyJpaConfiguration {
 
     @Primary
     @Bean(name = "dataSourcesMtApp")
-    public Map<String, DataSource> dataSourcesMtApp() {
+    public Map<String, DataSource> dataSourcesMtApp(
+            @Qualifier("billingCommonJdbcTemplate") JdbcTemplate billingCommonJdbcTemplate) {
         Map<String, DataSource> result = new HashMap<>();
         String url = "jdbc:mysql://localhost:" + localDbPort + "/";
         String readerUrl = "jdbc:mysql://localhost:" + localDbPort + "/";
@@ -145,14 +149,22 @@ public class MultiTenancyJpaConfiguration {
                     result.put(tenant + ApplicationConstant.CONNECTION_READ_STRING, dsRead);
                 } catch (Exception e) {
                     System.err.println("[ERROR] Failed to create DataSource for tenant '" + CompanyDomainInfo.domainInfoJSON.get(key).optString("database") + "': " + e.getMessage());
-                    System.err.println("[HINT] Ensure MySQL is running on localhost:" + localDbPort + " and database exists. Run: CREATE DATABASE billing_common; CREATE DATABASE billing_company_acme;");
+                    System.err.println("[HINT] Ensure MySQL is running on localhost:" + localDbPort + " and database exists. Run: CREATE DATABASE billing_common; CREATE DATABASE maacreation;");
                     throw new RuntimeException("Failed to initialize datasource for tenant '" + CompanyDomainInfo.domainInfoJSON.get(key).optString("database") + "'", e);
                 }
             }
-            // fallback if map still empty (e.g., fresh install with only billing_common)
-            if (result.isEmpty()) {
+            // fallback if map still empty (e.g., fresh install with only maacreation)
+        // Registry-driven tenants: every database registered in
+        // billing_common.company_registry gets WRITE+READ pools at startup,
+        // so startup runners (backfills) and requests never hit
+        // "Unknown tenant database" for tenants missing from the static map.
+        addRegistryTenants(result, dbSet, billingCommonJdbcTemplate, url, readerUrl, username, password, driverClassName);
+
+        if (result.isEmpty()) {
                 String tenant = Registry.dbmap.get("databasename");
-                if (tenant == null) tenant = "billing_common";
+                if (tenant == null || tenant.isBlank()) {
+                    throw new RuntimeException("Unable to resolve default company database. Check local DB config (Registry.dbmap databasename).");
+                }
                 try {
                     HikariDataSource dsWrite = setDynamicDataSource(url + tenant, username, password, driverClassName, tenant, false);
                     result.put(tenant, dsWrite);
@@ -171,6 +183,49 @@ public class MultiTenancyJpaConfiguration {
             System.out.println("[INFO] Initialized DataSources for tenants: " + result.keySet());
         }
         return result;
+    }
+
+    private void addRegistryTenants(Map<String, DataSource> result, HashSet<String> dbSet,
+            JdbcTemplate billingCommonJdbcTemplate, String url, String readerUrl,
+            String username, String password, String driverClassName) {
+        List<Map<String, Object>> rows;
+        try {
+            rows = billingCommonJdbcTemplate.queryForList(
+                    "SELECT database_name, db_host FROM billing_common.company_registry");
+        } catch (Exception e) {
+            System.err.println("[WARN] Could not read billing_common.company_registry, skipping registry-driven tenant init: " + e.getMessage());
+            return;
+        }
+        for (Map<String, Object> row : rows) {
+            Object dbRaw = row.get("database_name");
+            if (dbRaw == null) {
+                continue;
+            }
+            String tenant = dbRaw.toString().trim();
+            if (tenant.isEmpty() || dbSet.contains(tenant)) {
+                continue;
+            }
+            dbSet.add(tenant);
+            String jdbcBase = url;
+            String readerBase = readerUrl;
+            Object hostRaw = row.get("db_host");
+            if (hostRaw != null && !hostRaw.toString().isBlank()) {
+                String hostPort = hostRaw.toString().trim().replace("jdbc:mysql://", "").replace("/", "");
+                if (!hostPort.isEmpty()) {
+                    jdbcBase = "jdbc:mysql://" + hostPort + "/";
+                    readerBase = jdbcBase;
+                }
+            }
+            try {
+                HikariDataSource dsWrite = setDynamicDataSource(jdbcBase + tenant, username, password, driverClassName, tenant, false);
+                result.put(tenant, dsWrite);
+                HikariDataSource dsRead = setDynamicDataSource(readerBase + tenant, username, password, driverClassName, tenant, true);
+                result.put(tenant + ApplicationConstant.CONNECTION_READ_STRING, dsRead);
+                System.out.println("[INFO] Initialized registry-driven DataSources for tenant: " + tenant);
+            } catch (Exception e) {
+                System.err.println("[WARN] Failed to create DataSource for registry tenant '" + tenant + "': " + e.getMessage());
+            }
+        }
     }
 
     @Bean
@@ -193,11 +248,11 @@ public class MultiTenancyJpaConfiguration {
         hibernateProps.put("hibernate.multiTenancy", "DATABASE");
         hibernateProps.put(AvailableSettings.MULTI_TENANT_CONNECTION_PROVIDER, multiTenantConnectionProvider);
         hibernateProps.put(AvailableSettings.MULTI_TENANT_IDENTIFIER_RESOLVER, currentTenantIdentifierResolver);
-        hibernateProps.put("hibernate.hbm2ddl.auto", "none");
+        hibernateProps.put("hibernate.hbm2ddl.auto", Registry.IS_ONLINE ? "none" : "update");
         hibernateProps.put("hibernate.dialect", "org.hibernate.dialect.MySQLDialect");
         hibernateProps.put("hibernate.enable_lazy_load_no_trans", "true");
-        hibernateProps.put("hibernate.naming.implicit-strategy", "org.hibernate.boot.model.naming.ImplicitNamingStrategyLegacyJpaImpl");
-        hibernateProps.put("hibernate.naming.physical-strategy", "org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl");
+        hibernateProps.put("hibernate.physical_naming_strategy", "org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy");
+        hibernateProps.put("hibernate.implicit_naming_strategy", "org.springframework.boot.orm.jpa.hibernate.SpringImplicitNamingStrategy");
 
         LocalContainerEntityManagerFactoryBean result = new LocalContainerEntityManagerFactoryBean();
         result.setPackagesToScan("com.billing");

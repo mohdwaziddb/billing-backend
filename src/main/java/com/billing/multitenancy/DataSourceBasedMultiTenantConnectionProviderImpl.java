@@ -24,6 +24,11 @@ public class DataSourceBasedMultiTenantConnectionProviderImpl extends AbstractDa
         if (this.dataSourcesMtApp == null || this.dataSourcesMtApp.isEmpty()) {
             throw new RuntimeException("No DataSources configured - check billing_common setup");
         }
+        for (Map.Entry<String, DataSource> e : this.dataSourcesMtApp.entrySet()) {
+            if (!e.getKey().endsWith("_read")) {
+                return e.getValue();
+            }
+        }
         return this.dataSourcesMtApp.values().iterator().next();
     }
 
@@ -40,8 +45,10 @@ public class DataSourceBasedMultiTenantConnectionProviderImpl extends AbstractDa
                 ds = this.dataSourcesMtApp.get(base);
             }
             if (ds == null) {
-                System.err.println("[WARN] Tenant '" + tenantIdentifier + "' not found, fallback to any. Available: " + this.dataSourcesMtApp.keySet());
-                ds = selectAnyDataSource();
+                // Never serve a random tenant: unknown database is an explicit error
+                // (tenant pools are created only for registry-listed databases).
+                throw new RuntimeException("Unknown tenant database: " + tenantIdentifier
+                        + ". Please contact administrator.");
             }
         }
         return ds;

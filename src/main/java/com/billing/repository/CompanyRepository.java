@@ -16,6 +16,7 @@ public interface CompanyRepository extends JpaRepository<Company, Long> {
     boolean existsByEmailIgnoreCase(String email);
     boolean existsByTaxIdIgnoreCase(String taxId);
     boolean existsByCodeIgnoreCase(String code);
+    java.util.Optional<Company> findByCodeIgnoreCase(String code);
 
     @Query(value = """
             select
@@ -31,7 +32,7 @@ public interface CompanyRepository extends JpaRepository<Company, Long> {
                 coalesce(sum(case when u.role = 'ADMIN' then 1 else 0 end), 0) as adminCount,
                 coalesce(sum(case when u.role = 'USER' then 1 else 0 end), 0) as userCount
             from companies c
-            left join users u on u.company_id = c.id
+            left join users u on 1=1
             where (:active is null or c.is_active = :active)
               and (:search is null
                 or lower(c.name) like lower(concat('%', :search, '%'))
@@ -65,7 +66,7 @@ public interface CompanyRepository extends JpaRepository<Company, Long> {
                 coalesce(sum(case when u.role = 'ADMIN' then 1 else 0 end), 0) as adminCount,
                 coalesce(sum(case when u.role = 'USER' then 1 else 0 end), 0) as userCount
             from companies c
-            left join users u on u.company_id = c.id
+            left join users u on 1=1
             where (:active is null or c.is_active = :active)
               and (:search is null
                 or lower(c.name) like lower(concat('%', :search, '%'))

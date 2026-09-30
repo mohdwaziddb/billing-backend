@@ -18,8 +18,7 @@ public interface TaxMasterRepository extends JpaRepository<TaxMaster, Long> {
     @Query("""
             SELECT t
             FROM TaxMaster t
-            WHERE t.company = :company
-              AND t.deleted = false
+            where (:company is null or 1=1) and t.deleted = false
               AND (:active IS NULL OR t.active = :active)
               AND (:taxType IS NULL OR t.taxType = :taxType)
               AND (
@@ -40,8 +39,7 @@ public interface TaxMasterRepository extends JpaRepository<TaxMaster, Long> {
     @Query("""
             SELECT t
             FROM TaxMaster t
-            WHERE t.company = :company
-              AND t.deleted = false
+            where (:company is null or 1=1) and t.deleted = false
               AND (:active IS NULL OR t.active = :active)
               AND (:taxType IS NULL OR t.taxType = :taxType)
               AND (
@@ -58,14 +56,33 @@ public interface TaxMasterRepository extends JpaRepository<TaxMaster, Long> {
                                                 @Param("taxType") TaxType taxType,
                                                 @Param("search") String search);
 
-    Optional<TaxMaster> findByIdAndCompanyAndDeletedFalse(Long id, Company company);
-    Optional<TaxMaster> findByCompanyAndTaxNameIgnoreCaseAndDeletedFalse(Company company, String taxName);
-    Optional<TaxMaster> findByCompanyAndTaxCodeIgnoreCaseAndDeletedFalse(Company company, String taxCode);
-    boolean existsByCompanyAndTaxNameIgnoreCaseAndDeletedFalse(Company company, String taxName);
-    boolean existsByCompanyAndTaxCodeIgnoreCaseAndDeletedFalse(Company company, String taxCode);
-    boolean existsByCompanyAndTaxNameIgnoreCaseAndDeletedFalseAndIdNot(Company company, String taxName, Long id);
-    boolean existsByCompanyAndTaxCodeIgnoreCaseAndDeletedFalseAndIdNot(Company company, String taxCode, Long id);
-    Optional<TaxMaster> findByCompanyAndTaxTypeAndRateAndDeletedFalse(Company company, TaxType taxType, BigDecimal rate);
-    Optional<TaxMaster> findByCompanyAndDefaultTaxTrueAndDeletedFalse(Company company);
-    List<TaxMaster> findByCompanyAndDeletedFalseOrderByTaxNameAsc(Company company);
+    @Query("select t from TaxMaster t where t.id = :id and (:company is null or 1=1) and t.deleted=false")
+    Optional<TaxMaster> findByIdAndCompanyAndDeletedFalse(@Param("id") Long id, @Param("company") Company company);
+
+    @Query("select t from TaxMaster t where (:company is null or 1=1) and lower(t.taxName)=lower(:taxName) and t.deleted=false")
+    Optional<TaxMaster> findByCompanyAndTaxNameIgnoreCaseAndDeletedFalse(@Param("company") Company company, @Param("taxName") String taxName);
+
+    @Query("select t from TaxMaster t where (:company is null or 1=1) and lower(t.taxCode)=lower(:taxCode) and t.deleted=false")
+    Optional<TaxMaster> findByCompanyAndTaxCodeIgnoreCaseAndDeletedFalse(@Param("company") Company company, @Param("taxCode") String taxCode);
+
+    @Query("select case when count(t)>0 then true else false end from TaxMaster t where (:company is null or 1=1) and lower(t.taxName)=lower(:taxName) and t.deleted=false")
+    boolean existsByCompanyAndTaxNameIgnoreCaseAndDeletedFalse(@Param("company") Company company, @Param("taxName") String taxName);
+
+    @Query("select case when count(t)>0 then true else false end from TaxMaster t where (:company is null or 1=1) and lower(t.taxCode)=lower(:taxCode) and t.deleted=false")
+    boolean existsByCompanyAndTaxCodeIgnoreCaseAndDeletedFalse(@Param("company") Company company, @Param("taxCode") String taxCode);
+
+    @Query("select case when count(t)>0 then true else false end from TaxMaster t where (:company is null or 1=1) and lower(t.taxName)=lower(:taxName) and t.deleted=false and t.id <> :id")
+    boolean existsByCompanyAndTaxNameIgnoreCaseAndDeletedFalseAndIdNot(@Param("company") Company company, @Param("taxName") String taxName, @Param("id") Long id);
+
+    @Query("select case when count(t)>0 then true else false end from TaxMaster t where (:company is null or 1=1) and lower(t.taxCode)=lower(:taxCode) and t.deleted=false and t.id <> :id")
+    boolean existsByCompanyAndTaxCodeIgnoreCaseAndDeletedFalseAndIdNot(@Param("company") Company company, @Param("taxCode") String taxCode, @Param("id") Long id);
+
+    @Query("select t from TaxMaster t where (:company is null or 1=1) and t.taxType = :taxType and t.rate = :rate and t.deleted=false")
+    Optional<TaxMaster> findByCompanyAndTaxTypeAndRateAndDeletedFalse(@Param("company") Company company, @Param("taxType") TaxType taxType, @Param("rate") BigDecimal rate);
+
+    @Query("select t from TaxMaster t where (:company is null or 1=1) and t.defaultTax=true and t.deleted=false")
+    Optional<TaxMaster> findByCompanyAndDefaultTaxTrueAndDeletedFalse(@Param("company") Company company);
+
+    @Query("select t from TaxMaster t where (:company is null or 1=1) and t.deleted=false order by t.taxName asc")
+    List<TaxMaster> findByCompanyAndDeletedFalseOrderByTaxNameAsc(@Param("company") Company company);
 }

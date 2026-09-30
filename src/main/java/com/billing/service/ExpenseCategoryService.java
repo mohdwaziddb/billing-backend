@@ -130,7 +130,7 @@ public class ExpenseCategoryService {
     }
 
     private ExpenseCategory getCategoryOrThrow(Company company, Long categoryId) {
-        return expenseCategoryRepository.findByIdAndCompany(categoryId, company)
+        return expenseCategoryRepository.findById(categoryId)
                 .orElseThrow(() -> new ResourceNotFoundException("Expense category not found"));
     }
 

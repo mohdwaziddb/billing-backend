@@ -19,33 +19,36 @@ import java.util.Optional;
 
 public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
     @EntityGraph(attributePaths = {"customer", "customer.stateMaster", "referByUser", "items", "items.product", "items.taxMaster"})
-    @Query("select i from Invoice i where i.company = :company and i.deleted = false order by i.invoiceDate desc, i.id desc")
+    @Query("select i from Invoice i where (:company is null or 1=1) and i.deleted = false order by i.invoiceDate desc, i.id desc")
     List<Invoice> findByCompanyOrderByInvoiceDateDescIdDesc(@Param("company") Company company);
     @EntityGraph(attributePaths = {"customer", "customer.stateMaster", "referByUser", "items", "items.product", "items.taxMaster"})
     @Query("select i from Invoice i where i.deleted = false order by i.invoiceDate desc, i.id desc")
     List<Invoice> findAllByOrderByInvoiceDateDescIdDesc();
     @EntityGraph(attributePaths = {"customer", "customer.stateMaster", "referByUser", "items", "items.product", "items.taxMaster"})
-    @Query("select i from Invoice i where i.company = :company and i.deleted = false")
+    @Query("select i from Invoice i where (:company is null or 1=1) and i.deleted = false")
     Page<Invoice> findByCompany(@Param("company") Company company, Pageable pageable);
-    Optional<Invoice> findByIdAndCompany(Long id, Company company);
-    Optional<Invoice> findTopByCompanyOrderByIdDesc(Company company);
-    @Query("select i from Invoice i where i.company = :company and i.customer = :customer and i.deleted = false order by i.invoiceDate desc, i.id desc")
+    @Query("select i from Invoice i where i.id = :id and (:company is null or 1=1)")
+    Optional<Invoice> findByIdAndCompany(@Param("id") Long id, @Param("company") Company company);
+    @Query("select i from Invoice i where (:company is null or 1=1) order by i.id desc")
+    Optional<Invoice> findTopByCompanyOrderByIdDesc(@Param("company") Company company);
+    @Query("select i from Invoice i where (:company is null or 1=1) and i.customer = :customer and i.deleted = false order by i.invoiceDate desc, i.id desc")
     List<Invoice> findByCompanyAndCustomerOrderByInvoiceDateDescIdDesc(@Param("company") Company company, @Param("customer") Customer customer);
+    @Query("select i from Invoice i where i.customer = :customer and i.deleted = false order by i.invoiceDate desc, i.id desc")
+    List<Invoice> findByCustomerOrderByInvoiceDateDescIdDesc(@Param("customer") Customer customer);
     @EntityGraph(attributePaths = {"customer", "customer.stateMaster", "referByUser", "items", "items.product", "items.taxMaster"})
-    @Query("select i from Invoice i where i.company = :company and i.customer = :customer and i.deleted = false")
+    @Query("select i from Invoice i where (:company is null or 1=1) and i.customer = :customer and i.deleted = false")
     Page<Invoice> findByCompanyAndCustomer(@Param("company") Company company, @Param("customer") Customer customer, Pageable pageable);
-    long countByCompanyAndInvoiceDate(Company company, LocalDate invoiceDate);
-    long countByCompanyAndDeletedFalse(Company company);
+    long countByInvoiceDate(LocalDate invoiceDate);
+    @Query("select count(i) from Invoice i where (:company is null or 1=1) and i.deleted = false")
+    long countByCompanyAndDeletedFalse(@Param("company") Company company);
 
     @Query("select coalesce(sum(i.totalAmount), 0) from Invoice i where i.deleted = false")
     BigDecimal sumTotalAmount();
 
     @Query("""
-            select i.company.id, i.company.name, coalesce(sum(i.totalAmount), 0), count(i)
+            select coalesce(sum(i.totalAmount), 0), count(i)
             from Invoice i
             where i.deleted = false
-            group by i.company.id, i.company.name
-            order by coalesce(sum(i.totalAmount), 0) desc
             """)
     List<Object[]> revenueByCompany();
 
@@ -55,7 +58,7 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
                     left join i.items item
                     left join item.product product
                     left join product.productCategory category
-                    where (:company is null or i.company = :company)
+                    where (:company is null or 1=1)
                       and (:customer is null or i.customer = :customer)
                       and (:customerId is null or i.customer.id = :customerId)
                       and (:deleted is null or i.deleted = :deleted)
@@ -75,8 +78,7 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
                       and (:categoryId is null or category.id = :categoryId)
                       and (:createdByRole is null or exists (
                         select 1 from User u
-                        where u.company = i.company
-                          and (str(u.id) = i.createdBy or lower(u.email) = lower(i.createdBy))
+                        where (:company is null or 1=1) and (str(u.id) = i.createdBy or lower(u.email) = lower(i.createdBy))
                           and u.role = :createdByRole
                       ))
                     """,
@@ -85,7 +87,7 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
                     left join i.items item
                     left join item.product product
                     left join product.productCategory category
-                    where (:company is null or i.company = :company)
+                    where (:company is null or 1=1)
                       and (:customer is null or i.customer = :customer)
                       and (:customerId is null or i.customer.id = :customerId)
                       and (:deleted is null or i.deleted = :deleted)
@@ -105,8 +107,7 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
                       and (:categoryId is null or category.id = :categoryId)
                       and (:createdByRole is null or exists (
                         select 1 from User u
-                        where u.company = i.company
-                          and (str(u.id) = i.createdBy or lower(u.email) = lower(i.createdBy))
+                        where (:company is null or 1=1) and (str(u.id) = i.createdBy or lower(u.email) = lower(i.createdBy))
                           and u.role = :createdByRole
                       ))
                     """

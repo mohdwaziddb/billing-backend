@@ -11,14 +11,13 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import jakarta.persistence.UniqueConstraint;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import org.hibernate.annotations.Filter;
-
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -30,16 +29,14 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @Entity
-@Table(name = "purchases", uniqueConstraints = @UniqueConstraint(columnNames = {"company_id", "purchase_no"}))
-@Filter(name = "tenantFilter", condition = "company_id = :companyId")
+@Table(name = "purchases", uniqueConstraints = @UniqueConstraint(columnNames = {"purchase_no"}))
 public class Purchase extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "company_id", nullable = false)
+    @Transient
     private Company company;
 
     @Column(nullable = false)

@@ -19,23 +19,20 @@ import java.util.Optional;
 public interface ExpenseRepository extends JpaRepository<Expense, Long> {
 
     @EntityGraph(attributePaths = {"category", "customer", "invoice"})
-    List<Expense> findByCompanyOrderByExpenseDateDescIdDesc(Company company);
+    @Query("select e from Expense e where (:company is null or 1=1) order by e.expenseDate desc, e.id desc")
+    List<Expense> findByCompanyOrderByExpenseDateDescIdDesc(@Param("company") Company company);
 
     @EntityGraph(attributePaths = {"category", "customer", "invoice"})
     List<Expense> findAllByOrderByExpenseDateDescIdDesc();
 
     @Query("select coalesce(sum(e.amount), 0) from Expense e")
-    BigDecimal sumTotalAmount();
-
-    Optional<Expense> findByIdAndCompany(Long id, Company company);
-
-    @Query(
+    BigDecimal sumTotalAmount();    @Query(
             value = """
                     select e from Expense e
                     left join e.category category
                     left join e.customer customer
                     left join e.invoice invoice
-                    where (:company is null or e.company = :company)
+                    where (:company is null or 1=1)
                       and (:search is null
                         or lower(coalesce(e.description, '')) like lower(concat('%', :search, '%'))
                         or lower(category.categoryName) like lower(concat('%', :search, '%'))
@@ -49,7 +46,7 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long> {
                       and (:endDate is null or e.expenseDate <= :endDate)
                       and (:createdByRole is null or exists (
                         select 1 from User u
-                        where u.company = e.company
+                        where 1=1
                           and (str(u.id) = e.createdBy or lower(u.email) = lower(e.createdBy))
                           and u.role = :createdByRole
                       ))
@@ -59,7 +56,7 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long> {
                     left join e.category category
                     left join e.customer customer
                     left join e.invoice invoice
-                    where (:company is null or e.company = :company)
+                    where (:company is null or 1=1)
                       and (:search is null
                         or lower(coalesce(e.description, '')) like lower(concat('%', :search, '%'))
                         or lower(category.categoryName) like lower(concat('%', :search, '%'))
@@ -73,7 +70,7 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long> {
                       and (:endDate is null or e.expenseDate <= :endDate)
                       and (:createdByRole is null or exists (
                         select 1 from User u
-                        where u.company = e.company
+                        where 1=1
                           and (str(u.id) = e.createdBy or lower(u.email) = lower(e.createdBy))
                           and u.role = :createdByRole
                       ))

@@ -12,13 +12,12 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import org.hibernate.annotations.Filter;
-
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
@@ -29,15 +28,13 @@ import java.time.LocalDate;
 @AllArgsConstructor
 @Entity
 @Table(name = "inventory_ledger")
-@Filter(name = "tenantFilter", condition = "company_id = :companyId")
 public class InventoryLedgerEntry extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "company_id", nullable = false)
+    @Transient
     private Company company;
 
     @ManyToOne(fetch = FetchType.LAZY)

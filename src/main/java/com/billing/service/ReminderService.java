@@ -262,7 +262,7 @@ public class ReminderService {
     private List<OverdueCustomerResponse> buildOverdueCustomers(Company company, String search, BigDecimal minBalance, Integer overdueDays) {
         LocalDate today = LocalDate.now();
 
-        return customerRepository.findByCompanyAndCurrentBalanceGreaterThanOrderByCurrentBalanceDesc(company, BigDecimal.ZERO).stream()
+        return customerRepository.findByCurrentBalanceGreaterThanOrderByCurrentBalanceDesc( BigDecimal.ZERO).stream()
                 .map(customer -> toOverdueCustomerResponse(company, customer, today).orElse(null))
                 .filter(Objects::nonNull)
                 .filter(item -> search == null || matchesSearch(item, search))
@@ -273,7 +273,7 @@ public class ReminderService {
     }
 
     private java.util.Optional<OverdueCustomerResponse> toOverdueCustomerResponse(Company company, Customer customer, LocalDate today) {
-        List<Invoice> outstandingInvoices = invoiceRepository.findByCompanyAndCustomerOrderByInvoiceDateDescIdDesc(company, customer).stream()
+        List<Invoice> outstandingInvoices = invoiceRepository.findByCustomerOrderByInvoiceDateDescIdDesc( customer).stream()
                 .filter(invoice -> invoice.getPaymentStatus() != InvoiceStatus.PAID)
                 .filter(invoice -> invoice.getBalanceAmount().compareTo(BigDecimal.ZERO) > 0)
                 .toList();

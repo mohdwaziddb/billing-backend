@@ -65,15 +65,18 @@ public class PermissionService {
     @Transactional(readOnly = true)
     public boolean has(String email, String menuCode, String actionCode) {
         User user = accessControlService.getCurrentUser(email);
-        return hasPermission(user.getId(), user.getCompany().getId(), menuCode, actionCode);
+        // DATABASE-per-tenant: User.company is @Transient, resolve from tenant connection.
+        Company company = accessControlService.requireCompany(user);
+        return hasPermission(user.getId(), company.getId(), menuCode, actionCode);
     }
 
     @Transactional(readOnly = true)
     public boolean hasPermission(Long userId, Long companyId, String menuCode, String actionCode) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-        Company company = user.getCompany();
-        if (company == null || !company.getId().equals(companyId)) {
+        // DATABASE-per-tenant: User.company is @Transient, resolve from tenant connection.
+        Company company = accessControlService.requireCompany(user);
+        if (!company.getId().equals(companyId)) {
             return false;
         }
 
@@ -113,11 +116,13 @@ public class PermissionService {
     @Transactional(readOnly = true)
     public PermissionMatrixResponse effectivePermissions(String email) {
         User user = accessControlService.getCurrentUser(email);
+        // DATABASE-per-tenant: User.company is @Transient, resolve from tenant connection.
+        Company tenantCompany = accessControlService.requireCompany(user);
         if (accessControlService.isCompanyOwner(user)) {
             return PermissionMatrixResponse.builder()
                     .roleCode(roleCode(user))
                     .userId(user.getId())
-                    .menus(toHierarchy(allMenus(true, user, null, user.getCompany(), true)))
+                    .menus(toHierarchy(allMenus(true, user, null, tenantCompany, true)))
                     .build();
         }
         RoleMaster role = roleMasterRepository.findByRoleCode(roleCode(user))
@@ -125,7 +130,7 @@ public class PermissionService {
         return PermissionMatrixResponse.builder()
                 .roleCode(roleCode(user))
                 .userId(user.getId())
-                .menus(toHierarchy(allMenus(false, user, role, user.getCompany(), true)))
+                .menus(toHierarchy(allMenus(false, user, role, tenantCompany, true)))
                 .build();
     }
 
@@ -143,7 +148,7 @@ public class PermissionService {
     @Transactional(readOnly = true)
     public PermissionMatrixResponse userMatrix(String ownerEmail, Long userId) {
         Company company = requireOwnerCompany(ownerEmail);
-        User user = userRepository.findByIdAndCompany(userId, company)
+        User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         RoleMaster role = roleMasterRepository.findByRoleCode(roleCode(user))
                 .orElseThrow(() -> new ResourceNotFoundException("Role not found"));
@@ -187,7 +192,7 @@ public class PermissionService {
     @Transactional
     public PermissionMatrixResponse saveUserMatrix(String ownerEmail, PermissionMatrixRequest request) {
         Company company = requireOwnerCompany(ownerEmail);
-        User user = userRepository.findByIdAndCompany(request.getUserId(), company)
+        User user = userRepository.findById(request.getUserId())
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         if (accessControlService.isCompanyOwner(user)) {
             return userMatrix(ownerEmail, user.getId());

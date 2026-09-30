@@ -5,6 +5,8 @@ import com.billing.entity.User;
 import com.billing.entity.enums.RoleName;
 import com.billing.exception.BadRequestException;
 import com.billing.exception.ResourceNotFoundException;
+import com.billing.multitenancy.TenantContextHolder;
+import com.billing.repository.CompanyRepository;
 import com.billing.repository.UserRepository;
 import com.billing.security.CustomUserDetails;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class AccessControlService {
 
     private final UserRepository userRepository;
+    private final CompanyRepository companyRepository;
 
     @Transactional(readOnly = true)
     public User getCurrentUser() {
@@ -73,10 +76,28 @@ public class AccessControlService {
     }
 
     public Company requireCompany(User user) {
-        if (user.getCompany() == null) {
-            throw new BadRequestException("This action requires a company-scoped user account");
+        if (user.getCompany() != null) {
+            return user.getCompany();
         }
-        return user.getCompany();
+        // DATABASE-per-tenant: User.company is @Transient, resolve company from current tenant connection.
+        return resolveTenantCompany();
+    }
+
+    private Company resolveTenantCompany() {
+        String tenant = TenantContextHolder.getTenant();
+        String db = tenant == null ? null : tenant.replace("_read", "").replace("_write", "");
+        if (db != null && !db.isBlank()) {
+            try {
+                java.util.Optional<Company> companyOpt = companyRepository
+                        .findByCodeIgnoreCase(db.toUpperCase(java.util.Locale.ROOT));
+                if (companyOpt.isPresent()) {
+                    return companyOpt.get();
+                }
+            } catch (Exception ignored) {
+                // fall through to error below
+            }
+        }
+        throw new BadRequestException("This action requires a company-scoped user account");
     }
 
     private CustomUserDetails getAuthenticatedUserDetails() {

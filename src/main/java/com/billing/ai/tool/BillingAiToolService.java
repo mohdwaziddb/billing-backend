@@ -64,6 +64,7 @@ public class BillingAiToolService {
     @Tool(name = "get_sales_summary", description = "Get the current business summary: today's sales, today's collection, this month's sales and collection, total sales, total collection, total outstanding balance, total customers, total invoices, number of customers with dues, and number of low-stock products.")
     public String getSalesSummary() {
         try {
+            Company company = accessControlService.getCurrentCompany(); // for per-tenant
             LocalDate today = LocalDate.now();
             AnalyticsSummaryResponse todayStats = analyticsService.summary("x", today, today);
             AnalyticsSummaryResponse totals = analyticsService.summary("x", MIN_DATE, today);
@@ -77,7 +78,7 @@ public class BillingAiToolService {
             sb.append("- Total sales: ").append(money(totals.getTotalSales())).append("\n");
             sb.append("- Total collection: ").append(money(totals.getTotalCollection())).append("\n");
             sb.append("- Total outstanding balance: ").append(money(totals.getTotalOutstandingBalance())).append("\n");
-            sb.append("- Total customers: ").append(customerRepository.countByCompany(accessControlService.getCurrentCompany())).append("\n");
+            sb.append("- Total customers: ").append(customerRepository.count()).append("\n");
             sb.append("- Total invoices: ").append(totals.getTotalInvoices()).append("\n");
             sb.append("- Customers with dues: ").append(totals.getDueCustomers()).append("\n");
             sb.append("- Low-stock products: ").append(totals.getLowStockProducts()).append("\n");
@@ -145,7 +146,7 @@ public class BillingAiToolService {
             if (query == null || query.isBlank()) {
                 return "Please provide a search text.";
             }
-            Company company = accessControlService.getCurrentCompany();
+            Company company = accessControlService.getCurrentCompany(); // for per-tenant
             List<Customer> customers = customerRepository.findAllByCompanyWithFilters(company, true, query.trim());
             if (customers.isEmpty()) {
                 return "No customer found matching: " + query;
@@ -177,7 +178,7 @@ public class BillingAiToolService {
             if (query == null || query.isBlank()) {
                 return "Please provide a search text.";
             }
-            Company company = accessControlService.getCurrentCompany();
+            Company company = accessControlService.getCurrentCompany(); // for per-tenant
             List<Product> products = productRepository.findAllByCompanyWithFilters(company, true, null, null, query.trim());
             if (products.isEmpty()) {
                 return "No product found matching: " + query;
@@ -528,11 +529,11 @@ public class BillingAiToolService {
             @ToolParam(description = "Set to true to only show customers who have an outstanding balance (dues).", required = false) Boolean onlyWithDues,
             @ToolParam(description = "How many customers to show, between 1 and 50. Defaults to 10.", required = false) Integer limit) {
         try {
-            Company company = accessControlService.getCurrentCompany();
+            Company company = accessControlService.getCurrentCompany(); // for per-tenant
             int safeLimit = limit == null ? 10 : Math.max(1, Math.min(limit, 50));
             List<Customer> customers;
             if (Boolean.TRUE.equals(onlyWithDues)) {
-                customers = customerRepository.findByCompanyAndActiveTrueAndCurrentBalanceGreaterThanOrderByCurrentBalanceDesc(company, BigDecimal.ZERO);
+                customers = customerRepository.findByActiveTrueAndCurrentBalanceGreaterThanOrderByCurrentBalanceDesc( BigDecimal.ZERO);
             } else {
                 customers = customerRepository.findAllByCompanyWithFilters(company, true, blankToNull(search));
             }
@@ -573,7 +574,7 @@ public class BillingAiToolService {
 
     private Map<Integer, BigDecimal> collectionByDay(int year, int month) {
         Map<Integer, BigDecimal> byDay = new LinkedHashMap<>();
-        Company company = accessControlService.getCurrentCompany();
+        Company company = accessControlService.getCurrentCompany(); // for per-tenant
         YearMonth selected = YearMonth.of(year, month);
         List<Payment> payments = paymentRepository.findByCompanyOrderByPaymentDateDescIdDesc(company);
         for (Payment payment : payments) {

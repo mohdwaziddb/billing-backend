@@ -19,16 +19,46 @@ public class CustomUserDetails implements UserDetails {
     private final boolean active;
     private final boolean companyActive;
     private final String role;
-    private final Long companyId;
+    private final String companyCode;
+    private final String databaseName;
 
     public CustomUserDetails(User user) {
+        this(user, null, null);
+    }
+
+    public CustomUserDetails(User user, String companyCode, String databaseName) {
         this.id = user.getId();
         this.email = user.getEmail();
         this.password = user.getPassword();
         this.active = user.isActive();
-        this.companyActive = user.getCompany() == null || user.getCompany().isActive();
+        boolean companyActiveValue = true;
+        if (user.getCompany() != null) {
+            try {
+                companyActiveValue = user.getCompany().isActive();
+            } catch (Exception e) {
+                // company relation may be removed in DATABASE-per-tenant mode
+            }
+        }
+        this.companyActive = companyActiveValue;
         this.role = (user.getRole() == null ? RoleName.USER : user.getRole()).name();
-        this.companyId = user.getCompany() != null ? user.getCompany().getId() : null;
+        String code = companyCode;
+        String db = databaseName;
+        if ((code == null || db == null) && user.getCompany() != null) {
+            try {
+                if (code == null) {
+                    code = user.getCompany().getCode();
+                }
+                if (db == null) {
+                    // No silent default: unresolved database stays null and is handled
+                    // explicitly by callers (AuthService / CustomUserDetailsService).
+                    db = user.getCompany().getDatabaseName();
+                }
+            } catch (Exception e) {
+                // ignore
+            }
+        }
+        this.companyCode = code;
+        this.databaseName = db;
     }
 
     @Override
@@ -59,5 +89,13 @@ public class CustomUserDetails implements UserDetails {
     @Override
     public boolean isEnabled() {
         return active;
+    }
+
+    public Long getCompanyId() {
+        return null;
+    }
+
+    public boolean isCompanyActive() {
+        return companyActive;
     }
 }

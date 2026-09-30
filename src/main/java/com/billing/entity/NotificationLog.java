@@ -10,6 +10,7 @@ import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -24,9 +25,7 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 @Entity
-@Table(name = "notification_logs", indexes = {
-        @Index(name = "idx_notification_logs_company", columnList = "company_id"),
-        @Index(name = "idx_notification_logs_channel", columnList = "channel"),
+@Table(name = "notification_logs", indexes = {        @Index(name = "idx_notification_logs_channel", columnList = "channel"),
         @Index(name = "idx_notification_logs_status", columnList = "status"),
         @Index(name = "idx_notification_logs_sent_at", columnList = "sent_at")
 })
@@ -36,8 +35,7 @@ public class NotificationLog extends BaseEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "company_id", nullable = false)
+    @Transient
     private Company company;
 
     @Column(nullable = false, length = 30)

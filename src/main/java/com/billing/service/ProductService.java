@@ -1,15 +1,9 @@
 package com.billing.service;
 
 import com.billing.dto.PageResponse;
-import com.billing.dto.inventory.ProductBatchSummaryResponse;
 import com.billing.dto.product.ProductRequest;
 import com.billing.dto.product.ProductResponse;
-import com.billing.entity.Company;
-import com.billing.entity.Product;
-import com.billing.entity.ProductCategory;
-import com.billing.entity.ProductSubCategory;
-import com.billing.entity.TaxMaster;
-import com.billing.entity.User;
+import com.billing.entity.*;
 import com.billing.exception.BadRequestException;
 import com.billing.exception.ResourceNotFoundException;
 import com.billing.repository.ProductRepository;
@@ -22,7 +16,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -211,7 +204,7 @@ public class ProductService {
 
         for (Long id : ids) {
             try {
-                java.util.Optional<Product> opt = productRepository.findByIdAndCompany(id, company);
+                java.util.Optional<Product> opt = productRepository.findById(id);
                 if (opt.isEmpty()) {
                     failures.put(id, "not_found");
                     failed++;
@@ -234,7 +227,7 @@ public class ProductService {
     }
 
     public Product getProductOrThrow(Company company, Long productId) {
-        return productRepository.findByIdAndCompany(productId, company)
+        return productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
     }
 

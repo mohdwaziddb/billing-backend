@@ -16,8 +16,7 @@ public interface InventoryLedgerRepository extends JpaRepository<InventoryLedger
 
     @Query("""
             select l from InventoryLedgerEntry l
-            where l.company = :company
-              and (:productId is null or l.product.id = :productId)
+            where (:company is null or 1=1) and (:productId is null or l.product.id = :productId)
               and (:startDate is null or l.entryDate >= :startDate)
               and (:endDate is null or l.entryDate <= :endDate)
               and (:search is null
@@ -37,11 +36,15 @@ public interface InventoryLedgerRepository extends JpaRepository<InventoryLedger
 
     @Query("""
             select l from InventoryLedgerEntry l
-            where l.company = :company
-              and l.product = :product
+            where (:company is null or 1=1) and l.product = :product
             order by l.entryDate asc, l.id asc
             """)
     java.util.List<InventoryLedgerEntry> findByCompanyAndProductOrderByEntryDateAscIdAsc(@Param("company") Company company, @Param("product") Product product);
 
-    java.util.List<InventoryLedgerEntry> findByCompanyAndPurchaseOrderByEntryDateAscIdAsc(Company company, Purchase purchase);
+    @Query("""
+            select l from InventoryLedgerEntry l
+            where (:company is null or 1=1) and l.purchase = :purchase
+            order by l.entryDate asc, l.id asc
+            """)
+    java.util.List<InventoryLedgerEntry> findByCompanyAndPurchaseOrderByEntryDateAscIdAsc(@Param("company") Company company, @Param("purchase") Purchase purchase);
 }

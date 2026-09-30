@@ -95,6 +95,36 @@ public class CompanyRestController {
         }
     }
 
+    @GetMapping("/by-domain")
+    public ResponseEntity<?> byDomain(@RequestParam("domain") String domain, HttpServletRequest req) {
+        try {
+            domain = DataTypeUtility.stringValue(domain);
+            if (domain.isBlank()) {
+                return new ResponseEntity<>(new GeneralResponse<>(false, "domain is required", null), HttpStatus.BAD_REQUEST);
+            }
+            Map<String, Object> info = companyService.getByDomain(domain);
+            if (info == null) {
+                return new ResponseEntity<>(new GeneralResponse<>(false, "Company not found", null), HttpStatus.NOT_FOUND);
+            }
+            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", info), HttpStatus.OK);
+        } catch (Exception e) {
+            return mobileResponseDTOFactory.reportInternalServerError(e);
+        }
+    }
+
+    @GetMapping("/current")
+    public ResponseEntity<?> current(HttpServletRequest req) {
+        try {
+            Map<String, Object> info = companyService.getCurrentTenantCompany();
+            if (info == null) {
+                return new ResponseEntity<>(new GeneralResponse<>(false, "Company not found", null), HttpStatus.NOT_FOUND);
+            }
+            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", info), HttpStatus.OK);
+        } catch (Exception e) {
+            return mobileResponseDTOFactory.reportInternalServerError(e);
+        }
+    }
+
     @GetMapping("/theme")
     public ResponseEntity<?> theme(@RequestParam(required = false) Map<String, Object> param, Authentication authentication, HttpServletRequest req) {
         try {

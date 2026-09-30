@@ -10,6 +10,7 @@ import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -22,9 +23,7 @@ import lombok.Setter;
 @NoArgsConstructor
 @AllArgsConstructor
 @Entity
-@Table(name = "email_templates", indexes = {
-        @Index(name = "idx_email_templates_company", columnList = "company_id"),
-        @Index(name = "idx_email_templates_active", columnList = "is_active")
+@Table(name = "email_templates", indexes = {        @Index(name = "idx_email_templates_active", columnList = "is_active")
 })
 public class EmailTemplate extends BaseEntity {
 
@@ -32,8 +31,7 @@ public class EmailTemplate extends BaseEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "company_id", nullable = false)
+    @Transient
     private Company company;
 
     @Column(name = "template_name", nullable = false, length = 150)

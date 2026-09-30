@@ -38,8 +38,8 @@ public class MysqlDataSourceService extends AbstractDataSourceService {
     private String setSession(HttpSession session, String database) {
         if (database == null || database.equalsIgnoreCase("null")) {
             database = Registry.dbmap.get("databasename");
-            if (database == null) {
-                database = "billing_common";
+            if (database == null || database.isBlank()) {
+                throw new RuntimeException("Unable to resolve company database for this request. Please contact administrator.");
             }
             session.setAttribute("DATABASE_NAME", database);
             session.setAttribute("VERSION_NAME", "v2");
@@ -61,8 +61,8 @@ public class MysqlDataSourceService extends AbstractDataSourceService {
             if (database == null || database.equalsIgnoreCase("null")) {
                 session = request.getSession();
                 database = Registry.dbmap.get("databasename");
-                if (database == null) {
-                    database = "billing_common";
+                if (database == null || database.isBlank()) {
+                    throw new RuntimeException("Unable to resolve company database for this request. Please contact administrator.");
                 }
                 session.setAttribute("DATABASE_NAME", database);
                 session.setAttribute("VERSION_NAME", "v2");
@@ -100,7 +100,7 @@ public class MysqlDataSourceService extends AbstractDataSourceService {
         Registry.dbmap.put("username", "root");
         Registry.dbmap.put("password", "root");
         Registry.dbmap.put("driverClassName", "com.mysql.cj.jdbc.Driver");
-        Registry.dbmap.put("databasename", "billing_common");
+        Registry.dbmap.put("databasename", "xyztrader");
         return Registry.dbmap;
     }
 }

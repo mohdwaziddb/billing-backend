@@ -225,7 +225,7 @@ public class CustomerService {
     @Transactional(readOnly = true)
     public CustomerResponse getByMobile(String email, String mobile) {
         Company company = accessControlService.getCurrentCompany(email);
-        Customer customer = customerRepository.findByCompanyAndMobileIgnoreCaseAndActiveTrue(company, mobile == null ? null : mobile.trim())
+        Customer customer = customerRepository.findByMobileIgnoreCaseAndActiveTrue( mobile == null ? null : mobile.trim())
                 .orElseThrow(() -> new ResourceNotFoundException("Active customer not found with this mobile number"));
         return toResponse(customer, loadMetrics(company, List.of(customer)).get(customer.getId()));
     }
@@ -283,7 +283,7 @@ public class CustomerService {
         Company company = accessControlService.getCurrentCompany(email);
         Customer customer = getCustomerOrThrow(company, customerId);
         List<Invoice> invoices = invoiceRepository.findByCompanyAndCustomerOrderByInvoiceDateDescIdDesc(company, customer);
-        List<Payment> payments = paymentRepository.findByCompanyAndCustomerAndAmountGreaterThanOrderByPaymentDateDescIdDesc(company, customer, BigDecimal.ZERO);
+        List<Payment> payments = paymentRepository.findByCustomerAndAmountGreaterThanOrderByPaymentDateDescIdDesc( customer, BigDecimal.ZERO);
 
         List<CustomerLedgerEntryResponse> entries = new ArrayList<>();
         BigDecimal runningBalance = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
@@ -396,12 +396,12 @@ public class CustomerService {
     @Transactional(readOnly = true)
     public List<CustomerResponse> outstanding(String email) {
         Company company = companyScope(email);
-        List<Customer> customers = customerRepository.findByCompanyAndActiveTrueAndCurrentBalanceGreaterThanOrderByCurrentBalanceDesc(company, BigDecimal.ZERO);
+        List<Customer> customers = customerRepository.findByActiveTrueAndCurrentBalanceGreaterThanOrderByCurrentBalanceDesc( BigDecimal.ZERO);
         return toResponses(company, customers);
     }
 
     public Customer getCustomerOrThrow(Company company, Long customerId) {
-        return customerRepository.findByIdAndCompany(customerId, company)
+        return customerRepository.findById(customerId)
                 .orElseThrow(() -> new ResourceNotFoundException("Customer not found"));
     }
 
@@ -499,21 +499,21 @@ public class CustomerService {
 
     private void validateUnique(Company company, CustomerRequest request, Long customerId) {
         if (customerId == null) {
-            if (customerRepository.existsByCompanyAndMobileIgnoreCase(company, request.getMobile())) {
+            if (customerRepository.existsByMobileIgnoreCase( request.getMobile())) {
                 throw new BadRequestException("This phone number is already registered.");
             }
             if (request.getEmail() != null && !request.getEmail().isBlank()
-                    && customerRepository.existsByCompanyAndEmailIgnoreCase(company, request.getEmail())) {
+                    && customerRepository.existsByEmailIgnoreCase( request.getEmail())) {
                 throw new BadRequestException("This email address is already registered.");
             }
             return;
         }
 
-        if (customerRepository.existsByCompanyAndMobileIgnoreCaseAndIdNot(company, request.getMobile(), customerId)) {
+        if (customerRepository.existsByMobileIgnoreCaseAndIdNot( request.getMobile(), customerId)) {
             throw new BadRequestException("This phone number is already registered.");
         }
         if (request.getEmail() != null && !request.getEmail().isBlank()
-                && customerRepository.existsByCompanyAndEmailIgnoreCaseAndIdNot(company, request.getEmail(), customerId)) {
+                && customerRepository.existsByEmailIgnoreCaseAndIdNot( request.getEmail(), customerId)) {
             throw new BadRequestException("This email address is already registered.");
         }
     }

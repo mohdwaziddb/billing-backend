@@ -335,7 +335,7 @@ public class DashboardService {
     }
 
     private List<Customer> customersFor(Company company) {
-        return customerRepository.findByCompanyOrderByCreatedAtDesc(company);
+        return customerRepository.findAllByOrderByCreatedAtDesc();
     }
 
     private List<Expense> expensesFor(Company company) {

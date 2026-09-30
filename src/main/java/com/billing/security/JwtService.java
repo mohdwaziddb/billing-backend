@@ -39,7 +39,8 @@ public class JwtService {
         Map<String, Object> claims = new HashMap<>();
         claims.put(AUTH_TYPE_CLAIM, AUTH_TYPE_USER);
         claims.put("role", userDetails.getRole());
-        claims.put("companyId", userDetails.getCompanyId());
+        claims.put("companyCode", userDetails.getCompanyCode());
+        claims.put("databaseName", userDetails.getDatabaseName());
         claims.put("userId", userDetails.getId());
 
         return Jwts.builder()
@@ -95,6 +96,16 @@ public class JwtService {
     public String extractAuthType(String token) {
         Object authType = extractClaim(token, claims -> claims.get(AUTH_TYPE_CLAIM));
         return authType instanceof String value && !value.isBlank() ? value : AUTH_TYPE_USER;
+    }
+
+    public String extractCompanyCode(String token) {
+        Object code = extractClaim(token, claims -> claims.get("companyCode"));
+        return code instanceof String value && !value.isBlank() ? value : null;
+    }
+
+    public String extractDatabaseName(String token) {
+        Object db = extractClaim(token, claims -> claims.get("databaseName"));
+        return db instanceof String value && !value.isBlank() ? value : null;
     }
 
     public <T> T extractClaim(String token, Function<Claims, T> resolver) {

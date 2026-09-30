@@ -280,7 +280,7 @@ public class PaymentService {
     }
 
     private Payment getPaymentOrThrow(Company company, Long paymentId) {
-        return paymentRepository.findByIdAndCompany(paymentId, company)
+        return paymentRepository.findById(paymentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found"));
     }
 

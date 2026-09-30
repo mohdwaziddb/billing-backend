@@ -10,6 +10,7 @@ import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -22,17 +23,14 @@ import lombok.Setter;
 @NoArgsConstructor
 @AllArgsConstructor
 @Entity
-@Table(name = "notification_channels", indexes = {
-        @Index(name = "idx_notification_channels_company", columnList = "company_id")
-})
+@Table(name = "notification_channels", indexes = {})
 public class NotificationChannel extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "company_id", nullable = false)
+    @Transient
     private Company company;
 
     @Column(name = "channel_name", nullable = false, length = 50)

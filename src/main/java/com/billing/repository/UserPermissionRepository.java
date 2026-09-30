@@ -6,11 +6,15 @@ import com.billing.entity.Company;
 import com.billing.entity.User;
 import com.billing.entity.UserPermission;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
 
 public interface UserPermissionRepository extends JpaRepository<UserPermission, Long> {
-    List<UserPermission> findByCompanyAndUser(Company company, User user);
-    Optional<UserPermission> findByCompanyAndUserAndAppMenuAndAppMenuAction(Company company, User user, AppMenu appMenu, AppMenuAction action);
+    @Query("select e from UserPermission e where (:company is null or 1=1) and e.user = :user")
+    List<UserPermission> findByCompanyAndUser(@Param("company") Company company, @Param("user") User user);
+    @Query("select e from UserPermission e where (:company is null or 1=1) and e.user = :user and e.appMenu = :appMenu and e.appMenuAction = :action")
+    Optional<UserPermission> findByCompanyAndUserAndAppMenuAndAppMenuAction(@Param("company") Company company, @Param("user") User user, @Param("appMenu") AppMenu appMenu, @Param("action") AppMenuAction action);
 }

@@ -10,6 +10,7 @@ import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -24,9 +25,7 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 @Entity
-@Table(name = "audit_logs", indexes = {
-        @Index(name = "idx_audit_company", columnList = "company_id"),
-        @Index(name = "idx_audit_entity", columnList = "entity_id"),
+@Table(name = "audit_logs", indexes = {        @Index(name = "idx_audit_entity", columnList = "entity_id"),
         @Index(name = "idx_audit_module", columnList = "module_name"),
         @Index(name = "idx_audit_created_at", columnList = "created_at"),
         @Index(name = "idx_audit_user", columnList = "user_id")
@@ -37,8 +36,7 @@ public class AuditLog {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "company_id", nullable = false)
+    @Transient
     private Company company;
 
     @Column(nullable = false)

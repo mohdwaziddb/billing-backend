@@ -73,212 +73,212 @@ public class PlatformAdminRestController {
         }
     }
 
-    @PostMapping("/companies/{companyId}/activate")
-    public ResponseEntity<?> activateCompany(@PathVariable Long companyId) {
+    @PostMapping("/companies/{companyCode}/activate")
+    public ResponseEntity<?> activateCompany(@PathVariable String companyCode) {
         try {
-            companyId = DataTypeUtility.getForeignKeyValue(companyId);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", platformAdminService.activateCompany(companyId)), HttpStatus.OK);
+            companyCode = companyCode == null ? null : companyCode.trim();
+            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", platformAdminService.activateCompany(companyCode)), HttpStatus.OK);
         } catch (Exception e) {
             return mobileResponseDTOFactory.reportInternalServerError(e);
         }
     }
 
-    @PostMapping("/companies/{companyId}/deactivate")
-    public ResponseEntity<?> deactivateCompany(@PathVariable Long companyId) {
+    @PostMapping("/companies/{companyCode}/deactivate")
+    public ResponseEntity<?> deactivateCompany(@PathVariable String companyCode) {
         try {
-            companyId = DataTypeUtility.getForeignKeyValue(companyId);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", platformAdminService.deactivateCompany(companyId)), HttpStatus.OK);
+            companyCode = companyCode == null ? null : companyCode.trim();
+            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", platformAdminService.deactivateCompany(companyCode)), HttpStatus.OK);
         } catch (Exception e) {
             return mobileResponseDTOFactory.reportInternalServerError(e);
         }
     }
 
-    @PostMapping("/companies/{companyId}/chatbot/enable")
-    public ResponseEntity<?> enableCompanyChatbot(@PathVariable Long companyId) {
+    @PostMapping("/companies/{companyCode}/chatbot/enable")
+    public ResponseEntity<?> enableCompanyChatbot(@PathVariable String companyCode) {
         try {
-            companyId = DataTypeUtility.getForeignKeyValue(companyId);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", platformAdminService.setCompanyChatbotEnabled(companyId, true)), HttpStatus.OK);
+            companyCode = companyCode == null ? null : companyCode.trim();
+            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", platformAdminService.setCompanyChatbotEnabled(companyCode, true)), HttpStatus.OK);
         } catch (Exception e) {
             return mobileResponseDTOFactory.reportInternalServerError(e);
         }
     }
 
-    @PostMapping("/companies/{companyId}/chatbot/disable")
-    public ResponseEntity<?> disableCompanyChatbot(@PathVariable Long companyId) {
+    @PostMapping("/companies/{companyCode}/chatbot/disable")
+    public ResponseEntity<?> disableCompanyChatbot(@PathVariable String companyCode) {
         try {
-            companyId = DataTypeUtility.getForeignKeyValue(companyId);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", platformAdminService.setCompanyChatbotEnabled(companyId, false)), HttpStatus.OK);
+            companyCode = companyCode == null ? null : companyCode.trim();
+            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", platformAdminService.setCompanyChatbotEnabled(companyCode, false)), HttpStatus.OK);
         } catch (Exception e) {
             return mobileResponseDTOFactory.reportInternalServerError(e);
         }
     }
 
-    @GetMapping("/companies/{companyId}")
-    public ResponseEntity<?> companyDetails(@PathVariable Long companyId) {
+    @GetMapping("/companies/{companyCode}")
+    public ResponseEntity<?> companyDetails(@PathVariable String companyCode) {
         try {
-            companyId = DataTypeUtility.getForeignKeyValue(companyId);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", platformAdminService.companyDetails(companyId)), HttpStatus.OK);
+            companyCode = companyCode == null ? null : companyCode.trim();
+            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", platformAdminService.companyDetails(companyCode)), HttpStatus.OK);
         } catch (Exception e) {
             return mobileResponseDTOFactory.reportInternalServerError(e);
         }
     }
 
-    @GetMapping("/companies/{companyId}/communication/email-settings")
-    public ResponseEntity<?> emailSettings(@PathVariable Long companyId) {
+    @GetMapping("/companies/{companyCode}/communication/email-settings")
+    public ResponseEntity<?> emailSettings(@PathVariable String companyCode) {
         try {
-            companyId = DataTypeUtility.getForeignKeyValue(companyId);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", notificationSettingsService.emailSettingsForCompany(companyId)), HttpStatus.OK);
+            companyCode = companyCode == null ? null : companyCode.trim();
+            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", notificationSettingsService.emailSettingsForCompany(companyCode)), HttpStatus.OK);
         } catch (Exception e) {
             return mobileResponseDTOFactory.reportInternalServerError(e);
         }
     }
 
-    @PostMapping("/companies/{companyId}/communication/email-settings")
-    public ResponseEntity<?> createEmailSettings(@PathVariable Long companyId, @RequestBody Map<String, Object> param, Authentication authentication) {
+    @PostMapping("/companies/{companyCode}/communication/email-settings")
+    public ResponseEntity<?> createEmailSettings(@PathVariable String companyCode, @RequestBody Map<String, Object> param, Authentication authentication) {
         try {
-            companyId = DataTypeUtility.getForeignKeyValue(companyId);
+            companyCode = companyCode == null ? null : companyCode.trim();
             param = SanitizeData.sanitizeMapObj(param);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", notificationSettingsService.saveEmailSettingsForCompany(param, companyId, authentication.getName())), HttpStatus.OK);
+            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", notificationSettingsService.saveEmailSettingsForCompany(param, companyCode, authentication.getName())), HttpStatus.OK);
         } catch (Exception e) {
             return mobileResponseDTOFactory.reportInternalServerError(e);
         }
     }
 
-    @PutMapping("/companies/{companyId}/communication/email-settings/{id}")
-    public ResponseEntity<?> updateEmailSettings(@PathVariable Long companyId, @PathVariable Long id, @RequestBody Map<String, Object> param, Authentication authentication) {
+    @PutMapping("/companies/{companyCode}/communication/email-settings/{id}")
+    public ResponseEntity<?> updateEmailSettings(@PathVariable String companyCode, @PathVariable Long id, @RequestBody Map<String, Object> param, Authentication authentication) {
         try {
-            companyId = DataTypeUtility.getForeignKeyValue(companyId);
+            companyCode = companyCode == null ? null : companyCode.trim();
             id = DataTypeUtility.getForeignKeyValue(id);
             param = SanitizeData.sanitizeMapObj(param);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", notificationSettingsService.saveEmailSettingsForCompany(param, companyId, id, authentication.getName())), HttpStatus.OK);
+            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", notificationSettingsService.saveEmailSettingsForCompany(param, companyCode, id, authentication.getName())), HttpStatus.OK);
         } catch (Exception e) {
             return mobileResponseDTOFactory.reportInternalServerError(e);
         }
     }
 
-    @PostMapping("/companies/{companyId}/communication/email-settings/test")
-    public ResponseEntity<?> testEmailSettings(@PathVariable Long companyId, @RequestBody(required = false) Map<String, Object> param, Authentication authentication) {
+    @PostMapping("/companies/{companyCode}/communication/email-settings/test")
+    public ResponseEntity<?> testEmailSettings(@PathVariable String companyCode, @RequestBody(required = false) Map<String, Object> param, Authentication authentication) {
         try {
-            companyId = DataTypeUtility.getForeignKeyValue(companyId);
+            companyCode = companyCode == null ? null : companyCode.trim();
             if (param == null) {
                 param = new HashMap<>();
             }
             param = SanitizeData.sanitizeMapObj(param);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", notificationSettingsService.sendTestEmailForCompany(param, companyId, authentication.getName())), HttpStatus.OK);
+            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", notificationSettingsService.sendTestEmailForCompany(param, companyCode, authentication.getName())), HttpStatus.OK);
         } catch (Exception e) {
             return mobileResponseDTOFactory.reportInternalServerError(e);
         }
     }
 
-    @GetMapping("/companies/{companyId}/communication/sms-settings")
-    public ResponseEntity<?> smsSettings(@PathVariable Long companyId) {
+    @GetMapping("/companies/{companyCode}/communication/sms-settings")
+    public ResponseEntity<?> smsSettings(@PathVariable String companyCode) {
         try {
-            companyId = DataTypeUtility.getForeignKeyValue(companyId);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", notificationSettingsService.smsSettingsForCompany(companyId)), HttpStatus.OK);
+            companyCode = companyCode == null ? null : companyCode.trim();
+            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", notificationSettingsService.smsSettingsForCompany(companyCode)), HttpStatus.OK);
         } catch (Exception e) {
             return mobileResponseDTOFactory.reportInternalServerError(e);
         }
     }
 
-    @GetMapping("/companies/{companyId}/communication/sms-settings/providers")
-    public ResponseEntity<?> smsProviders(@PathVariable Long companyId) {
+    @GetMapping("/companies/{companyCode}/communication/sms-settings/providers")
+    public ResponseEntity<?> smsProviders(@PathVariable String companyCode) {
         try {
-            companyId = DataTypeUtility.getForeignKeyValue(companyId);
+            companyCode = companyCode == null ? null : companyCode.trim();
             return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", notificationSettingsService.smsProviderMetadata()), HttpStatus.OK);
         } catch (Exception e) {
             return mobileResponseDTOFactory.reportInternalServerError(e);
         }
     }
 
-    @PostMapping("/companies/{companyId}/communication/sms-settings")
-    public ResponseEntity<?> createSmsSettings(@PathVariable Long companyId, @RequestBody Map<String, Object> param, Authentication authentication) {
+    @PostMapping("/companies/{companyCode}/communication/sms-settings")
+    public ResponseEntity<?> createSmsSettings(@PathVariable String companyCode, @RequestBody Map<String, Object> param, Authentication authentication) {
         try {
-            companyId = DataTypeUtility.getForeignKeyValue(companyId);
+            companyCode = companyCode == null ? null : companyCode.trim();
             param = SanitizeData.sanitizeMapObj(param);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", notificationSettingsService.saveSmsSettingsForCompany(param, companyId, authentication.getName())), HttpStatus.OK);
+            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", notificationSettingsService.saveSmsSettingsForCompany(param, companyCode, authentication.getName())), HttpStatus.OK);
         } catch (Exception e) {
             return mobileResponseDTOFactory.reportInternalServerError(e);
         }
     }
 
-    @PutMapping("/companies/{companyId}/communication/sms-settings/{id}")
-    public ResponseEntity<?> updateSmsSettings(@PathVariable Long companyId, @PathVariable Long id, @RequestBody Map<String, Object> param, Authentication authentication) {
+    @PutMapping("/companies/{companyCode}/communication/sms-settings/{id}")
+    public ResponseEntity<?> updateSmsSettings(@PathVariable String companyCode, @PathVariable Long id, @RequestBody Map<String, Object> param, Authentication authentication) {
         try {
-            companyId = DataTypeUtility.getForeignKeyValue(companyId);
+            companyCode = companyCode == null ? null : companyCode.trim();
             id = DataTypeUtility.getForeignKeyValue(id);
             param = SanitizeData.sanitizeMapObj(param);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", notificationSettingsService.saveSmsSettingsForCompany(param, companyId, id, authentication.getName())), HttpStatus.OK);
+            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", notificationSettingsService.saveSmsSettingsForCompany(param, companyCode, id, authentication.getName())), HttpStatus.OK);
         } catch (Exception e) {
             return mobileResponseDTOFactory.reportInternalServerError(e);
         }
     }
 
-    @PostMapping("/companies/{companyId}/communication/sms-settings/test")
-    public ResponseEntity<?> testSmsSettings(@PathVariable Long companyId, @RequestBody(required = false) Map<String, Object> param, Authentication authentication) {
+    @PostMapping("/companies/{companyCode}/communication/sms-settings/test")
+    public ResponseEntity<?> testSmsSettings(@PathVariable String companyCode, @RequestBody(required = false) Map<String, Object> param, Authentication authentication) {
         try {
-            companyId = DataTypeUtility.getForeignKeyValue(companyId);
+            companyCode = companyCode == null ? null : companyCode.trim();
             if (param == null) {
                 param = new HashMap<>();
             }
             param = SanitizeData.sanitizeMapObj(param);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", notificationSettingsService.sendTestSmsForCompany(param, companyId, authentication.getName())), HttpStatus.OK);
+            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", notificationSettingsService.sendTestSmsForCompany(param, companyCode, authentication.getName())), HttpStatus.OK);
         } catch (Exception e) {
             return mobileResponseDTOFactory.reportInternalServerError(e);
         }
     }
 
-    @GetMapping("/companies/{companyId}/communication/whatsapp-settings")
-    public ResponseEntity<?> whatsAppSettings(@PathVariable Long companyId) {
+    @GetMapping("/companies/{companyCode}/communication/whatsapp-settings")
+    public ResponseEntity<?> whatsAppSettings(@PathVariable String companyCode) {
         try {
-            companyId = DataTypeUtility.getForeignKeyValue(companyId);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", notificationSettingsService.whatsAppSettingsForCompany(companyId)), HttpStatus.OK);
+            companyCode = companyCode == null ? null : companyCode.trim();
+            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", notificationSettingsService.whatsAppSettingsForCompany(companyCode)), HttpStatus.OK);
         } catch (Exception e) {
             return mobileResponseDTOFactory.reportInternalServerError(e);
         }
     }
 
-    @GetMapping("/companies/{companyId}/communication/whatsapp-settings/providers")
-    public ResponseEntity<?> whatsAppProviders(@PathVariable Long companyId) {
+    @GetMapping("/companies/{companyCode}/communication/whatsapp-settings/providers")
+    public ResponseEntity<?> whatsAppProviders(@PathVariable String companyCode) {
         try {
-            companyId = DataTypeUtility.getForeignKeyValue(companyId);
+            companyCode = companyCode == null ? null : companyCode.trim();
             return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", notificationSettingsService.whatsAppProviderMetadata()), HttpStatus.OK);
         } catch (Exception e) {
             return mobileResponseDTOFactory.reportInternalServerError(e);
         }
     }
 
-    @PostMapping("/companies/{companyId}/communication/whatsapp-settings")
-    public ResponseEntity<?> createWhatsAppSettings(@PathVariable Long companyId, @RequestBody Map<String, Object> param, Authentication authentication) {
+    @PostMapping("/companies/{companyCode}/communication/whatsapp-settings")
+    public ResponseEntity<?> createWhatsAppSettings(@PathVariable String companyCode, @RequestBody Map<String, Object> param, Authentication authentication) {
         try {
-            companyId = DataTypeUtility.getForeignKeyValue(companyId);
+            companyCode = companyCode == null ? null : companyCode.trim();
             param = SanitizeData.sanitizeMapObj(param);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", notificationSettingsService.saveWhatsAppSettingsForCompany(param, companyId, authentication.getName())), HttpStatus.OK);
+            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", notificationSettingsService.saveWhatsAppSettingsForCompany(param, companyCode, authentication.getName())), HttpStatus.OK);
         } catch (Exception e) {
             return mobileResponseDTOFactory.reportInternalServerError(e);
         }
     }
 
-    @PutMapping("/companies/{companyId}/communication/whatsapp-settings/{id}")
-    public ResponseEntity<?> updateWhatsAppSettings(@PathVariable Long companyId, @PathVariable Long id, @RequestBody Map<String, Object> param, Authentication authentication) {
+    @PutMapping("/companies/{companyCode}/communication/whatsapp-settings/{id}")
+    public ResponseEntity<?> updateWhatsAppSettings(@PathVariable String companyCode, @PathVariable Long id, @RequestBody Map<String, Object> param, Authentication authentication) {
         try {
-            companyId = DataTypeUtility.getForeignKeyValue(companyId);
+            companyCode = companyCode == null ? null : companyCode.trim();
             id = DataTypeUtility.getForeignKeyValue(id);
             param = SanitizeData.sanitizeMapObj(param);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", notificationSettingsService.saveWhatsAppSettingsForCompany(param, companyId, id, authentication.getName())), HttpStatus.OK);
+            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", notificationSettingsService.saveWhatsAppSettingsForCompany(param, companyCode, id, authentication.getName())), HttpStatus.OK);
         } catch (Exception e) {
             return mobileResponseDTOFactory.reportInternalServerError(e);
         }
     }
 
-    @PostMapping("/companies/{companyId}/communication/whatsapp-settings/test")
-    public ResponseEntity<?> testWhatsAppSettings(@PathVariable Long companyId, @RequestBody(required = false) Map<String, Object> param, Authentication authentication) {
+    @PostMapping("/companies/{companyCode}/communication/whatsapp-settings/test")
+    public ResponseEntity<?> testWhatsAppSettings(@PathVariable String companyCode, @RequestBody(required = false) Map<String, Object> param, Authentication authentication) {
         try {
-            companyId = DataTypeUtility.getForeignKeyValue(companyId);
+            companyCode = companyCode == null ? null : companyCode.trim();
             if (param == null) {
                 param = new HashMap<>();
             }
             param = SanitizeData.sanitizeMapObj(param);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", notificationSettingsService.sendTestWhatsAppForCompany(param, companyId, authentication.getName())), HttpStatus.OK);
+            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", notificationSettingsService.sendTestWhatsAppForCompany(param, companyCode, authentication.getName())), HttpStatus.OK);
         } catch (Exception e) {
             return mobileResponseDTOFactory.reportInternalServerError(e);
         }

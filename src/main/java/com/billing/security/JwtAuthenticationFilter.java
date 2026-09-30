@@ -1,6 +1,6 @@
 package com.billing.security;
 
-import com.billing.tenant.TenantContext;
+import com.billing.multitenancy.TenantContextHolder;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -70,7 +70,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                         : userDetailsService.loadUserByUsername(username);
                 if (jwtService.isTokenValid(token, userDetails)) {
                     if (userDetails instanceof CustomUserDetails customUserDetails
-                            && (customUserDetails.getCompanyId() == null || !customUserDetails.isCompanyActive())) {
+                            && !customUserDetails.isCompanyActive()) {
                         SecurityContextHolder.clearContext();
                         writeCompanyInactiveResponse(response);
                         return;
@@ -83,14 +83,27 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     authenticationToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                     SecurityContextHolder.getContext().setAuthentication(authenticationToken);
                     if (userDetails instanceof CustomUserDetails customUserDetails) {
-                        TenantContext.setCompanyId(customUserDetails.getCompanyId());
+                        String dbName = customUserDetails.getDatabaseName();
+                        if (dbName == null || dbName.isBlank()) {
+                            dbName = jwtService.extractDatabaseName(token);
+                        }
+                        if (dbName == null || dbName.isBlank()) {
+                            String code = jwtService.extractCompanyCode(token);
+                            // DATABASE-per-tenant: database = lower(code), no billing_company_ prefix (e.g. MAACREATION -> maacreation)
+                            dbName = code != null ? code.toLowerCase(java.util.Locale.ROOT) : null;
+                        }
+                        if (dbName != null && !dbName.isBlank()) {
+                            if (TenantContextHolder.getTenant() == null || TenantContextHolder.getTenant().isBlank()) {
+                                TenantContextHolder.setTenantId(dbName);
+                            }
+                        }
                     }
                 }
             }
 
             filterChain.doFilter(request, response);
         } finally {
-            TenantContext.clear();
+            TenantContextHolder.clear();
         }
     }
 

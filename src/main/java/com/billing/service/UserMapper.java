@@ -11,6 +11,10 @@ import org.springframework.stereotype.Component;
 public class UserMapper {
 
     public UserProfileResponse toProfile(User user) {
+        return toProfile(user, user.getCompany());
+    }
+
+    public UserProfileResponse toProfile(User user, Company company) {
         return UserProfileResponse.builder()
                 .id(user.getId())
                 .fullName(user.getFullName())
@@ -20,7 +24,7 @@ public class UserMapper {
                 .role((user.getRole() == null ? RoleName.USER : user.getRole()).name())
                 .active(user.isActive())
                 .createdAt(user.getCreatedAt())
-                .company(toCompanySummary(user.getCompany()))
+                .company(toCompanySummary(company))
                 .build();
     }
 

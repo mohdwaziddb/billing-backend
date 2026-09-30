@@ -20,7 +20,7 @@ public interface ProductSubCategoryRepository extends JpaRepository<ProductSubCa
             SELECT sc
             FROM ProductSubCategory sc
             JOIN sc.productCategory pc
-            WHERE sc.company = :company
+            WHERE (:company IS NULL OR 1=1)
               AND (:categoryId IS NULL OR pc.id = :categoryId)
               AND (:active IS NULL OR sc.active = :active)
               AND (
@@ -42,7 +42,7 @@ public interface ProductSubCategoryRepository extends JpaRepository<ProductSubCa
             SELECT sc
             FROM ProductSubCategory sc
             JOIN sc.productCategory pc
-            WHERE sc.company = :company
+            WHERE (:company IS NULL OR 1=1)
               AND (:categoryId IS NULL OR pc.id = :categoryId)
               AND (:active IS NULL OR sc.active = :active)
               AND (
@@ -61,25 +61,28 @@ public interface ProductSubCategoryRepository extends JpaRepository<ProductSubCa
                                                           Pageable pageable);
 
     @EntityGraph(attributePaths = "productCategory")
-    Optional<ProductSubCategory> findByIdAndCompany(Long id, Company company);
+    @Query("select sc from ProductSubCategory sc where (:company is null or 1=1) and sc.productCategory = :productCategory and lower(sc.subCategoryName)=lower(:subCategoryName)")
+    Optional<ProductSubCategory> findByCompanyAndProductCategoryAndSubCategoryNameIgnoreCase(@Param("company") Company company,
+                                                                                              @Param("productCategory") ProductCategory productCategory,
+                                                                                              @Param("subCategoryName") String subCategoryName);
 
-    Optional<ProductSubCategory> findByCompanyAndProductCategoryAndSubCategoryNameIgnoreCase(Company company,
-                                                                                              ProductCategory productCategory,
-                                                                                              String subCategoryName);
-
-    Optional<ProductSubCategory> findByCompanyAndProductCategoryAndSubCategoryNameIgnoreCaseAndActiveTrue(Company company,
-                                                                                                            ProductCategory productCategory,
-                                                                                                            String subCategoryName);
+    @Query("select sc from ProductSubCategory sc where (:company is null or 1=1) and sc.productCategory = :productCategory and lower(sc.subCategoryName)=lower(:subCategoryName) and sc.active=true")
+    Optional<ProductSubCategory> findByCompanyAndProductCategoryAndSubCategoryNameIgnoreCaseAndActiveTrue(@Param("company") Company company,
+                                                                                                            @Param("productCategory") ProductCategory productCategory,
+                                                                                                            @Param("subCategoryName") String subCategoryName);
 
     @EntityGraph(attributePaths = "productCategory")
-    List<ProductSubCategory> findByCompanyAndProductCategoryAndActiveTrueOrderBySubCategoryNameAsc(Company company, ProductCategory productCategory);
+    @Query("select sc from ProductSubCategory sc where (:company is null or 1=1) and sc.productCategory = :productCategory and sc.active=true order by sc.subCategoryName asc")
+    List<ProductSubCategory> findByCompanyAndProductCategoryAndActiveTrueOrderBySubCategoryNameAsc(@Param("company") Company company, @Param("productCategory") ProductCategory productCategory);
 
-    boolean existsByCompanyAndProductCategoryAndSubCategoryNameIgnoreCase(Company company,
-                                                                          ProductCategory productCategory,
-                                                                          String subCategoryName);
+    @Query("select case when count(sc)>0 then true else false end from ProductSubCategory sc where (:company is null or 1=1) and sc.productCategory = :productCategory and lower(sc.subCategoryName)=lower(:subCategoryName)")
+    boolean existsByCompanyAndProductCategoryAndSubCategoryNameIgnoreCase(@Param("company") Company company,
+                                                                          @Param("productCategory") ProductCategory productCategory,
+                                                                          @Param("subCategoryName") String subCategoryName);
 
-    boolean existsByCompanyAndProductCategoryAndSubCategoryNameIgnoreCaseAndIdNot(Company company,
-                                                                                  ProductCategory productCategory,
-                                                                                  String subCategoryName,
-                                                                                  Long id);
+    @Query("select case when count(sc)>0 then true else false end from ProductSubCategory sc where (:company is null or 1=1) and sc.productCategory = :productCategory and lower(sc.subCategoryName)=lower(:subCategoryName) and sc.id <> :id")
+    boolean existsByCompanyAndProductCategoryAndSubCategoryNameIgnoreCaseAndIdNot(@Param("company") Company company,
+                                                                                  @Param("productCategory") ProductCategory productCategory,
+                                                                                  @Param("subCategoryName") String subCategoryName,
+                                                                                  @Param("id") Long id);
 }

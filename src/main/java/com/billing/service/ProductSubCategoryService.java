@@ -168,7 +168,7 @@ public class ProductSubCategoryService {
     }
 
     ProductSubCategory getSubCategoryOrThrow(Company company, Long subCategoryId) {
-        return productSubCategoryRepository.findByIdAndCompany(subCategoryId, company)
+        return productSubCategoryRepository.findById(subCategoryId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product sub category not found"));
     }
 

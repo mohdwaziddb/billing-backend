@@ -34,7 +34,14 @@ public class UserService {
     @Transactional(readOnly = true)
     public UserProfileResponse getProfile(String email) {
         User user = accessControlService.getCurrentUser(email);
-        return userMapper.toProfile(user);
+        // DATABASE-per-tenant: User.company is @Transient, resolve from tenant connection.
+        Company company = null;
+        try {
+            company = accessControlService.requireCompany(user);
+        } catch (Exception ignored) {
+            // profile works without company
+        }
+        return userMapper.toProfile(user, company);
     }
 
     @Transactional(readOnly = true)
@@ -53,7 +60,7 @@ public class UserService {
     @Transactional(readOnly = true)
     public List<UserProfileResponse> listCompanyUsers(String email) {
         Company company = accessControlService.requireOwnerCompany(email);
-        return userRepository.findByCompanyOrderByCreatedAtDesc(company).stream()
+        return userRepository.findAllByOrderByCreatedAtDesc().stream()
                 .map(userMapper::toProfile)
                 .toList();
     }
@@ -145,7 +152,7 @@ public class UserService {
     @Transactional(readOnly = true)
     public List<UserProfileResponse> activeReferralUsers(String email) {
         Company company = accessControlService.getCurrentCompany(email);
-        return userRepository.findByCompanyOrderByCreatedAtDesc(company).stream()
+        return userRepository.findAllByOrderByCreatedAtDesc().stream()
                 .filter(User::isActive)
                 .map(userMapper::toProfile)
                 .toList();
@@ -201,7 +208,7 @@ public class UserService {
     @Transactional
     public UserProfileResponse updateCompanyUser(String email, Long userId, CompanyUserRequest request) {
         Company company = accessControlService.requireOwnerCompany(email);
-        User user = userRepository.findByIdAndCompany(userId, company)
+        User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         Map<String, Object> oldData = snapshot(user);
 
@@ -258,7 +265,7 @@ public class UserService {
     @Transactional
     public void deactivateCompanyUser(String email, Long userId) {
         Company company = accessControlService.requireOwnerCompany(email);
-        User user = userRepository.findByIdAndCompany(userId, company)
+        User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         Map<String, Object> oldData = snapshot(user);
         if (user.getRole() == RoleName.OWNER && user.isActive()) {
@@ -330,7 +337,7 @@ public class UserService {
     }
 
     private void ensureAnotherOwnerExists(Company company, Long excludedUserId) {
-        boolean hasAnotherOwner = userRepository.findByCompanyOrderByCreatedAtDesc(company).stream()
+        boolean hasAnotherOwner = userRepository.findAllByOrderByCreatedAtDesc().stream()
                 .anyMatch(user -> user.getRole() == RoleName.OWNER && user.isActive() && !user.getId().equals(excludedUserId));
         if (!hasAnotherOwner) {
             throw new BadRequestException("Company must have at least one active owner");
@@ -343,15 +350,15 @@ public class UserService {
         String normalizedEmail = normalizeEmail(email);
         List<String> messages = new ArrayList<>();
 
-        userRepository.findByCompanyAndUsernameIgnoreCase(company, normalizedUsername)
+        userRepository.findByUsernameIgnoreCase( normalizedUsername)
                 .filter(existing -> currentUserId == null || !existing.getId().equals(currentUserId))
                 .ifPresent(existing -> messages.add("Username already exists in this company."));
 
-        userRepository.findByCompanyAndMobileNumber(company, normalizedMobile)
+        userRepository.findByMobileNumber( normalizedMobile)
                 .filter(existing -> currentUserId == null || !existing.getId().equals(currentUserId))
                 .ifPresent(existing -> messages.add("Mobile number already exists in this company."));
 
-        userRepository.findByCompanyAndEmailIgnoreCase(company, normalizedEmail)
+        userRepository.findByEmailIgnoreCase( normalizedEmail)
                 .filter(existing -> currentUserId == null || !existing.getId().equals(currentUserId))
                 .ifPresent(existing -> messages.add("Email already exists in this company."));
 

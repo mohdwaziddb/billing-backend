@@ -9,6 +9,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import jakarta.persistence.UniqueConstraint;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -22,7 +23,7 @@ import lombok.Setter;
 @NoArgsConstructor
 @AllArgsConstructor
 @Entity
-@Table(name = "user_permission", uniqueConstraints = @UniqueConstraint(name = "uk_user_menu_action_permission", columnNames = {"company_id", "user_id", "app_menu_id", "app_menu_action_id"}))
+@Table(name = "user_permission", uniqueConstraints = @UniqueConstraint(name = "uk_user_menu_action_permission", columnNames = {"user_id", "app_menu_id", "app_menu_action_id"}))
 public class UserPermission extends BaseEntity {
 
     @Id
@@ -33,8 +34,7 @@ public class UserPermission extends BaseEntity {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "company_id", nullable = false)
+    @Transient
     private Company company;
 
     @ManyToOne(fetch = FetchType.LAZY)

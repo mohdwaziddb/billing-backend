@@ -13,16 +13,11 @@ public class CompanyDomainInfo {
     public static Map<String, JSONObject> domainInfoJSON = new LinkedHashMap<String, JSONObject>();
 
     static {
-        try {
-            if (!Registry.IS_ONLINE) {
-                domainInfoJSON.put("localhost:9009", getJSONOBJ("billing_common", "", "v2", "billing_common", "billing_common", "jdbc:mysql://localhost:3306/", ""));
-                domainInfoJSON.put("localhost:5173", getJSONOBJ("billing_common", "", "v2", "billing_common", "billing_common", "jdbc:mysql://localhost:3306/", ""));
-                domainInfoJSON.put("acme.localhost:9009", getJSONOBJ("billing_company_acme", "", "v2", "acme", "acme", "jdbc:mysql://localhost:3306/", "{'company_name':'Acme Demo','company_code':'acme'}"));
-                domainInfoJSON.put("acme.localhost:5173", getJSONOBJ("billing_company_acme", "", "v2", "acme", "acme", "jdbc:mysql://localhost:3306/", "{'company_name':'Acme Demo','company_code':'acme'}"));
-            }
-        } catch (JSONException e) {
-            e.printStackTrace();
-        }
+        // Local: NO static host->database entries on purpose (download-and-go model).
+        // Localhost requests resolve via X-Company-Code/subdomain -> billing_common.company_registry,
+        // else fall back to Registry.dbmap "databasename" (loadDatabaseCredentialsFromLocalHost).
+        // Just download the tenant DB locally and set databasename - no map edit needed.
+        // Live (IS_ONLINE): map stays empty too; resolution is fully registry-driven.
     }
 
     public static JSONObject getJSONOBJ(String database, String timezone, String version, String companyCode, String companyGroupId, String databaseIp, String companyDetail) throws JSONException {

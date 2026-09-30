@@ -16,7 +16,7 @@ public interface InvoiceItemRepository extends JpaRepository<InvoiceItem, Long> 
     @Query("""
             select ii from InvoiceItem ii
             join fetch ii.invoice i
-            where ii.company = :company
+            where (:company is null or 1=1)
               and ii.product = :product
               and i.deleted = false
             order by i.invoiceDate asc, i.id asc, ii.id asc

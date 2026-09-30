@@ -12,10 +12,12 @@ import org.springframework.data.repository.query.Param;
 import java.util.List;
 
 public interface AuditLogRepository extends JpaRepository<AuditLog, Long>, JpaSpecificationExecutor<AuditLog> {
-    Page<AuditLog> findByCompanyAndModuleNameAndEntityIdOrderByCreatedAtDescIdDesc(Company company, String moduleName, Long entityId, Pageable pageable);
-    long countByCompany(Company company);
+    @Query("select a from AuditLog a where (:company is null or 1=1) and a.moduleName = :moduleName and a.entityId = :entityId order by a.createdAt desc, a.id desc")
+    Page<AuditLog> findByCompanyAndModuleNameAndEntityIdOrderByCreatedAtDescIdDesc(@Param("company") Company company, @Param("moduleName") String moduleName, @Param("entityId") Long entityId, Pageable pageable);
+    @Query("select count(a) from AuditLog a where (:company is null or 1=1)")
+    long countByCompany(@Param("company") Company company);
 
-    @Query("select distinct log.userId, log.userName from AuditLog log where log.company = :company and log.userId is not null order by log.userName asc")
+    @Query("select distinct log.userId, log.userName from AuditLog log where (:company is null or 1=1) and log.userId is not null order by log.userName asc")
     List<Object[]> findDistinctUsersByCompany(@Param("company") Company company);
 
     @Query("select distinct log.userId, log.userName from AuditLog log where log.userId is not null order by log.userName asc")

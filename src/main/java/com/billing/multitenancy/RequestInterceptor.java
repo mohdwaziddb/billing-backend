@@ -42,6 +42,49 @@ public class RequestInterceptor implements HandlerInterceptor {
         }
 
         String databaseName = null;
+        String requestUri = request.getRequestURI();
+        // Error dispatches (from sendError) must pass through untouched, otherwise the
+        // original status gets re-routed (e.g. a 404 wrongly becoming a 302 redirect).
+        if (requestUri != null && (requestUri.equals("/error") || requestUri.startsWith("/error/"))) {
+            return true;
+        }
+        // Host without port (local URLs carry :9009/:5173, live URLs carry no port).
+        String hostOnly = domain;
+        if (hostOnly != null && hostOnly.contains(":")) {
+            hostOnly = hostOnly.split(":")[0];
+        }
+        boolean isPlatformPath = requestUri != null && requestUri.startsWith("/api/v1/platform-admin");
+        boolean isTenantSubdomain = hostOnly != null && hostOnly.toLowerCase().endsWith(".biziotechnologies.com")
+                && !hostOnly.equalsIgnoreCase("biziotechnologies.com")
+                && !hostOnly.equalsIgnoreCase("www.biziotechnologies.com");
+
+        // Platform-admin is main-domain only: block it on tenant subdomains (403).
+        if (isPlatformPath && isTenantSubdomain) {
+            try {
+                response.sendError(HttpServletResponse.SC_FORBIDDEN,
+                        "Platform admin is available only on biziotechnologies.com");
+            } catch (Exception ignored) {}
+            return false;
+        }
+
+        // Platform company-scoped routing: /api/v1/platform-admin/companies/{companyCode}/**
+        // resolves the tenant DB via billing_common.company_registry.company_code (registry-gated).
+        // Code-keyed: tenant-local numeric ids collide across databases (every tenant starts at 1).
+        if (isPlatformPath && companyRegistryService != null) {
+            String platformCompanyCode = extractPlatformCompanyCode(requestUri);
+            if (platformCompanyCode != null) {
+                String dbForCompany = companyRegistryService.resolveDbNameByCodeAnyStatus(platformCompanyCode);
+                if (dbForCompany == null || dbForCompany.isBlank()
+                        || !companyRegistryService.isValidDatabase(dbForCompany)) {
+                    try {
+                        response.sendError(HttpServletResponse.SC_NOT_FOUND, "Company not found");
+                    } catch (Exception ignored) {}
+                    return false;
+                }
+                databaseName = dbForCompany;
+                ensureTenantDataSource(databaseName, companyRegistryService.resolveDbHostByDomain(domain));
+            }
+        }
 
         String companyCode = request.getHeader("X-Company-Code");
         if (companyCode == null || companyCode.trim().isEmpty()) {
@@ -65,6 +108,31 @@ public class RequestInterceptor implements HandlerInterceptor {
             if (dbFromCode != null && !dbFromCode.isEmpty()) {
                 databaseName = dbFromCode;
                 String dbHost = companyRegistryService.resolveDbHost(companyCode.trim());
+                ensureTenantDataSource(databaseName, dbHost);
+            }
+        }
+
+        if (databaseName == null && isTenantSubdomain) {
+            String subdomain = hostOnly.split("\\.")[0];
+            if (subdomain != null && !subdomain.isBlank() && companyRegistryService != null) {
+                String dbFromSubdomain = companyRegistryService.resolveDbName(subdomain);
+                if (dbFromSubdomain == null || dbFromSubdomain.isBlank()) {
+                    // Unknown subdomain: browser page loads redirect to main site,
+                    // API/XHR calls get 404 so the frontend can redirect itself.
+                    if (requestUri != null && requestUri.startsWith("/api/")) {
+                        try {
+                            response.sendError(HttpServletResponse.SC_NOT_FOUND, "Company not found");
+                        } catch (Exception ignored) {}
+                    } else {
+                        try {
+                            response.sendRedirect("https://biziotechnologies.com");
+                        } catch (Exception ignored) {}
+                    }
+                    return false;
+                }
+                // Valid subdomain -> bind tenant DB immediately (TSM-like)
+                databaseName = dbFromSubdomain;
+                String dbHost = companyRegistryService.resolveDbHost(subdomain);
                 ensureTenantDataSource(databaseName, dbHost);
             }
         }
@@ -105,8 +173,26 @@ public class RequestInterceptor implements HandlerInterceptor {
                 databaseName = Registry.dbmap.get("databasename");
             }
         }
-        if (databaseName == null || databaseName.isEmpty()) {
+        if (databaseName == null && isPlatformPath) {
+            // Platform root paths (login/dashboard/companies/settings on the main domain)
+            // are served from the common catalog via JdbcTemplate and need no tenant pool.
+            // Marker only: no pool exists for it, so accidental JPA access fails loud.
             databaseName = "billing_common";
+        }
+        if (databaseName == null || databaseName.isEmpty()) {
+            // No silent default tenant: unknown host/domain is an explicit error.
+            // Live -> main site; local -> 400 so misrouting never serves wrong company data.
+            if (Registry.IS_ONLINE) {
+                try {
+                    response.sendRedirect("https://biziotechnologies.com");
+                } catch (Exception ignored) {}
+                return false;
+            }
+            try {
+                response.sendError(HttpServletResponse.SC_BAD_REQUEST,
+                        "Unable to resolve company database for host '" + domain + "'. Please contact administrator.");
+            } catch (Exception ignored) {}
+            return false;
         }
 
         Enumeration<String> headers = request.getHeaders(ApplicationConstant.CONNECTION_TYPE_PARAM_NAME);
@@ -152,8 +238,50 @@ public class RequestInterceptor implements HandlerInterceptor {
         ensureTenantDataSourceWithHost(tenant, dbHost);
     }
 
+    /**
+     * Ensure WRITE+READ pools exist for a registry-listed tenant database
+     * (used by platform provisioning/admin flows outside HTTP tenant routing).
+     */
+    public void ensureTenant(String tenant, String dbHost) {
+        ensureTenantDataSource(tenant, dbHost);
+    }
+
+    /**
+     * Extract companyCode from /api/v1/platform-admin/companies/{companyCode}/** paths.
+     * Literal segments (overview) are NOT company codes. Codes are uppercase
+     * alphanumeric (see PlatformAdminService.RESERVED_COMPANY_CODES).
+     */
+    private String extractPlatformCompanyCode(String requestUri) {
+        if (requestUri == null) {
+            return null;
+        }
+        String[] seg = requestUri.split("/");
+        // ["", "api", "v1", "platform-admin", "companies", "{companyCode}", ...]
+        if (seg.length >= 6 && "api".equals(seg[1]) && "v1".equals(seg[2])
+                && "platform-admin".equals(seg[3]) && "companies".equals(seg[4])) {
+            String code = seg[5] == null ? "" : seg[5].trim().toUpperCase(java.util.Locale.ROOT);
+            if (code.isEmpty() || "OVERVIEW".equals(code)) {
+                return null;
+            }
+            if (!code.matches("[A-Z0-9]{1,20}")) {
+                return null;
+            }
+            return code;
+        }
+        return null;
+    }
+
     private synchronized void ensureTenantDataSourceWithHost(String tenant, String dbHost) {
         if (dataSourcesMtApp == null) {
+            return;
+        }
+        // Registry gate: tenant pool is created ONLY if its database is registered
+        // ACTIVE in billing_common.company_registry (common-DB-driven tenancy).
+        if (tenant == null || tenant.isBlank() || "billing_common".equalsIgnoreCase(tenant.trim())) {
+            return;
+        }
+        if (companyRegistryService != null && !companyRegistryService.isValidDatabase(tenant.trim())) {
+            System.err.println("[WARN] Refusing tenant DataSource for unregistered database: " + tenant);
             return;
         }
         if (dataSourcesMtApp.containsKey(tenant) && dataSourcesMtApp.containsKey(tenant + ApplicationConstant.CONNECTION_READ_STRING)) {
@@ -189,7 +317,9 @@ public class RequestInterceptor implements HandlerInterceptor {
             cfgR.setMinimumIdle(0);
             cfgR.setMaximumPoolSize(20);
             cfgR.setPoolName(tenant + "-READ");
-            cfgR.setReadOnly(true);
+            if (com.billing.core.Registry.IS_ONLINE) {
+                cfgR.setReadOnly(true);
+            }
             cfgR.setConnectionTimeout(10000);
 
             if (!dataSourcesMtApp.containsKey(tenant)) {
