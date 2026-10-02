@@ -6,12 +6,20 @@ import org.springframework.stereotype.Component;
 @Component
 public class CurrentTenantIdentifierResolverImpl implements CurrentTenantIdentifierResolver<String> {
 
-    private static final String DEFAULT_TENANT_ID = "maacreation";
-
     @Override
     public String resolveCurrentTenantIdentifier() {
         String tenant = TenantContextHolder.getTenant();
-        return tenant != null && !tenant.isBlank() ? tenant : DEFAULT_TENANT_ID;
+        if (tenant != null && !tenant.isBlank()) {
+            return tenant;
+        }
+        // Single source of truth: the DB name configured in MysqlDataSourceService
+        // (Registry.dbmap "databasename"). No hardcoded tenant name anywhere.
+        String fallback = com.billing.core.Registry.dbmap.get("databasename");
+        if (fallback == null || fallback.isBlank()) {
+            throw new IllegalStateException(
+                    "Default tenant database is not configured (Registry.dbmap databasename). Set it in MysqlDataSourceService.");
+        }
+        return fallback;
     }
 
     @Override

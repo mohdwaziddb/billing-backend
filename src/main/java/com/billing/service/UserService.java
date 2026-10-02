@@ -350,6 +350,18 @@ public class UserService {
         String normalizedEmail = normalizeEmail(email);
         List<String> messages = new ArrayList<>();
 
+        // Reserved: tenant super-admin login (companies row). A normal user
+        // with this identifier would shadow or be shadowed by it at login.
+        String superAdminUsername = company != null ? company.getSuperAdminUsername() : null;
+        if (superAdminUsername != null && !superAdminUsername.isBlank()) {
+            String reserved = superAdminUsername.trim();
+            if (reserved.equalsIgnoreCase(normalizedUsername)
+                    || reserved.equalsIgnoreCase(normalizedEmail)
+                    || reserved.equalsIgnoreCase(normalizedMobile)) {
+                messages.add("This identifier is reserved for super-admin login.");
+            }
+        }
+
         userRepository.findByUsernameIgnoreCase( normalizedUsername)
                 .filter(existing -> currentUserId == null || !existing.getId().equals(currentUserId))
                 .ifPresent(existing -> messages.add("Username already exists in this company."));

@@ -119,6 +119,12 @@ public class Company extends BaseEntity {
     @Column(name = "signature_url")
     private String signatureUrl;
 
+    @Column(name = "super_admin_username")
+    private String superAdminUsername;
+
+    @Column(name = "super_admin_password")
+    private String superAdminPassword;
+
     @Column(name = "invoice_notes", columnDefinition = "TEXT")
     private String invoiceNotes;
 

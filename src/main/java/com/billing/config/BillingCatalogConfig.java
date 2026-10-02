@@ -24,7 +24,10 @@ public class BillingCatalogConfig {
     @Bean(name = "billingCommonDataSource")
     public DataSource billingCommonDataSource() {
         HikariConfig config = new HikariConfig();
-        config.setJdbcUrl("jdbc:mysql://localhost:" + localDbPort + "/billing_common?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Kolkata&createDatabaseIfNotExist=true");
+        // NOTE: no createDatabaseIfNotExist here on purpose. Databases are
+        // created manually (sample.sql / registry docs). If billing_common
+        // is missing, boot must FAIL LOUD so it gets created by hand.
+        config.setJdbcUrl("jdbc:mysql://localhost:" + localDbPort + "/billing_common?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Kolkata");
         config.setUsername(username);
         config.setPassword(password);
         config.setDriverClassName("com.mysql.cj.jdbc.Driver");

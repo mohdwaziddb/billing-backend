@@ -86,6 +86,13 @@ public class RequestInterceptor implements HandlerInterceptor {
             }
         }
 
+        if (!Registry.IS_ONLINE) {
+            // Local single-DB mode: tenant is ALWAYS the configured database
+            // (Registry.dbmap "databasename" from MysqlDataSourceService).
+            // Header/subdomain/domain are ignored for routing: single tenant
+            // by construction, so cross-tenant routing is impossible locally.
+            databaseName = Registry.dbmap.get("databasename");
+        } else {
         String companyCode = request.getHeader("X-Company-Code");
         if (companyCode == null || companyCode.trim().isEmpty()) {
             companyCode = request.getHeader("x-company-code");
@@ -161,7 +168,8 @@ public class RequestInterceptor implements HandlerInterceptor {
                     ensureTenantDataSource(databaseName, dbHost);
                 }
             }
-        }
+        } // end domain resolution
+        } // end live multi-tenant resolution (local single-DB assigned above)
 
         if (databaseName == null) {
             if (Registry.IS_ONLINE) {
@@ -178,6 +186,25 @@ public class RequestInterceptor implements HandlerInterceptor {
             // are served from the common catalog via JdbcTemplate and need no tenant pool.
             // Marker only: no pool exists for it, so accidental JPA access fails loud.
             databaseName = "billing_common";
+        }
+        // Token-binding: an authenticated USER/SUPER_ADMIN session may only touch
+        // its own tenant database. The routing above is client-controlled
+        // (header/subdomain/domain); the token claim is not. Mismatch -> 403.
+        // Skipped for platform paths (path-based routing + @PreAuthorize) and for
+        // anonymous calls (no token -> tokenTenant blank -> public endpoints pass).
+        if (!isPlatformPath && databaseName != null && !databaseName.isBlank()
+                && !"billing_common".equalsIgnoreCase(databaseName.trim())) {
+            String tokenTenant = TenantContextHolder.getTenant();
+            if (tokenTenant != null && !tokenTenant.isBlank()) {
+                String boundDb = tokenTenant.replace("_read", "").replace("_write", "").trim();
+                if (!boundDb.isEmpty() && !boundDb.equalsIgnoreCase(databaseName.trim())) {
+                    try {
+                        response.sendError(HttpServletResponse.SC_FORBIDDEN,
+                                "Tenant mismatch for this session. Please sign in again.");
+                    } catch (Exception ignored) {}
+                    return false;
+                }
+            }
         }
         if (databaseName == null || databaseName.isEmpty()) {
             // No silent default tenant: unknown host/domain is an explicit error.
@@ -249,7 +276,7 @@ public class RequestInterceptor implements HandlerInterceptor {
     /**
      * Extract companyCode from /api/v1/platform-admin/companies/{companyCode}/** paths.
      * Literal segments (overview) are NOT company codes. Codes are uppercase
-     * alphanumeric (see PlatformAdminService.RESERVED_COMPANY_CODES).
+     * alphanumeric (1-20 chars).
      */
     private String extractPlatformCompanyCode(String requestUri) {
         if (requestUri == null) {

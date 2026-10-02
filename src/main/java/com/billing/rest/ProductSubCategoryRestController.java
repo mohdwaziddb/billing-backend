@@ -3,7 +3,6 @@ package com.billing.rest;
 import com.billing.service.ProductSubCategoryService;
 import com.billing.util.DataTypeUtility;
 import com.billing.util.GeneralResponse;
-import com.billing.util.MobileResponseDTOFactory;
 import com.billing.util.SanitizeData;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -29,62 +28,40 @@ import java.util.Map;
 public class ProductSubCategoryRestController {
 
     private final ProductSubCategoryService productSubCategoryService;
-    private final MobileResponseDTOFactory mobileResponseDTOFactory;
 
     @GetMapping
     @com.billing.security.RequiresPermission(menu = "PRODUCT_SUB_CATEGORIES", action = "VIEW")
     public ResponseEntity<?> list(@RequestParam(required = false) Map<String, Object> param, Authentication authentication, HttpServletRequest req, HttpServletResponse res) {
-        try {
-            param = SanitizeData.sanitizeMapObj(param);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", productSubCategoryService.page(param, authentication.getName())), HttpStatus.OK);
-        } catch (Exception e) {
-            return mobileResponseDTOFactory.reportInternalServerError(e);
-        }
+        param = SanitizeData.sanitizeMapObj(param);
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", productSubCategoryService.page(param, authentication.getName())), HttpStatus.OK);
     }
 
     @GetMapping("/{subCategoryId}")
     @com.billing.security.RequiresPermission(menu = "PRODUCT_SUB_CATEGORIES", action = "VIEW")
     public ResponseEntity<?> get(Authentication authentication, @PathVariable Long subCategoryId, HttpServletRequest req) {
-        try {
-            subCategoryId = DataTypeUtility.getForeignKeyValue(subCategoryId);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", productSubCategoryService.get(authentication.getName(), subCategoryId)), HttpStatus.OK);
-        } catch (Exception e) {
-            return mobileResponseDTOFactory.reportInternalServerError(e);
-        }
+        subCategoryId = DataTypeUtility.getForeignKeyValue(subCategoryId);
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", productSubCategoryService.get(authentication.getName(), subCategoryId)), HttpStatus.OK);
     }
 
     @PostMapping
     @com.billing.security.RequiresPermission(menu = "PRODUCT_SUB_CATEGORIES", action = "ADD")
     public ResponseEntity<?> create(@RequestBody Map<String, Object> param, Authentication authentication, HttpServletRequest request) {
-        try {
-            param = SanitizeData.sanitizeMapObj(param);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", productSubCategoryService.create(param, authentication.getName())), HttpStatus.OK);
-        } catch (Exception e) {
-            return mobileResponseDTOFactory.reportInternalServerError(e);
-        }
+        param = SanitizeData.sanitizeMapObj(param);
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", productSubCategoryService.create(param, authentication.getName())), HttpStatus.OK);
     }
 
     @PutMapping("/{subCategoryId}")
     @com.billing.security.RequiresPermission(menu = "PRODUCT_SUB_CATEGORIES", action = "EDIT")
     public ResponseEntity<?> update(@PathVariable Long subCategoryId, @RequestBody Map<String, Object> param, Authentication authentication, HttpServletRequest request) {
-        try {
-            param = SanitizeData.sanitizeMapObj(param);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", productSubCategoryService.update(param, DataTypeUtility.getForeignKeyValue(subCategoryId), authentication.getName())), HttpStatus.OK);
-        } catch (Exception e) {
-            return mobileResponseDTOFactory.reportInternalServerError(e);
-        }
+        param = SanitizeData.sanitizeMapObj(param);
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", productSubCategoryService.update(param, DataTypeUtility.getForeignKeyValue(subCategoryId), authentication.getName())), HttpStatus.OK);
     }
 
     @DeleteMapping("/{subCategoryId}")
     @com.billing.security.RequiresPermission(menu = "PRODUCT_SUB_CATEGORIES", action = "DELETE")
     public ResponseEntity<?> delete(Authentication authentication, @PathVariable Long subCategoryId) {
-        try {
-            subCategoryId = DataTypeUtility.getForeignKeyValue(subCategoryId);
-            productSubCategoryService.delete(authentication.getName(), subCategoryId);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", Map.of("status", "ok")), HttpStatus.OK);
-        } catch (Exception e) {
-            return mobileResponseDTOFactory.reportInternalServerError(e);
-        }
+        subCategoryId = DataTypeUtility.getForeignKeyValue(subCategoryId);
+        productSubCategoryService.delete(authentication.getName(), subCategoryId);
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", Map.of("status", "ok")), HttpStatus.OK);
     }
 }
-

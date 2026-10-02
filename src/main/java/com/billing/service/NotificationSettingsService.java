@@ -16,7 +16,6 @@ import com.billing.entity.enums.SmsProviderType;
 import com.billing.entity.enums.WhatsAppProviderType;
 import com.billing.exception.BadRequestException;
 import com.billing.exception.ResourceNotFoundException;
-import com.billing.repository.CompanyRepository;
 import com.billing.repository.EmailProviderSettingRepository;
 import com.billing.repository.SmsProviderSettingRepository;
 import com.billing.repository.WhatsAppProviderSettingRepository;
@@ -41,7 +40,6 @@ import java.util.Map;
 public class NotificationSettingsService {
 
     private final AccessControlService accessControlService;
-    private final CompanyRepository companyRepository;
     private final EmailProviderSettingRepository emailProviderSettingRepository;
     private final SmsProviderSettingRepository smsProviderSettingRepository;
     private final WhatsAppProviderSettingRepository whatsAppProviderSettingRepository;
@@ -69,11 +67,6 @@ public class NotificationSettingsService {
         return emailSettingsForCompany(accessControlService.getCurrentCompany(email));
     }
 
-    @Transactional(readOnly = true)
-    public List<ProviderSettingsResponse> emailSettingsForCompany(String companyCode) {
-        return emailSettingsForCompany(resolveCompany(companyCode));
-    }
-
     private List<ProviderSettingsResponse> emailSettingsForCompany(Company company) {
         return emailProviderSettingRepository.findByCompanyOrderByActiveDescProviderNameAsc(company).stream().map(this::toResponse).toList();
     }
@@ -95,11 +88,6 @@ public class NotificationSettingsService {
     @Transactional
     public ProviderSettingsResponse saveEmailSettings(String email, ProviderSettingsRequest request) {
         return saveEmailSettingsForCompany(accessControlService.getCurrentCompany(email), request, email, false);
-    }
-
-    @Transactional
-    public ProviderSettingsResponse saveEmailSettingsForCompany(String companyCode, ProviderSettingsRequest request, String actorName) {
-        return saveEmailSettingsForCompany(resolveCompany(companyCode), request, actorName, true);
     }
 
     private ProviderSettingsResponse saveEmailSettingsForCompany(Company company, ProviderSettingsRequest request, String actorName, boolean actorScopedAudit) {
@@ -156,11 +144,6 @@ public class NotificationSettingsService {
         return sendTestEmailForCompany(accessControlService.getCurrentCompany(email), request, email, false);
     }
 
-    @Transactional(readOnly = true)
-    public ProviderSettingsResponse sendTestEmailForCompany(String companyCode, EmailProviderTestRequest request, String actorName) {
-        return sendTestEmailForCompany(resolveCompany(companyCode), request, actorName, true);
-    }
-
     private ProviderSettingsResponse sendTestEmailForCompany(Company company, EmailProviderTestRequest request, String actorName, boolean actorScopedAudit) {
         EmailProviderSetting activeProvider = emailProviderSettingRepository.findFirstByCompanyAndActiveTrueOrderByIdDesc(company)
                 .orElseThrow(() -> new BadRequestException("No active email provider configured"));
@@ -196,11 +179,6 @@ public class NotificationSettingsService {
         return smsSettingsForCompany(accessControlService.getCurrentCompany(email));
     }
 
-    @Transactional(readOnly = true)
-    public List<ProviderSettingsResponse> smsSettingsForCompany(String companyCode) {
-        return smsSettingsForCompany(resolveCompany(companyCode));
-    }
-
     private List<ProviderSettingsResponse> smsSettingsForCompany(Company company) {
         return smsProviderSettingRepository.findByCompanyOrderByActiveDescProviderNameAsc(company).stream().map(this::toResponse).toList();
     }
@@ -222,11 +200,6 @@ public class NotificationSettingsService {
     @Transactional
     public ProviderSettingsResponse saveSmsSettings(String email, ProviderSettingsRequest request) {
         return saveSmsSettingsForCompany(accessControlService.getCurrentCompany(email), request, email, false);
-    }
-
-    @Transactional
-    public ProviderSettingsResponse saveSmsSettingsForCompany(String companyCode, ProviderSettingsRequest request, String actorName) {
-        return saveSmsSettingsForCompany(resolveCompany(companyCode), request, actorName, true);
     }
 
     private ProviderSettingsResponse saveSmsSettingsForCompany(Company company, ProviderSettingsRequest request, String actorName, boolean actorScopedAudit) {
@@ -279,11 +252,6 @@ public class NotificationSettingsService {
         return sendTestSmsForCompany(accessControlService.getCurrentCompany(email), request, email, false);
     }
 
-    @Transactional
-    public ProviderSettingsResponse sendTestSmsForCompany(String companyCode, SmsProviderTestRequest request, String actorName) {
-        return sendTestSmsForCompany(resolveCompany(companyCode), request, actorName, true);
-    }
-
     private ProviderSettingsResponse sendTestSmsForCompany(Company company, SmsProviderTestRequest request, String actorName, boolean actorScopedAudit) {
         SmsProviderSetting activeProvider = resolveSmsTestSetting(company, request);
         String mobileNumber = request == null || request.getMobileNumber() == null || request.getMobileNumber().isBlank()
@@ -310,11 +278,6 @@ public class NotificationSettingsService {
         return whatsAppSettingsForCompany(accessControlService.getCurrentCompany(email));
     }
 
-    @Transactional(readOnly = true)
-    public List<ProviderSettingsResponse> whatsAppSettingsForCompany(String companyCode) {
-        return whatsAppSettingsForCompany(resolveCompany(companyCode));
-    }
-
     private List<ProviderSettingsResponse> whatsAppSettingsForCompany(Company company) {
         return whatsAppProviderSettingRepository.findByCompanyOrderByActiveDescProviderNameAsc(company).stream().map(this::toResponse).toList();
     }
@@ -336,11 +299,6 @@ public class NotificationSettingsService {
     @Transactional
     public ProviderSettingsResponse saveWhatsAppSettings(String email, ProviderSettingsRequest request) {
         return saveWhatsAppSettingsForCompany(accessControlService.getCurrentCompany(email), request, email, false);
-    }
-
-    @Transactional
-    public ProviderSettingsResponse saveWhatsAppSettingsForCompany(String companyCode, ProviderSettingsRequest request, String actorName) {
-        return saveWhatsAppSettingsForCompany(resolveCompany(companyCode), request, actorName, true);
     }
 
     private ProviderSettingsResponse saveWhatsAppSettingsForCompany(Company company, ProviderSettingsRequest request, String actorName, boolean actorScopedAudit) {
@@ -393,11 +351,6 @@ public class NotificationSettingsService {
         return sendTestWhatsAppForCompany(accessControlService.getCurrentCompany(email), request, email, false);
     }
 
-    @Transactional
-    public ProviderSettingsResponse sendTestWhatsAppForCompany(String companyCode, WhatsAppProviderTestRequest request, String actorName) {
-        return sendTestWhatsAppForCompany(resolveCompany(companyCode), request, actorName, true);
-    }
-
     private ProviderSettingsResponse sendTestWhatsAppForCompany(Company company, WhatsAppProviderTestRequest request, String actorName, boolean actorScopedAudit) {
         WhatsAppProviderSetting activeProvider = resolveWhatsAppTestSetting(company, request);
         String mobileNumber = request == null || request.getMobileNumber() == null || request.getMobileNumber().isBlank()
@@ -421,16 +374,6 @@ public class NotificationSettingsService {
         auditData.put("status", result.status().name());
         logEvent(actorName, actorScopedAudit, company, "WhatsApp Provider", "WhatsAppProviderSetting", activeProvider.getId(), "WHATSAPP_TEST_SENT", auditData);
         return toResponse(activeProvider);
-    }
-
-    private Company resolveCompany(String companyCode) {
-        String code = companyCode == null ? "" : companyCode.trim();
-        if (code.isEmpty()) {
-            throw new ResourceNotFoundException("Company not found");
-        }
-        return companyRepository.findByCodeIgnoreCase(code.toUpperCase(java.util.Locale.ROOT))
-                .or(() -> companyRepository.findByCodeIgnoreCase(code))
-                .orElseThrow(() -> new ResourceNotFoundException("Company not found"));
     }
 
     private ProviderSettingsResponse toResponse(EmailProviderSetting setting) {
@@ -983,66 +926,6 @@ public class NotificationSettingsService {
             whatsAppProviderTestRequest.setConfigValues(configMap);
         }
         return whatsAppProviderTestRequest;
-    }
-
-    @Transactional
-    public ProviderSettingsResponse saveEmailSettingsForCompany(Map<String, Object> param, String companyCode, String actorName) {
-        ProviderSettingsRequest providerSettingsRequest = mapToProviderRequest(param);
-        providerSettingsRequest.setId(null);
-        return saveEmailSettingsForCompany(companyCode, providerSettingsRequest, actorName);
-    }
-
-    @Transactional
-    public ProviderSettingsResponse saveEmailSettingsForCompany(Map<String, Object> param, String companyCode, Long id, String actorName) {
-        ProviderSettingsRequest providerSettingsRequest = mapToProviderRequest(param);
-        providerSettingsRequest.setId(DataTypeUtility.getForeignKeyValue(id));
-        return saveEmailSettingsForCompany(companyCode, providerSettingsRequest, actorName);
-    }
-
-    @Transactional(readOnly = true)
-    public ProviderSettingsResponse sendTestEmailForCompany(Map<String, Object> param, String companyCode, String actorName) {
-        EmailProviderTestRequest emailProviderTestRequest = mapToEmailTestRequest(param);
-        return sendTestEmailForCompany(companyCode, emailProviderTestRequest, actorName);
-    }
-
-    @Transactional
-    public ProviderSettingsResponse saveSmsSettingsForCompany(Map<String, Object> param, String companyCode, String actorName) {
-        ProviderSettingsRequest providerSettingsRequest = mapToProviderRequest(param);
-        providerSettingsRequest.setId(null);
-        return saveSmsSettingsForCompany(companyCode, providerSettingsRequest, actorName);
-    }
-
-    @Transactional
-    public ProviderSettingsResponse saveSmsSettingsForCompany(Map<String, Object> param, String companyCode, Long id, String actorName) {
-        ProviderSettingsRequest providerSettingsRequest = mapToProviderRequest(param);
-        providerSettingsRequest.setId(DataTypeUtility.getForeignKeyValue(id));
-        return saveSmsSettingsForCompany(companyCode, providerSettingsRequest, actorName);
-    }
-
-    @Transactional
-    public ProviderSettingsResponse sendTestSmsForCompany(Map<String, Object> param, String companyCode, String actorName) {
-        SmsProviderTestRequest smsProviderTestRequest = mapToSmsTestRequest(param);
-        return sendTestSmsForCompany(companyCode, smsProviderTestRequest, actorName);
-    }
-
-    @Transactional
-    public ProviderSettingsResponse saveWhatsAppSettingsForCompany(Map<String, Object> param, String companyCode, String actorName) {
-        ProviderSettingsRequest providerSettingsRequest = mapToProviderRequest(param);
-        providerSettingsRequest.setId(null);
-        return saveWhatsAppSettingsForCompany(companyCode, providerSettingsRequest, actorName);
-    }
-
-    @Transactional
-    public ProviderSettingsResponse saveWhatsAppSettingsForCompany(Map<String, Object> param, String companyCode, Long id, String actorName) {
-        ProviderSettingsRequest providerSettingsRequest = mapToProviderRequest(param);
-        providerSettingsRequest.setId(DataTypeUtility.getForeignKeyValue(id));
-        return saveWhatsAppSettingsForCompany(companyCode, providerSettingsRequest, actorName);
-    }
-
-    @Transactional
-    public ProviderSettingsResponse sendTestWhatsAppForCompany(Map<String, Object> param, String companyCode, String actorName) {
-        WhatsAppProviderTestRequest whatsAppProviderTestRequest = mapToWhatsAppTestRequest(param);
-        return sendTestWhatsAppForCompany(companyCode, whatsAppProviderTestRequest, actorName);
     }
 
     private void logCreate(String actorName, boolean actorScopedAudit, Company company, String moduleName, String entityName, Long entityId, Map<String, Object> newData) {

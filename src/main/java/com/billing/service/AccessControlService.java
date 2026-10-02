@@ -26,6 +26,10 @@ public class AccessControlService {
 
     @Transactional(readOnly = true)
     public User getCurrentUser() {
+        Object principal = currentPrincipal();
+        if (principal instanceof com.billing.security.TenantSuperAdminPrincipal superAdmin) {
+            return syntheticSuperAdminUser(superAdmin);
+        }
         CustomUserDetails currentUser = getAuthenticatedUserDetails();
         return userRepository.findById(currentUser.getId())
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
@@ -33,6 +37,10 @@ public class AccessControlService {
 
     @Transactional(readOnly = true)
     public User getCurrentUser(String ignoredIdentifier) {
+        Object principal = currentPrincipal();
+        if (principal instanceof com.billing.security.TenantSuperAdminPrincipal superAdmin) {
+            return syntheticSuperAdminUser(superAdmin);
+        }
         return getCurrentUser();
     }
 
@@ -81,6 +89,47 @@ public class AccessControlService {
         }
         // DATABASE-per-tenant: User.company is @Transient, resolve company from current tenant connection.
         return resolveTenantCompany();
+    }
+
+    /**
+     * Transient (never persisted) OWNER user for a tenant super-admin session.
+     * Lets the whole tenant API surface work unchanged: company scoping,
+     * owner gates and audit fields resolve from the attached company.
+     */
+    private User syntheticSuperAdminUser(com.billing.security.TenantSuperAdminPrincipal superAdmin) {
+        Company company = null;
+        try {
+            if (superAdmin.getCompanyCode() != null && !superAdmin.getCompanyCode().isBlank()) {
+                company = companyRepository
+                        .findByCodeIgnoreCase(superAdmin.getCompanyCode().trim().toUpperCase(java.util.Locale.ROOT))
+                        .or(() -> companyRepository.findByCodeIgnoreCase(superAdmin.getCompanyCode().trim()))
+                        .orElse(null);
+            }
+        } catch (Exception ignored) {
+            company = null;
+        }
+        if (company == null) {
+            try {
+                company = resolveTenantCompany();
+            } catch (Exception e) {
+                throw new AccessDeniedException("Unable to resolve company for super-admin session");
+            }
+        }
+        return User.builder()
+                .fullName("Super Admin")
+                .username(superAdmin.getUsername())
+                .mobileNumber("")
+                .email(superAdmin.getUsername())
+                .password("")
+                .role(RoleName.OWNER)
+                .active(true)
+                .company(company)
+                .build();
+    }
+
+    private Object currentPrincipal() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        return authentication == null ? null : authentication.getPrincipal();
     }
 
     private Company resolveTenantCompany() {

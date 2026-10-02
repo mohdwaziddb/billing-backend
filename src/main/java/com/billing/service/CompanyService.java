@@ -84,7 +84,13 @@ public class CompanyService {
     }
 
     @Transactional(readOnly = true)
-    public Map<String, Object> getByDomain(String domain) {        String cleanDomain = DataTypeUtility.stringValue(domain).toLowerCase().trim();
+    public Map<String, Object> getByDomain(String domain) {
+        // Local single-DB mode: every subdomain shows the same (only) company,
+        // so return the tenant's single row instead of 404-redirecting.
+        if (!com.billing.core.Registry.IS_ONLINE) {
+            return getCurrentTenantCompany();
+        }
+        String cleanDomain = DataTypeUtility.stringValue(domain).toLowerCase().trim();
         if (cleanDomain.isBlank()) {
             return null;
         }
@@ -477,7 +483,7 @@ public class CompanyService {
     public CompanyThemeResponse theme(String email) {
         Company company = accessControlService.getCurrentCompany(email);
         CompanyThemeSetting setting = companyThemeSettingRepository.findByCompany(company)
-                .orElseGet(() -> CompanyThemeSetting.builder().company(company).themeColor("#0EA5E9").build());
+                .orElseGet(() -> CompanyThemeSetting.builder().company(company).themeColor(com.billing.config.MasterSeedCatalog.DEFAULT_THEME_COLOR).build());
         return toThemeResponse(setting);
     }
 
@@ -514,7 +520,7 @@ public class CompanyService {
         Company company = accessControlService.requireOwnerCompany(email);
         CompanyThemeSetting setting = companyThemeSettingRepository.findByCompany(company)
                 .orElseGet(() -> CompanyThemeSetting.builder().company(company).build());
-        setting.setThemeColor("#0EA5E9");
+        setting.setThemeColor(com.billing.config.MasterSeedCatalog.DEFAULT_THEME_COLOR);
         return toThemeResponse(companyThemeSettingRepository.save(setting));
     }
 

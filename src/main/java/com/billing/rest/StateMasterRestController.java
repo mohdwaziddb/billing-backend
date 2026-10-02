@@ -2,7 +2,6 @@ package com.billing.rest;
 
 import com.billing.service.StateMasterService;
 import com.billing.util.GeneralResponse;
-import com.billing.util.MobileResponseDTOFactory;
 import com.billing.util.SanitizeData;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -22,16 +21,10 @@ import java.util.Map;
 public class StateMasterRestController {
 
     private final StateMasterService stateMasterService;
-    private final MobileResponseDTOFactory mobileResponseDTOFactory;
 
     @GetMapping
     public ResponseEntity<?> list(@RequestParam(required = false) Map<String, Object> param, HttpServletRequest req, HttpServletResponse res) {
-        try {
-            param = SanitizeData.sanitizeMapObj(param);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", stateMasterService.listActive(param)), HttpStatus.OK);
-        } catch (Exception e) {
-            return mobileResponseDTOFactory.reportInternalServerError(e);
-        }
+        param = SanitizeData.sanitizeMapObj(param);
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", stateMasterService.listActive(param)), HttpStatus.OK);
     }
 }
-

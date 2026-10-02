@@ -4,8 +4,8 @@ import com.billing.exception.BadRequestException;
 import com.billing.exception.CompanyInactiveException;
 import com.billing.exception.UnauthorizedException;
 import com.billing.service.AuthService;
+import com.billing.service.PasswordResetService;
 import com.billing.util.GeneralResponse;
-import com.billing.util.MobileResponseDTOFactory;
 import com.billing.util.SanitizeData;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -22,10 +22,10 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class AuthRestController {
 
-    private static final Set<String> SENSITIVE_KEYS = Set.of("password", "newPassword", "refreshToken");
+    private static final Set<String> SENSITIVE_KEYS = Set.of("password", "newPassword", "refreshToken", "otp");
 
     private final AuthService authService;
-    private final MobileResponseDTOFactory mobileResponseDTOFactory;
+    private final PasswordResetService passwordResetService;
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody Map<String, Object> param, HttpServletRequest request) {
@@ -38,23 +38,31 @@ public class AuthRestController {
             return ResponseEntity.badRequest().body(new GeneralResponse<>(false, e.getMessage(), null));
         } catch (CompanyInactiveException e) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(new GeneralResponse<>(false, e.getMessage(), null));
-        } catch (Exception e) {
-            return mobileResponseDTOFactory.reportInternalServerError(e);
         }
     }
 
-    @PostMapping("/forgot-password")
-    public ResponseEntity<?> forgotPassword(@RequestBody Map<String, Object> param, HttpServletRequest request) {
+    @PostMapping("/forgot-password/request")
+    public ResponseEntity<?> forgotPasswordRequest(@RequestBody Map<String, Object> param, HttpServletRequest request) {
         try {
             param = sanitizePreservingSecrets(param);
-            authService.forgotPassword(param);
+            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", passwordResetService.requestOtp(param)), HttpStatus.OK);
+        } catch (BadRequestException e) {
+            return ResponseEntity.badRequest().body(new GeneralResponse<>(false, e.getMessage(), null));
+        } catch (CompanyInactiveException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(new GeneralResponse<>(false, e.getMessage(), null));
+        }
+    }
+
+    @PostMapping("/forgot-password/confirm")
+    public ResponseEntity<?> forgotPasswordConfirm(@RequestBody Map<String, Object> param, HttpServletRequest request) {
+        try {
+            param = sanitizePreservingSecrets(param);
+            passwordResetService.confirmOtp(param);
             return new ResponseEntity<>(new GeneralResponse<>(true, "Password updated successfully", Map.of("status", "ok")), HttpStatus.OK);
         } catch (BadRequestException e) {
             return ResponseEntity.badRequest().body(new GeneralResponse<>(false, e.getMessage(), null));
         } catch (CompanyInactiveException e) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(new GeneralResponse<>(false, e.getMessage(), null));
-        } catch (Exception e) {
-            return mobileResponseDTOFactory.reportInternalServerError(e);
         }
     }
 
@@ -69,20 +77,14 @@ public class AuthRestController {
             return ResponseEntity.badRequest().body(new GeneralResponse<>(false, e.getMessage(), null));
         } catch (CompanyInactiveException e) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(new GeneralResponse<>(false, e.getMessage(), null));
-        } catch (Exception e) {
-            return mobileResponseDTOFactory.reportInternalServerError(e);
         }
     }
 
     @PostMapping("/logout")
     public ResponseEntity<?> logout(@RequestBody Map<String, Object> param, HttpServletRequest request) {
-        try {
-            param = sanitizePreservingSecrets(param);
-            authService.logout(param);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Logged out successfully", Map.of("status", "ok")), HttpStatus.OK);
-        } catch (Exception e) {
-            return mobileResponseDTOFactory.reportInternalServerError(e);
-        }
+        param = sanitizePreservingSecrets(param);
+        authService.logout(param);
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Logged out successfully", Map.of("status", "ok")), HttpStatus.OK);
     }
 
     private Map<String, Object> sanitizePreservingSecrets(Map<String, Object> param) {

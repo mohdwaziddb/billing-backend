@@ -21,6 +21,7 @@ public class JwtService {
     private static final String AUTH_TYPE_CLAIM = "authType";
     private static final String AUTH_TYPE_USER = "USER";
     private static final String AUTH_TYPE_PLATFORM_ADMIN = "PLATFORM_ADMIN";
+    private static final String AUTH_TYPE_SUPER_ADMIN = "SUPER_ADMIN";
 
     @Value("${app.jwt.secret}")
     private String jwtSecret;
@@ -55,6 +56,22 @@ public class JwtService {
     public String generatePlatformAdminAccessToken(String username) {
         Map<String, Object> claims = new HashMap<>();
         claims.put(AUTH_TYPE_CLAIM, AUTH_TYPE_PLATFORM_ADMIN);
+
+        return Jwts.builder()
+                .claims(claims)
+                .subject(username)
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + accessTokenExpiration))
+                .signWith(getSigningKey())
+                .compact();
+    }
+
+    public String generateSuperAdminAccessToken(String username, String companyCode, String databaseName) {
+        Map<String, Object> claims = new HashMap<>();
+        claims.put(AUTH_TYPE_CLAIM, AUTH_TYPE_SUPER_ADMIN);
+        claims.put("role", "OWNER");
+        claims.put("companyCode", companyCode);
+        claims.put("databaseName", databaseName);
 
         return Jwts.builder()
                 .claims(claims)

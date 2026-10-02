@@ -59,6 +59,10 @@ public class PermissionService {
         if (authentication == null || authentication.getName() == null) {
             return false;
         }
+        // Tenant super-admin: full rights, no permission rows needed.
+        if (authentication.getPrincipal() instanceof com.billing.security.TenantSuperAdminPrincipal) {
+            return true;
+        }
         return has(authentication.getName(), menuCode, actionCode);
     }
 

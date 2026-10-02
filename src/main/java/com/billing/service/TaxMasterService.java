@@ -216,11 +216,12 @@ public class TaxMasterService {
 
     @Transactional
     public void createDefaultTaxesForCompany(Company company) {
-        ensureTax(company, BigDecimal.ZERO, true);
-        ensureTax(company, BigDecimal.valueOf(5), false);
-        ensureTax(company, BigDecimal.valueOf(12), false);
-        ensureTax(company, BigDecimal.valueOf(18), false);
-        ensureTax(company, BigDecimal.valueOf(28), false);
+        // Single source: com.billing.config.MasterSeedCatalog.DEFAULT_TAX_RATES.
+        boolean first = true;
+        for (java.math.BigDecimal rate : com.billing.config.MasterSeedCatalog.DEFAULT_TAX_RATES) {
+            ensureTax(company, rate, first);
+            first = false;
+        }
     }
 
     @Transactional

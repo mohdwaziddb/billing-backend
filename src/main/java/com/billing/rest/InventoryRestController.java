@@ -2,7 +2,6 @@ package com.billing.rest;
 
 import com.billing.service.InventoryService;
 import com.billing.util.GeneralResponse;
-import com.billing.util.MobileResponseDTOFactory;
 import com.billing.util.SanitizeData;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -22,17 +21,11 @@ import java.util.Map;
 public class InventoryRestController {
 
     private final InventoryService inventoryService;
-    private final MobileResponseDTOFactory mobileResponseDTOFactory;
 
     @GetMapping("/ledger")
     @com.billing.security.RequiresPermission(menu = "STOCK_LEDGER", action = "VIEW")
     public ResponseEntity<?> ledger(@RequestParam(required = false) Map<String, Object> param, Authentication authentication, HttpServletRequest req) {
-        try {
-            param = SanitizeData.sanitizeMapObj(param);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", inventoryService.ledgerPage(param, authentication.getName())), HttpStatus.OK);
-        } catch (Exception e) {
-            return mobileResponseDTOFactory.reportInternalServerError(e);
-        }
+        param = SanitizeData.sanitizeMapObj(param);
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", inventoryService.ledgerPage(param, authentication.getName())), HttpStatus.OK);
     }
 }
-

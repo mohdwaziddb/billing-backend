@@ -3,7 +3,6 @@ package com.billing.rest;
 import com.billing.service.UserPreferenceService;
 import com.billing.util.DataTypeUtility;
 import com.billing.util.GeneralResponse;
-import com.billing.util.MobileResponseDTOFactory;
 import com.billing.util.SanitizeData;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -26,34 +25,24 @@ import java.util.Map;
 public class ColumnPreferenceRestController {
 
     private final UserPreferenceService userPreferenceService;
-    private final MobileResponseDTOFactory mobileResponseDTOFactory;
 
     @GetMapping("/{tableName}")
     public ResponseEntity<?> get(@RequestParam(required = false) Map<String, Object> param, Authentication authentication, @PathVariable String tableName, HttpServletRequest req) {
-        try {
-            param = SanitizeData.sanitizeMapObj(param);
-            String tableNameValue = DataTypeUtility.stringValue(tableName);
-            if (tableNameValue.length() == 0) {
-                tableNameValue = DataTypeUtility.stringValue(param.get("tableName"));
-            }
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", userPreferenceService.getColumnPreference(param, authentication.getName(), DataTypeUtility.stringValue(tableNameValue))), HttpStatus.OK);
-        } catch (Exception e) {
-            return mobileResponseDTOFactory.reportInternalServerError(e);
+        param = SanitizeData.sanitizeMapObj(param);
+        String tableNameValue = DataTypeUtility.stringValue(tableName);
+        if (tableNameValue.length() == 0) {
+            tableNameValue = DataTypeUtility.stringValue(param.get("tableName"));
         }
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", userPreferenceService.getColumnPreference(param, authentication.getName(), DataTypeUtility.stringValue(tableNameValue))), HttpStatus.OK);
     }
 
     @PutMapping("/{tableName}")
     public ResponseEntity<?> update(@PathVariable String tableName, @RequestBody Map<String, Object> param, Authentication authentication, HttpServletRequest request) {
-        try {
-            param = SanitizeData.sanitizeMapObj(param);
-            String tableNameValue = DataTypeUtility.stringValue(tableName);
-            if (tableNameValue.length() == 0) {
-                tableNameValue = DataTypeUtility.stringValue(param.get("tableName"));
-            }
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", userPreferenceService.updateColumnPreference(param, authentication.getName(), DataTypeUtility.stringValue(tableNameValue))), HttpStatus.OK);
-        } catch (Exception e) {
-            return mobileResponseDTOFactory.reportInternalServerError(e);
+        param = SanitizeData.sanitizeMapObj(param);
+        String tableNameValue = DataTypeUtility.stringValue(tableName);
+        if (tableNameValue.length() == 0) {
+            tableNameValue = DataTypeUtility.stringValue(param.get("tableName"));
         }
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", userPreferenceService.updateColumnPreference(param, authentication.getName(), DataTypeUtility.stringValue(tableNameValue))), HttpStatus.OK);
     }
 }
-

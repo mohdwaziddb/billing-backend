@@ -100,7 +100,7 @@ public class MysqlDataSourceService extends AbstractDataSourceService {
         Registry.dbmap.put("username", "root");
         Registry.dbmap.put("password", "root");
         Registry.dbmap.put("driverClassName", "com.mysql.cj.jdbc.Driver");
-        Registry.dbmap.put("databasename", "xyztrader");
+        Registry.dbmap.put("databasename", "sample");
         return Registry.dbmap;
     }
 }

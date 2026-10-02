@@ -149,7 +149,7 @@ public class MultiTenancyJpaConfiguration {
                     result.put(tenant + ApplicationConstant.CONNECTION_READ_STRING, dsRead);
                 } catch (Exception e) {
                     System.err.println("[ERROR] Failed to create DataSource for tenant '" + CompanyDomainInfo.domainInfoJSON.get(key).optString("database") + "': " + e.getMessage());
-                    System.err.println("[HINT] Ensure MySQL is running on localhost:" + localDbPort + " and database exists. Run: CREATE DATABASE billing_common; CREATE DATABASE maacreation;");
+                    System.err.println("[HINT] Ensure MySQL is running and the configured database exists (Registry.dbmap databasename, set in MysqlDataSourceService).");
                     throw new RuntimeException("Failed to initialize datasource for tenant '" + CompanyDomainInfo.domainInfoJSON.get(key).optString("database") + "'", e);
                 }
             }

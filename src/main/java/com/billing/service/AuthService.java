@@ -3,9 +3,9 @@ package com.billing.service;
 import com.billing.entity.Company;
 import com.billing.entity.RefreshToken;
 import com.billing.entity.User;
+import com.billing.entity.enums.RoleName;
 import com.billing.multitenancy.TenantContextHolder;
 import com.billing.dto.auth.AuthResponse;
-import com.billing.dto.auth.ForgotPasswordRequest;
 import com.billing.dto.auth.LoginRequest;
 import com.billing.dto.auth.RefreshTokenRequest;
 import com.billing.dto.user.UserProfileResponse;
@@ -54,10 +54,54 @@ public class AuthService {
     @Transactional
     public AuthResponse login(LoginRequest request) {
         String loginIdentifier = request.getLoginIdentifier();
-        User user = findAuthenticatedUser(loginIdentifier, request.getPassword())
+        java.util.Optional<User> userOpt = findAuthenticatedUser(loginIdentifier, request.getPassword());
+        if (userOpt.isPresent()) {
+            User user = userOpt.get();
+            validateCompanyActiveForLogin(user);
+            return buildAuthResponse(user);
+        }
+        // Users first, super-admin fallback: credentials live on the tenant's
+        // own companies row, not in users. No refresh token: bootstrap session
+        // lasts the access-token lifetime, then re-login.
+        return loginSuperAdmin(loginIdentifier, request.getPassword());
+    }
+
+    private AuthResponse loginSuperAdmin(String loginIdentifier, String password) {
+        Company company = resolveTenantCompany()
                 .orElseThrow(() -> new UnauthorizedException("Invalid Mobile Number/Email ID or Password."));
-        validateCompanyActiveForLogin(user);
-        return buildAuthResponse(user);
+        if (!company.isActive()) {
+            throw new CompanyInactiveException("Company is inactive. Please contact administrator.");
+        }
+        String storedUsername = company.getSuperAdminUsername();
+        String storedHash = company.getSuperAdminPassword();
+        String identifier = loginIdentifier == null ? "" : loginIdentifier.trim();
+        if (storedUsername == null || storedUsername.isBlank()
+                || storedHash == null || storedHash.isBlank()
+                || !storedUsername.equalsIgnoreCase(identifier)
+                || !passwordEncoder.matches(password, storedHash)) {
+            throw new UnauthorizedException("Invalid Mobile Number/Email ID or Password.");
+        }
+        String tenantDb = company.getDatabaseName() != null && !company.getDatabaseName().isBlank()
+                ? company.getDatabaseName()
+                : resolveTenantDatabaseName();
+        String accessToken = jwtService.generateSuperAdminAccessToken(storedUsername, company.getCode(), tenantDb);
+        User synthetic = User.builder()
+                .fullName("Super Admin")
+                .username(storedUsername)
+                .mobileNumber("")
+                .email(storedUsername)
+                .password("")
+                .role(RoleName.OWNER)
+                .active(true)
+                .company(company)
+                .build();
+        UserProfileResponse profileResponse = userMapper.toProfile(synthetic, company);
+        return AuthResponse.builder()
+                .accessToken(accessToken)
+                .tokenType("Bearer")
+                .expiresIn(jwtService.getAccessTokenExpiration())
+                .user(profileResponse)
+                .build();
     }
 
     @Transactional
@@ -93,25 +137,6 @@ public class AuthService {
         refreshTokenRepository.findByToken(refreshToken).ifPresent(refreshTokenRepository::delete);
     }
 
-    @Transactional
-    public void forgotPassword(Map<String, Object> param) {
-        forgotPassword(mapToForgotPasswordRequest(param));
-    }
-
-    @Transactional
-    public void forgotPassword(ForgotPasswordRequest request) {
-        User user = findByLoginIdentifier(request.getLoginIdentifier())
-                .orElseThrow(() -> new BadRequestException("No user found with this Mobile Number/Email ID."));
-        if (!user.isActive()) {
-            throw new BadRequestException("This user account is inactive.");
-        }
-        validateCompanyActiveForLogin(user);
-
-        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
-        userRepository.save(user);
-        refreshTokenRepository.deleteByUser(user);
-    }
-
     private LoginRequest mapToLoginRequest(Map<String, Object> param) {
         LoginRequest request = new LoginRequest();
         String identifier = extractLoginIdentifier(param);
@@ -134,27 +159,6 @@ public class AuthService {
         }
         RefreshTokenRequest request = new RefreshTokenRequest();
         request.setRefreshToken(refreshToken);
-        return request;
-    }
-
-    private ForgotPasswordRequest mapToForgotPasswordRequest(Map<String, Object> param) {
-        ForgotPasswordRequest request = new ForgotPasswordRequest();
-        String identifier = extractLoginIdentifier(param);
-        if (identifier == null || identifier.isBlank()) {
-            throw new BadRequestException("Email / Mobile / Username is required");
-        }
-        request.setUsername(identifier);
-        Object rawNewPassword = param != null
-                ? (param.get("newPassword") != null ? param.get("newPassword") : param.get("password"))
-                : null;
-        String newPassword = trimmedOrNull(rawNewPassword);
-        if (newPassword == null || newPassword.isBlank()) {
-            throw new BadRequestException("New password is required");
-        }
-        if (newPassword.length() < 6) {
-            throw new BadRequestException("New password must be at least 6 characters");
-        }
-        request.setNewPassword(newPassword);
         return request;
     }
 
@@ -252,19 +256,6 @@ public class AuthService {
         } catch (Exception ignored) {
             return java.util.Optional.empty();
         }
-    }
-
-    private java.util.Optional<User> findByLoginIdentifier(String loginIdentifier) {
-        String normalized = normalizeIdentifier(loginIdentifier);
-        List<User> candidates = new ArrayList<>();
-        candidates.addAll(userRepository.findAllByUsernameIgnoreCase(normalized));
-        candidates.addAll(userRepository.findAllByEmailIgnoreCase(normalized));
-        candidates.addAll(userRepository.findAllByMobileNumber(normalized));
-        List<User> uniqueCandidates = uniqueById(candidates);
-        if (uniqueCandidates.size() > 1) {
-            throw new BadRequestException("Multiple companies use this identifier. Please contact administrator.");
-        }
-        return uniqueCandidates.stream().findFirst();
     }
 
     private java.util.Optional<User> findAuthenticatedUser(String loginIdentifier, String password) {

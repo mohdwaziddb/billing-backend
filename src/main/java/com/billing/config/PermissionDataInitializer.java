@@ -26,10 +26,10 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-
 @Component
 @RequiredArgsConstructor
 public class PermissionDataInitializer implements ApplicationRunner {
@@ -45,58 +45,6 @@ public class PermissionDataInitializer implements ApplicationRunner {
     private final RoleMenuActionPermissionRepository roleMenuActionPermissionRepository;
     private final PasswordEncoder passwordEncoder;
     private final TaxMasterService taxMasterService;
-
-    private static final List<MenuSeed> MENUS = List.of(
-            new MenuSeed("Dashboard", "DASHBOARD", "LayoutDashboard", "/dashboard", 1, null),
-            new MenuSeed("Customers", "CUSTOMERS", "Users", "/customers", 2, null),
-            new MenuSeed("Inventory", "INVENTORY", "Package", "/inventory", 3, null),
-            new MenuSeed("Products", "PRODUCTS", "Boxes", "/products", 4, "INVENTORY"),
-            new MenuSeed("Purchases", "PURCHASES", "ShoppingCart", "/purchases", 5, "INVENTORY"),
-            new MenuSeed("Stock Ledger", "STOCK_LEDGER", "ScrollText", "/inventory/stock-ledger", 6, "INVENTORY"),
-            new MenuSeed("Create Invoice", "CREATE_INVOICE", "FilePlus2", "/create-invoice", 7, null),
-            new MenuSeed("Invoices", "INVOICES", "FileText", "/invoices", 8, null),
-            new MenuSeed("Payments", "PAYMENTS", "CreditCard", "/payments", 9, null),
-            new MenuSeed("Expenses", "EXPENSES", "ReceiptIndianRupee", "/expenses", 10, null),
-            new MenuSeed("Outstanding", "OUTSTANDING", "Wallet", "/outstanding", 11, null),
-            new MenuSeed("Analytics", "ANALYTICS", "BarChart3", "/analytics", 12, null),
-            new MenuSeed("DataPort", "DATA_PORT", "FileText", "/data-port", 13, null),
-            new MenuSeed("Product DataPort", "PRODUCT_DATAPORT", "Boxes", "/data-port/products", 14, "DATA_PORT"),
-            new MenuSeed("Reports", "REPORTS", "BarChart3", "/reports", 15, null),
-            new MenuSeed("Profit & Loss", "PROFIT_LOSS", "TrendingUp", "/reports/profit-loss", 16, "REPORTS"),
-            new MenuSeed("Setup", "SETUP", "Settings", "/setup", 17, null),
-            new MenuSeed("Users", "USERS", "Users", "/setup/users", 18, "SETUP"),
-            new MenuSeed("Product Categories", "PRODUCT_CATEGORY", "Tags", "/setup/product-categories", 19, "SETUP"),
-            new MenuSeed("Product Sub Categories", "PRODUCT_SUB_CATEGORIES", "Tags", "/setup/product-sub-categories", 20, "SETUP"),
-            new MenuSeed("Expense Categories", "EXPENSE_CATEGORIES", "Tags", "/setup/expense-categories", 21, "SETUP"),
-            new MenuSeed("Payment Modes", "PAYMENT_MODES", "CreditCard", "/setup/payment-modes", 22, "SETUP"),
-            new MenuSeed("Theme Settings", "THEME_SETTINGS", "Palette", "/setup/theme-settings", 23, "SETUP"),
-            new MenuSeed("About Company", "ABOUT_COMPANY", "Building2", "/setup/about-company", 24, "SETUP"),
-            new MenuSeed("Email Templates", "EMAIL_TEMPLATES", "Mail", "/setup/email-templates", 25, "SETUP"),
-            new MenuSeed("SMS Templates", "SMS_TEMPLATES", "Mail", "/setup/sms-templates", 26, "SETUP"),
-            new MenuSeed("Communication", "COMMUNICATION", "Mail", "/setup/communication", 27, "SETUP"),
-            new MenuSeed("Role Permissions", "ROLE_PERMISSIONS", "ShieldCheck", "/setup/role-permissions", 28, "SETUP"),
-            new MenuSeed("Tax Master", "TAX_MASTER", "ReceiptIndianRupee", "/setup/tax-master", 29, "SETUP"),
-            new MenuSeed("Invoice Templates", "INVOICE_TEMPLATES", "ReceiptText", "/setup/invoice-templates", 30, "SETUP"),
-            new MenuSeed("Payment Hierarchy", "PAYMENT_HIERARCHY", "CreditCard", "/reports/payment-hierarchy", 31, "REPORTS"),
-            new MenuSeed("Sales Referrals", "SALES_REFERRALS", "TrendingUp", "/reports/sales-referrals", 32, "REPORTS"),
-            new MenuSeed("GST Summary", "GST_SUMMARY", "ReceiptIndianRupee", "/reports/gst-summary", 33, "REPORTS")
-    );
-
-    private static final List<ActionSeed> ACTIONS = List.of(
-            new ActionSeed("View", "VIEW"),
-            new ActionSeed("Add", "ADD"),
-            new ActionSeed("Edit", "EDIT"),
-            new ActionSeed("Delete", "DELETE"),
-            new ActionSeed("Restore", "RESTORE"),
-            new ActionSeed("Export", "EXPORT"),
-            new ActionSeed("Show Logs", "LOGS"),
-            new ActionSeed("Show Logs", "VIEW_LOGS"),
-            new ActionSeed("Preview", "PREVIEW"),
-            new ActionSeed("Change Default", "CHANGE_DEFAULT"),
-            new ActionSeed("Send Email", "EMAIL_SEND"),
-            new ActionSeed("Send SMS", "SMS_SEND"),
-            new ActionSeed("Send WhatsApp", "WHATSAPP_SEND")
-    );
 
     @Override
     @Transactional
@@ -114,9 +62,9 @@ public class PermissionDataInitializer implements ApplicationRunner {
     }
 
     private void seedRoles() {
-        saveRole("Owner", "OWNER");
-        saveRole("Admin", "ADMIN");
-        saveRole("User", "USER");
+        for (MasterSeedCatalog.RoleSeed role : MasterSeedCatalog.ROLES) {
+            saveRole(role.name(), role.code());
+        }
     }
 
     private void saveRole(String name, String code) {
@@ -155,7 +103,7 @@ public class PermissionDataInitializer implements ApplicationRunner {
     }
 
     private void seedMenus() {
-        for (MenuSeed seed : MENUS) {
+        for (MasterSeedCatalog.MenuSeed seed : MasterSeedCatalog.MENUS) {
             AppMenu parent = seed.parentCode() == null ? null : appMenuRepository.findByMenuCode(seed.parentCode()).orElse(null);
             AppMenu menu = appMenuRepository.findByMenuCode(seed.code())
                     .orElseGet(() -> appMenuRepository.save(AppMenu.builder()
@@ -174,17 +122,14 @@ public class PermissionDataInitializer implements ApplicationRunner {
             menu.setParentMenu(parent);
             appMenuRepository.save(menu);
         }
-        retireMenu("AUDIT_LOG_VIEW");
-        retireMenu("NOTIFICATION_SETTINGS");
-        retireMenu("MANAGEMENT_HIERARCHY");
-        retireMenu("EMAIL_SETTINGS");
-        retireMenu("SMS_SETTINGS");
-        retireMenu("WHATSAPP_SETTINGS");
+        for (String retiredCode : MasterSeedCatalog.RETIRED_MENU_CODES) {
+            retireMenu(retiredCode);
+        }
     }
 
     private void seedActions() {
         for (AppMenu menu : appMenuRepository.findByActiveTrueOrderByDisplayOrderAscIdAsc()) {
-            for (ActionSeed seed : ACTIONS) {
+            for (MasterSeedCatalog.ActionSeed seed : MasterSeedCatalog.ACTIONS) {
                 appMenuActionRepository.findByAppMenuAndActionCode(menu, seed.code())
                         .ifPresentOrElse(existing -> {
                             existing.setActionName(actionName(menu, seed));
@@ -199,27 +144,59 @@ public class PermissionDataInitializer implements ApplicationRunner {
         }
     }
 
-    public void seedPermissionsForCompany(Company company) {
-        Map<String, Set<String>> visibleMenusByRole = Map.of(
-                "OWNER", Set.of("DASHBOARD", "CUSTOMERS", "INVENTORY", "PRODUCTS", "PURCHASES", "STOCK_LEDGER", "CREATE_INVOICE", "INVOICES", "PAYMENTS", "EXPENSES", "OUTSTANDING", "ANALYTICS", "DATA_PORT", "PRODUCT_DATAPORT", "REPORTS", "PROFIT_LOSS", "SETUP", "USERS", "PRODUCT_CATEGORY", "PRODUCT_SUB_CATEGORIES", "EXPENSE_CATEGORIES", "PAYMENT_MODES", "THEME_SETTINGS", "ABOUT_COMPANY", "EMAIL_TEMPLATES", "SMS_TEMPLATES", "COMMUNICATION", "ROLE_PERMISSIONS", "TAX_MASTER", "INVOICE_TEMPLATES", "PAYMENT_HIERARCHY", "SALES_REFERRALS", "GST_SUMMARY", "AI_ASSISTANT"),
-                "ADMIN", Set.of("DASHBOARD", "CUSTOMERS", "INVENTORY", "PRODUCTS", "PURCHASES", "STOCK_LEDGER", "CREATE_INVOICE", "INVOICES", "PAYMENTS", "EXPENSES", "OUTSTANDING", "ANALYTICS", "DATA_PORT", "PRODUCT_DATAPORT", "REPORTS", "PROFIT_LOSS", "SETUP", "PRODUCT_CATEGORY", "PRODUCT_SUB_CATEGORIES", "EXPENSE_CATEGORIES", "PAYMENT_MODES", "ABOUT_COMPANY", "EMAIL_TEMPLATES", "SMS_TEMPLATES", "COMMUNICATION", "TAX_MASTER", "INVOICE_TEMPLATES", "GST_SUMMARY", "AI_ASSISTANT"),
-                "USER", Set.of("DASHBOARD", "CUSTOMERS", "INVENTORY", "PRODUCTS", "STOCK_LEDGER", "CREATE_INVOICE", "INVOICES", "OUTSTANDING", "ANALYTICS", "ABOUT_COMPANY", "AI_ASSISTANT")
-        );
-        Map<String, Set<String>> actionCodesByRole = Map.of(
-                "OWNER", Set.of("VIEW", "ADD", "EDIT", "DELETE", "RESTORE", "EXPORT", "LOGS", "VIEW_LOGS", "PREVIEW", "CHANGE_DEFAULT", "EMAIL_SEND", "SMS_SEND", "WHATSAPP_SEND"),
-                "ADMIN", Set.of("VIEW", "ADD", "EDIT", "DELETE", "RESTORE", "EXPORT", "LOGS", "VIEW_LOGS", "PREVIEW", "CHANGE_DEFAULT", "EMAIL_SEND", "SMS_SEND", "WHATSAPP_SEND"),
-                "USER", Set.of("VIEW")
-        );
+    /**
+     * Seed tenant-independent base masters inside a NEW tenant database.
+     * Must run BEFORE seedPermissionsForCompany (which loops roles x menus).
+     * All steps are find-or-create: safe to re-run (repair flows).
+     * Tenant context must already be switched by the caller; this method
+     * starts no transaction itself (joins the caller's).
+     */
+    public void seedBaseMasters() {
+        seedRoles();
+        seedMenus();
+        seedActions();
+    }
 
+    /**
+     * Verification gate for provisioning: throws when the tenant is missing
+     * base masters. Called inside the provisioning transaction so a failure
+     * rolls the tenant writes back (outer layer drops the database + registry row).
+     */
+    public void verifyTenantSeeded(Company company) {
+        List<String> missing = new ArrayList<>();
+        if (roleMasterRepository.count() < 3) {
+            missing.add("role_master");
+        }
+        if (appMenuRepository.count() < MasterSeedCatalog.MENUS.size()) {
+            missing.add("app_menu");
+        }
+        if (appMenuActionRepository.count() < 1) {
+            missing.add("app_menu_action");
+        }
+        if (roleMenuPermissionRepository.count() < 1) {
+            missing.add("role_menu_permission");
+        }
+        if (companyThemeSettingRepository.count() < 1) {
+            missing.add("company_theme_setting");
+        }
+        if (notificationChannelRepository.count() < 1) {
+            missing.add("notification_channel");
+        }
+        if (!missing.isEmpty()) {
+            throw new IllegalStateException("Tenant seeding incomplete: " + String.join(",", missing));
+        }
+    }
+
+    public void seedPermissionsForCompany(Company company) {
+        // Single source: MasterSeedCatalog (matrices + algorithm shared with sample.sql generator).
         for (RoleMaster role : roleMasterRepository.findAll()) {
-            Set<String> visibleMenus = visibleMenusByRole.getOrDefault(role.getRoleCode(), Set.of());
-            Set<String> allowedActions = actionCodesByRole.getOrDefault(role.getRoleCode(), Set.of());
+            String roleCode = role.getRoleCode();
             for (AppMenu menu : appMenuRepository.findByActiveTrueOrderByDisplayOrderAscIdAsc()) {
-                boolean canView = visibleMenus.contains(menu.getMenuCode());
+                boolean canView = MasterSeedCatalog.isMenuVisible(roleCode, menu.getMenuCode());
                 roleMenuPermissionRepository.findByCompanyAndRoleAndAppMenu(company, role, menu)
                         .ifPresentOrElse(existing -> {
-                            if (restrictedOwnerOnlyMenu(menu.getMenuCode()) && !"OWNER".equals(role.getRoleCode())) {
-                                existing.setCanView("ADMIN".equals(role.getRoleCode()));
+                            if (MasterSeedCatalog.RESTRICTED_OWNER_ONLY_MENUS.contains(menu.getMenuCode()) && !"OWNER".equals(roleCode)) {
+                                existing.setCanView("ADMIN".equals(roleCode));
                                 roleMenuPermissionRepository.save(existing);
                             }
                         }, () -> {
@@ -233,20 +210,10 @@ public class PermissionDataInitializer implements ApplicationRunner {
                 });
 
                 for (AppMenuAction action : appMenuActionRepository.findByAppMenuAndActiveTrueOrderByIdAsc(menu)) {
-                    boolean allowed = canView && allowedActions.contains(action.getActionCode());
-                    if (restrictedOwnerOnlyMenu(menu.getMenuCode()) && !"OWNER".equals(role.getRoleCode())) {
-                        allowed = "VIEW".equals(action.getActionCode());
-                    }
-                    if (("ABOUT_COMPANY".equals(menu.getMenuCode()) || "THEME_SETTINGS".equals(menu.getMenuCode())) && !"OWNER".equals(role.getRoleCode())) {
-                        allowed = "ABOUT_COMPANY".equals(menu.getMenuCode()) && "VIEW".equals(action.getActionCode());
-                    }
-                    if ("USER".equals(role.getRoleCode()) && "CREATE_INVOICE".equals(menu.getMenuCode()) && "ADD".equals(action.getActionCode())) {
-                        allowed = true;
-                    }
-                    boolean actionAllowed = allowed;
+                    boolean actionAllowed = MasterSeedCatalog.isActionAllowed(roleCode, menu.getMenuCode(), action.getActionCode());
                     roleMenuActionPermissionRepository.findByCompanyAndRoleAndAppMenuAndAppMenuAction(company, role, menu, action)
                             .ifPresentOrElse(existing -> {
-                                if (restrictedOwnerOnlyMenu(menu.getMenuCode()) && !"OWNER".equals(role.getRoleCode())) {
+                                if (MasterSeedCatalog.RESTRICTED_OWNER_ONLY_MENUS.contains(menu.getMenuCode()) && !"OWNER".equals(roleCode)) {
                                     existing.setAllowed("VIEW".equals(action.getActionCode()));
                                     roleMenuActionPermissionRepository.save(existing);
                                 }
@@ -269,11 +236,11 @@ public class PermissionDataInitializer implements ApplicationRunner {
         companyThemeSettingRepository.findByCompany(company)
                 .orElseGet(() -> companyThemeSettingRepository.save(CompanyThemeSetting.builder()
                         .company(company)
-                        .themeColor("#0EA5E9")
+                        .themeColor(MasterSeedCatalog.DEFAULT_THEME_COLOR)
                         .build()));
     }
 
-    private String actionName(AppMenu menu, ActionSeed seed) {
+    private String actionName(AppMenu menu, MasterSeedCatalog.ActionSeed seed) {
         return seed.name();
     }
 
@@ -285,33 +252,22 @@ public class PermissionDataInitializer implements ApplicationRunner {
     }
 
     public void seedDefaultNotificationChannels(Company company) {
-        if (notificationChannelRepository.existsByCompanyAndChannelNameIgnoreCase(company, "Email")) {
-            return;
+        for (String channelName : MasterSeedCatalog.DEFAULT_NOTIFICATION_CHANNELS) {
+            if (notificationChannelRepository.existsByCompanyAndChannelNameIgnoreCase(company, channelName)) {
+                continue;
+            }
+            notificationChannelRepository.save(NotificationChannel.builder()
+                    .company(company)
+                    .channelName(channelName)
+                    .defaultChannel(true)
+                    .active(true)
+                    .build());
         }
-        notificationChannelRepository.save(NotificationChannel.builder()
-                .company(company)
-                .channelName("Email")
-                .defaultChannel(true)
-                .active(true)
-                .build());
-    }
-
-    private record MenuSeed(String name, String code, String icon, String route, int order, String parentCode) {
-    }
-
-    private record ActionSeed(String name, String code) {
     }
 
     private boolean isEncodedPassword(String value) {
         return value.startsWith("$2a$")
                 || value.startsWith("$2b$")
                 || value.startsWith("$2y$");
-    }
-
-    private boolean restrictedOwnerOnlyMenu(String menuCode) {
-        return "PRODUCT_CATEGORY".equals(menuCode)
-                || "PRODUCT_SUB_CATEGORIES".equals(menuCode)
-                || "PAYMENT_MODES".equals(menuCode)
-                || "TAX_MASTER".equals(menuCode);
     }
 }

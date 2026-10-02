@@ -91,6 +91,8 @@ CREATE TABLE IF NOT EXISTS `companies` (
   `pincode` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `signature_url` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `state` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `super_admin_username` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `super_admin_password` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `tax_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `upi_id` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `website_url` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
@@ -579,6 +581,21 @@ CREATE TABLE IF NOT EXISTS `refresh_tokens` (
   UNIQUE KEY `UKghpmfn23vmxfu3spu3lfg4r2d` (`token`),
   KEY `FK1lih5y2npsf8u5o3vhdb9y0os` (`user_id`),
   CONSTRAINT `FK1lih5y2npsf8u5o3vhdb9y0os` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS `password_reset_otp` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `created_at` datetime(6) NOT NULL,
+  `created_by` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  `updated_by` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `user_id` bigint NOT NULL,
+  `otp_hash` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `channel` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `expires_at` datetime(6) NOT NULL,
+  `attempts` int NOT NULL,
+  `consumed` bit(1) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `IDXprto_user` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE IF NOT EXISTS `reminder_logs` (
   `id` bigint NOT NULL AUTO_INCREMENT,
