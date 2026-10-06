@@ -2,12 +2,9 @@ package com.billing.service;
 
 import com.billing.config.PermissionDataInitializer;
 import com.billing.dto.PageResponse;
-import com.billing.dto.platformadmin.PlatformAdminCompanyCreateRequest;
 import com.billing.dto.platformadmin.PlatformAdminCompanyDetailsResponse;
 import com.billing.dto.platformadmin.PlatformAdminCompanyOverviewResponse;
-import com.billing.dto.platformadmin.PlatformAdminCompanyOverviewView;
 import com.billing.dto.platformadmin.PlatformAdminCompanyResponse;
-import com.billing.dto.platformadmin.PlatformAdminCompanySummaryView;
 import com.billing.dto.platformadmin.PlatformAdminDashboardResponse;
 import com.billing.dto.platformadmin.PlatformAdminSettingsRequest;
 import com.billing.dto.platformadmin.PlatformAdminSettingsResponse;
@@ -18,13 +15,14 @@ import com.billing.entity.User;
 import com.billing.entity.enums.RoleName;
 import com.billing.exception.BadRequestException;
 import com.billing.exception.ResourceNotFoundException;
+import com.billing.multitenancy.RequestInterceptor;
+import com.billing.multitenancy.TenantContextHolder;
 import com.billing.repository.AuditLogRepository;
 import com.billing.repository.CompanyRepository;
-import com.billing.repository.PlatformSettingRepository;
 import com.billing.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,6 +33,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.function.Supplier;
 
 @Service
 @RequiredArgsConstructor
@@ -42,20 +41,25 @@ public class PlatformAdminService {
 
     private final CompanyRepository companyRepository;
     private final UserRepository userRepository;
-    private final PlatformSettingRepository platformSettingRepository;
     private final AuditLogRepository auditLogRepository;
     private final PasswordEncoder passwordEncoder;
     private final PermissionDataInitializer permissionDataInitializer;
     private final TaxMasterService taxMasterService;
+    private final CompanyRegistryService companyRegistryService;
+    private final RequestInterceptor requestInterceptor;
+    @Qualifier("billingCommonJdbcTemplate")
+    private final JdbcTemplate billingCommonJdbcTemplate;
 
     @Transactional(readOnly = true)
     public PlatformAdminDashboardResponse dashboard() {
-        List<Company> companies = companyRepository.findAll();
-
+        // All DBs visible: counts come from the common catalog (company_registry), not one tenant.
+        Map<String, Object> overview = companyRegistryService.overviewTenants(null, null);
+        long total = toLong(overview.get("total"));
+        long active = toLong(overview.get("active"));
         return PlatformAdminDashboardResponse.builder()
-                .totalCompanies(companies.size())
-                .activeCompanies(companies.stream().filter(Company::isActive).count())
-                .inactiveCompanies(companies.stream().filter(company -> !company.isActive()).count())
+                .totalCompanies((int) total)
+                .activeCompanies(active)
+                .inactiveCompanies(Math.max(0, total - active))
                 .build();
     }
 
@@ -63,12 +67,22 @@ public class PlatformAdminService {
     public PageResponse<PlatformAdminCompanyResponse> companies(int page, int size, String search, Boolean active) {
         int resolvedPage = Math.max(0, page);
         int resolvedSize = Math.max(1, Math.min(size, 100));
-        Page<PlatformAdminCompanySummaryView> pageResult = companyRepository.searchPlatformAdminCompanies(
-                normalizeSearch(search),
-                active,
-                PageRequest.of(resolvedPage, resolvedSize)
-        );
-        return PageResponse.from(pageResult.map(this::toCompanyResponse));
+        String status = active == null ? null : (active ? "ACTIVE" : "INACTIVE");
+        int total = companyRegistryService.countTenants(normalizeSearch(search), status);
+        List<Map<String, Object>> rows = companyRegistryService.listTenants(
+                normalizeSearch(search), status, resolvedSize, resolvedPage * resolvedSize);
+        List<PlatformAdminCompanyResponse> records = new ArrayList<>();
+        for (Map<String, Object> row : rows) {
+            records.add(enrichTenantRow(row));
+        }
+        int totalPages = resolvedSize == 0 ? 0 : (int) Math.ceil(total / (double) resolvedSize);
+        return PageResponse.<PlatformAdminCompanyResponse>builder()
+                .records(records)
+                .page(resolvedPage)
+                .size(resolvedSize)
+                .totalRecords(total)
+                .totalPages(totalPages)
+                .build();
     }
 
     @Transactional(readOnly = true)
@@ -95,12 +109,22 @@ public class PlatformAdminService {
 
     @Transactional(readOnly = true)
     public PlatformAdminCompanyOverviewResponse companyOverview(String search, Boolean active) {
-        PlatformAdminCompanyOverviewView overview = companyRepository.getPlatformAdminCompanyOverview(normalizeSearch(search), active);
+        String status = active == null ? null : (active ? "ACTIVE" : "INACTIVE");
+        List<Map<String, Object>> rows = companyRegistryService.listTenants(normalizeSearch(search), status, 100000, 0);
+        long owners = 0;
+        long admins = 0;
+        long users = 0;
+        for (Map<String, Object> row : rows) {
+            long[] counts = countTenantUsers(row);
+            owners += counts[0];
+            admins += counts[1];
+            users += counts[2];
+        }
         return PlatformAdminCompanyOverviewResponse.builder()
-                .companyCount(overview == null || overview.getCompanyCount() == null ? 0 : overview.getCompanyCount())
-                .ownerCount(overview == null || overview.getOwnerCount() == null ? 0 : overview.getOwnerCount())
-                .adminCount(overview == null || overview.getAdminCount() == null ? 0 : overview.getAdminCount())
-                .userCount(overview == null || overview.getUserCount() == null ? 0 : overview.getUserCount())
+                .companyCount(rows.size())
+                .ownerCount(owners)
+                .adminCount(admins)
+                .userCount(users)
                 .build();
     }
 
@@ -121,84 +145,127 @@ public class PlatformAdminService {
         return companyOverview(search, active);
     }
 
+    /**
+     * NEVER-AGAIN RULE: a JPA transaction must start only AFTER the tenant is
+     * switched. @Transactional on an outer method begins the Tx at entry,
+     * binding the connection to the entry-time tenant; the switch inside
+     * would come too late and writes would land in the wrong database.
+     * So outer methods below are NOT transactional: they resolve the DB,
+     * switch tenant via withTenantDb/withCompanyCodeDb, then delegate to an
+     * inner @Transactional method through the self proxy.
+     */
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private PlatformAdminService self;
+
+    public PlatformAdminCompanyResponse repairCompanySeeds(String companyCode) {
+        return withCompanyCodeDb(companyCode, () -> self.repairCompanySeedsData(companyCode));
+    }
+
     @Transactional
-    public PlatformAdminCompanyResponse createCompany(PlatformAdminCompanyCreateRequest request) {
-        if (companyRepository.existsByEmailIgnoreCase(request.getEmail())) {
-            throw new BadRequestException("Company email already exists");
-        }
-        String gstNumber = blankToNull(request.getGstNumber());
-        if (gstNumber != null && companyRepository.existsByTaxIdIgnoreCase(gstNumber)) {
-            throw new BadRequestException("Tax ID already exists");
-        }
-
-        Company company = Company.builder()
-                .name(request.getCompanyName().trim())
-                .code(normalizeCompanyCode(request.getCompanyName()))
-                .email(request.getEmail().trim())
-                .phone(request.getMobile().trim())
-                .address(request.getAddress().trim())
-                .taxId(gstNumber)
-                .active(true)
-                .build();
-        company = companyRepository.save(company);
-
-        validateUniqueUser(company, request.getOwnerUsername(), request.getOwnerMobile(), request.getOwnerEmail(), null);
-
-        User owner = User.builder()
-                .company(company)
-                .fullName(request.getOwnerName().trim())
-                .username(request.getOwnerUsername().trim())
-                .mobileNumber(request.getOwnerMobile().trim())
-                .email(request.getOwnerEmail().trim())
-                .password(passwordEncoder.encode(request.getOwnerPassword()))
-                .role(RoleName.OWNER)
-                .active(true)
-                .build();
-        userRepository.save(owner);
-
+    public PlatformAdminCompanyResponse repairCompanySeedsData(String companyCode) {
+        Company company = requireCompany(companyCode);
+        permissionDataInitializer.seedBaseMasters();
         permissionDataInitializer.seedPermissionsForCompany(company);
         permissionDataInitializer.seedThemeForCompany(company);
         permissionDataInitializer.seedDefaultNotificationChannels(company);
         taxMasterService.createDefaultTaxesForCompany(company);
-
+        verifyProvisionedTenant(company);
         return toCompanyResponse(company);
     }
 
-    @Transactional
-    public PlatformAdminCompanyResponse createCompany(Map<String, Object> param) {
-        PlatformAdminCompanyCreateRequest request = mapToCompanyCreateRequest(param);
-        return createCompany(request);
+    private void verifyProvisionedTenant(Company company) {
+        List<String> problems = new ArrayList<>();
+        try {
+            if (companyRepository.count() != 1) {
+                problems.add("companies!=" + companyRepository.count());
+            }
+        } catch (Exception e) {
+            problems.add("companies-unreadable");
+        }
+        try {
+            permissionDataInitializer.verifyTenantSeeded(company);
+        } catch (RuntimeException e) {
+            problems.add(e.getMessage());
+        }
+        if (!problems.isEmpty()) {
+            throw new IllegalStateException("Tenant verification failed: " + String.join(",", problems));
+        }
+    }
+
+    public PlatformAdminCompanyResponse activateCompany(String companyCode) {
+        return withCompanyCodeDb(companyCode, () -> self.activateCompanyData(companyCode));
     }
 
     @Transactional
-    public PlatformAdminCompanyResponse activateCompany(Long companyId) {
-        Company company = requireCompany(companyId);
+    public PlatformAdminCompanyResponse activateCompanyData(String companyCode) {
+        Company company = requireCompany(companyCode);
         company.setActive(true);
-        return toCompanyResponse(companyRepository.save(company));
+        company = companyRepository.save(company);
+        syncRegistryStatus(company);
+        return toCompanyResponse(company);
+    }
+
+    public PlatformAdminCompanyResponse deactivateCompany(String companyCode) {
+        return withCompanyCodeDb(companyCode, () -> self.deactivateCompanyData(companyCode));
     }
 
     @Transactional
-    public PlatformAdminCompanyResponse deactivateCompany(Long companyId) {
-        Company company = requireCompany(companyId);
+    public PlatformAdminCompanyResponse deactivateCompanyData(String companyCode) {
+        Company company = requireCompany(companyCode);
         company.setActive(false);
+        // Keep registry status in sync so routing/login follows company state.
+        syncRegistryStatus(company);
         return toCompanyResponse(companyRepository.save(company));
     }
 
+    public PlatformAdminCompanyResponse setCompanyChatbotEnabled(String companyCode, boolean enabled) {
+        return withCompanyCodeDb(companyCode, () -> self.setCompanyChatbotEnabledData(companyCode, enabled));
+    }
+
     @Transactional
-    public PlatformAdminCompanyResponse setCompanyChatbotEnabled(Long companyId, boolean enabled) {
-        Company company = requireCompany(companyId);
+    public PlatformAdminCompanyResponse setCompanyChatbotEnabledData(String companyCode, boolean enabled) {
+        Company company = requireCompany(companyCode);
         company.setChatbotEnabled(enabled);
         return toCompanyResponse(companyRepository.save(company));
     }
 
+    /**
+     * Reset the tenant super-admin password from Platform Admin.
+     * Username defaults to the catalog value on first reset and is kept
+     * afterwards; password is always BCrypt-hashed, never plain.
+     */
+    public PlatformAdminCompanyResponse resetSuperAdminPassword(String companyCode, String newPassword) {
+        String password = newPassword == null ? "" : newPassword.trim();
+        if (password.length() < 8) {
+            throw new BadRequestException("Super-admin password must be at least 8 characters");
+        }
+        return withCompanyCodeDb(companyCode, () -> self.resetSuperAdminPasswordData(companyCode, password));
+    }
+
+    @Transactional
+    public PlatformAdminCompanyResponse resetSuperAdminPasswordData(String companyCode, String newPassword) {
+        Company company = requireCompany(companyCode);
+        if (company.getSuperAdminUsername() == null || company.getSuperAdminUsername().isBlank()) {
+            company.setSuperAdminUsername(com.billing.config.MasterSeedCatalog.DEFAULT_SUPER_ADMIN_USERNAME);
+        }
+        company.setSuperAdminPassword(passwordEncoder.encode(newPassword));
+        return toCompanyResponse(companyRepository.save(company));
+    }
+
     @Transactional(readOnly = true)
-    public PlatformAdminCompanyDetailsResponse companyDetails(Long companyId) {
-        Company company = requireCompany(companyId);
-        List<User> users = userRepository.findByCompanyOrderByCreatedAtDesc(company);
+    public PlatformAdminCompanyDetailsResponse companyDetails(String companyCode) {
+        return withCompanyCodeDb(companyCode, () -> self.companyDetailsData(companyCode));
+    }
+
+    @Transactional(readOnly = true)
+    public PlatformAdminCompanyDetailsResponse companyDetailsData(String companyCode) {
+        Company company = requireCompany(companyCode);
+        List<User> users = userRepository.findAllByOrderByCreatedAtDesc();
         List<PlatformAdminUserResponse> mappedUsers = users.stream()
                 .sorted(Comparator.comparing(User::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder()))
                         .thenComparing(User::getId, Comparator.reverseOrder()))
-                .map(this::toUserResponse)
+                .map(user -> toUserResponse(user, company))
                 .toList();
 
         User owner = users.stream()
@@ -208,7 +275,7 @@ public class PlatformAdminService {
 
         return PlatformAdminCompanyDetailsResponse.builder()
                 .company(toCompanyResponse(company))
-                .owner(owner == null ? null : toUserResponse(owner))
+                .owner(owner == null ? null : toUserResponse(owner, company))
                 .ownerCount(users.stream().filter(user -> user.getRole() == RoleName.OWNER).count())
                 .adminCount(users.stream().filter(user -> user.getRole() == RoleName.ADMIN).count())
                 .userCount(users.stream().filter(user -> user.getRole() == RoleName.USER).count())
@@ -217,27 +284,48 @@ public class PlatformAdminService {
                 .build();
     }
 
+    private void syncRegistryStatus(Company company) {
+        try {
+            String status = company.isActive() ? "ACTIVE" : "INACTIVE";
+            billingCommonJdbcTemplate.update(
+                    "UPDATE billing_common.company_registry SET status=? WHERE database_name=?",
+                    status, company.getDatabaseName());
+        } catch (Exception ignored) {
+            // registry sync is best-effort; company state is authoritative in tenant DB
+        }
+    }
+
     @Transactional(readOnly = true)
     public PlatformAdminSettingsResponse settings() {
-        return toSettingsResponse(requirePlatformSetting());
+        return toSettingsResponse(requirePlatformSettingRow());
     }
 
     @Transactional
     public PlatformAdminSettingsResponse updateSettings(PlatformAdminSettingsRequest request) {
-        PlatformSetting setting = requirePlatformSetting();
+        Map<String, Object> row = requirePlatformSettingRow();
+        Long id = row.get("id") instanceof Number number ? number.longValue() : null;
+        List<Object> args = new ArrayList<>();
+        StringBuilder sql = new StringBuilder("UPDATE billing_common.platform_settings SET updated_at=NOW()");
         if (request.getPlatformName() != null) {
-            setting.setPlatformName(request.getPlatformName().trim());
+            sql.append(", platform_name=?");
+            args.add(request.getPlatformName().trim());
         }
         if (request.getPlatformTagline() != null) {
-            setting.setPlatformTagline(blankToNull(request.getPlatformTagline()));
+            sql.append(", platform_tagline=?");
+            args.add(blankToNull(request.getPlatformTagline()));
         }
         if (request.getUsername() != null && !request.getUsername().isBlank()) {
-            setting.setUsername(request.getUsername().trim());
+            sql.append(", username=?");
+            args.add(request.getUsername().trim());
         }
         if (request.getPassword() != null && !request.getPassword().isBlank()) {
-            setting.setPassword(passwordEncoder.encode(request.getPassword().trim()));
+            sql.append(", password=?");
+            args.add(passwordEncoder.encode(request.getPassword().trim()));
         }
-        return toSettingsResponse(platformSettingRepository.save(setting));
+        sql.append(" WHERE id=?");
+        args.add(id);
+        billingCommonJdbcTemplate.update(sql.toString(), args.toArray());
+        return toSettingsResponse(requirePlatformSettingRow());
     }
 
     @Transactional
@@ -246,18 +334,154 @@ public class PlatformAdminService {
         return updateSettings(request);
     }
 
-    private PlatformSetting requirePlatformSetting() {
-        return platformSettingRepository.findTopByOrderByIdAsc()
-                .orElseThrow(() -> new ResourceNotFoundException("Platform settings not found"));
+    private Map<String, Object> requirePlatformSettingRow() {
+        try {
+            return billingCommonJdbcTemplate.queryForMap(
+                    "SELECT id, platform_name, platform_logo, platform_tagline, username FROM billing_common.platform_settings ORDER BY id ASC LIMIT 1");
+        } catch (Exception e) {
+            throw new ResourceNotFoundException("Platform settings not found");
+        }
     }
 
-    private Company requireCompany(Long companyId) {
-        return companyRepository.findById(companyId)
+    private Company requireCompany(String companyCode) {
+        String code = companyCode == null ? "" : companyCode.trim();
+        if (code.isEmpty()) {
+            throw new ResourceNotFoundException("Company not found");
+        }
+        return companyRepository.findByCodeIgnoreCase(code.toUpperCase(Locale.ROOT))
+                .or(() -> companyRepository.findByCodeIgnoreCase(code))
                 .orElseThrow(() -> new ResourceNotFoundException("Company not found"));
     }
 
+    /**
+     * Run JPA work in a specific tenant database (resolved from the common catalog),
+     * restoring the previous tenant afterwards. Thread-bound like the interceptor.
+     */
+    private <T> T withTenantDb(String databaseName, String dbHost, Supplier<T> work) {
+        if (databaseName == null || databaseName.isBlank()) {
+            throw new ResourceNotFoundException("Company not found");
+        }
+        requestInterceptor.ensureTenant(databaseName.trim(), dbHost);
+        String previous = TenantContextHolder.getTenant();
+        TenantContextHolder.setTenantId(databaseName.trim());
+        try {
+            return work.get();
+        } finally {
+            if (previous == null || previous.isBlank()) {
+                TenantContextHolder.clear();
+            } else {
+                TenantContextHolder.setTenantId(previous);
+            }
+        }
+    }
+
+    /**
+     * Run JPA work in the tenant database for the given company code
+     * (resolved via billing_common.company_registry.company_code).
+     */
+    private <T> T withCompanyCodeDb(String companyCode, Supplier<T> work) {
+        String db = companyRegistryService.resolveDbNameByCodeAnyStatus(companyCode);
+        if (db == null || db.isBlank()) {
+            throw new ResourceNotFoundException("Company not found");
+        }
+        return withTenantDb(db, companyRegistryService.resolveDbHostByDatabase(db), work);
+    }
+
+    private String registryString(Object value) {
+        return value == null ? null : value.toString();
+    }
+
+    private long toLong(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        return 0;
+    }
+
+    /**
+     * Enrich a company_registry row with live data from its own tenant DB
+     * (company entity + role counts). Falls back to registry columns only.
+     */
+    private PlatformAdminCompanyResponse enrichTenantRow(Map<String, Object> row) {
+        String db = registryString(row.get("database_name"));
+        String code = registryString(row.get("company_code"));
+        String status = registryString(row.get("status"));
+        boolean active = !"INACTIVE".equalsIgnoreCase(status);
+        if (db == null || db.isBlank()) {
+            return PlatformAdminCompanyResponse.builder()
+                    .name(registryString(row.get("company_name")))
+                    .code(code)
+                    .active(active)
+                    .createdAt(null)
+                    .build();
+        }
+        return withTenantDb(db, registryString(row.get("db_host")), () -> {
+            Company company = null;
+            try {
+                if (code != null) {
+                    company = companyRepository.findByCodeIgnoreCase(code).orElse(null);
+                }
+            } catch (Exception ignored) {
+                company = null;
+            }
+            if (company == null) {
+                return PlatformAdminCompanyResponse.builder()
+                        .name(registryString(row.get("company_name")))
+                        .code(code)
+                        .active(active)
+                        .build();
+            }
+            List<User> users = userRepository.findAllByOrderByCreatedAtDesc();
+            String ownerName = users.stream()
+                    .filter(user -> user.getRole() == RoleName.OWNER)
+                    .map(User::getFullName)
+                    .distinct()
+                    .sorted()
+                    .reduce((left, right) -> left + ", " + right)
+                    .orElse(null);
+            long ownerCount = users.stream().filter(user -> user.getRole() == RoleName.OWNER).count();
+            long adminCount = users.stream().filter(user -> user.getRole() == RoleName.ADMIN).count();
+            long userCount = users.stream().filter(user -> user.getRole() == RoleName.USER).count();
+            return PlatformAdminCompanyResponse.builder()
+                    .id(company.getId())
+                    .name(company.getName())
+                    .code(company.getCode())
+                    .ownerName(ownerName)
+                    .email(company.getEmail())
+                    .mobile(company.getPhone())
+                    .active(company.isActive())
+                    .chatbotEnabled(company.isChatbotEnabled())
+                    .createdAt(company.getCreatedAt())
+                    .ownerCount(ownerCount)
+                    .adminCount(adminCount)
+                    .userCount(userCount)
+                    .totalUsers(users.size())
+                    .build();
+        });
+    }
+
+    private long[] countTenantUsers(Map<String, Object> row) {
+        String db = registryString(row.get("database_name"));
+        if (db == null || db.isBlank()) {
+            return new long[]{0, 0, 0};
+        }
+        return withTenantDb(db, registryString(row.get("db_host")), () -> {
+            List<User> users;
+            try {
+                users = userRepository.findAllByOrderByCreatedAtDesc();
+            } catch (Exception ignored) {
+                return new long[]{0, 0, 0};
+            }
+            return new long[]{
+                    users.stream().filter(user -> user.getRole() == RoleName.OWNER).count(),
+                    users.stream().filter(user -> user.getRole() == RoleName.ADMIN).count(),
+                    users.stream().filter(user -> user.getRole() == RoleName.USER).count()
+            };
+        });
+    }
+
     private PlatformAdminCompanyResponse toCompanyResponse(Company company) {
-        List<User> users = userRepository.findByCompanyOrderByCreatedAtDesc(company);
+        List<User> users = userRepository.findAllByOrderByCreatedAtDesc();
         String ownerName = users.stream()
                 .filter(user -> user.getRole() == RoleName.OWNER)
                 .map(User::getFullName)
@@ -268,6 +492,7 @@ public class PlatformAdminService {
         return PlatformAdminCompanyResponse.builder()
                 .id(company.getId())
                 .name(company.getName())
+                .code(company.getCode())
                 .ownerName(ownerName)
                 .email(company.getEmail())
                 .mobile(company.getPhone())
@@ -278,31 +503,11 @@ public class PlatformAdminService {
                 .build();
     }
 
-    private PlatformAdminCompanyResponse toCompanyResponse(PlatformAdminCompanySummaryView company) {
-        long ownerCount = company.getOwnerCount() == null ? 0 : company.getOwnerCount();
-        long adminCount = company.getAdminCount() == null ? 0 : company.getAdminCount();
-        long userCount = company.getUserCount() == null ? 0 : company.getUserCount();
-        return PlatformAdminCompanyResponse.builder()
-                .id(company.getId())
-                .name(company.getName())
-                .ownerName(company.getOwnerName())
-                .email(company.getEmail())
-                .mobile(company.getMobile())
-                .active(Boolean.TRUE.equals(company.getActive()))
-                .chatbotEnabled(Boolean.TRUE.equals(company.getChatbotEnabled()))
-                .createdAt(company.getCreatedAt())
-                .ownerCount(ownerCount)
-                .adminCount(adminCount)
-                .userCount(userCount)
-                .totalUsers(userCount)
-                .build();
-    }
-
-    private PlatformAdminUserResponse toUserResponse(User user) {
+    private PlatformAdminUserResponse toUserResponse(User user, Company company) {
         return PlatformAdminUserResponse.builder()
                 .id(user.getId())
-                .companyId(user.getCompany() == null ? null : user.getCompany().getId())
-                .companyName(user.getCompany() == null ? null : user.getCompany().getName())
+                .companyId(company == null ? null : company.getId())
+                .companyName(company == null ? null : company.getName())
                 .fullName(user.getFullName())
                 .username(user.getUsername())
                 .email(user.getEmail())
@@ -313,6 +518,15 @@ public class PlatformAdminService {
                 .build();
     }
 
+    private PlatformAdminSettingsResponse toSettingsResponse(Map<String, Object> row) {
+        return PlatformAdminSettingsResponse.builder()
+                .platformName(registryString(row.get("platform_name")))
+                .platformLogo(registryString(row.get("platform_logo")))
+                .platformTagline(registryString(row.get("platform_tagline")))
+                .username(registryString(row.get("username")))
+                .build();
+    }
+
     private PlatformAdminSettingsResponse toSettingsResponse(PlatformSetting setting) {
         return PlatformAdminSettingsResponse.builder()
                 .platformName(setting.getPlatformName())
@@ -320,49 +534,6 @@ public class PlatformAdminService {
                 .platformTagline(setting.getPlatformTagline())
                 .username(setting.getUsername())
                 .build();
-    }
-
-    private void validateUniqueUser(Company company, String username, String mobileNumber, String email, Long currentUserId) {
-        List<String> messages = new ArrayList<>();
-        String normalizedUsername = username == null ? null : username.trim();
-        String normalizedMobile = mobileNumber == null ? null : mobileNumber.trim();
-        String normalizedEmail = email == null ? null : email.trim();
-
-        userRepository.findByCompanyAndUsernameIgnoreCase(company, normalizedUsername)
-                .filter(existing -> currentUserId == null || !existing.getId().equals(currentUserId))
-                .ifPresent(existing -> messages.add("Username already exists in this company."));
-
-        userRepository.findByCompanyAndMobileNumber(company, normalizedMobile)
-                .filter(existing -> currentUserId == null || !existing.getId().equals(currentUserId))
-                .ifPresent(existing -> messages.add("Mobile number already exists in this company."));
-
-        userRepository.findByCompanyAndEmailIgnoreCase(company, normalizedEmail)
-                .filter(existing -> currentUserId == null || !existing.getId().equals(currentUserId))
-                .ifPresent(existing -> messages.add("Email already exists in this company."));
-
-        if (!messages.isEmpty()) {
-            throw new BadRequestException(String.join(" ", messages));
-        }
-    }
-
-    private String normalizeCompanyCode(String companyName) {
-        String base = companyName == null ? "" : companyName.replaceAll("[^A-Za-z0-9]", "").toUpperCase(Locale.ROOT);
-        if (base.isBlank()) {
-            base = "COMPANY";
-        }
-        String candidate = base.length() > 20 ? base.substring(0, 20) : base;
-        if (!companyRepository.existsByCodeIgnoreCase(candidate)) {
-            return candidate;
-        }
-        for (int attempt = 2; attempt < 10_000; attempt++) {
-            String suffix = String.valueOf(attempt);
-            int maxPrefixLength = Math.max(1, 20 - suffix.length());
-            String next = candidate.substring(0, Math.min(candidate.length(), maxPrefixLength)) + suffix;
-            if (!companyRepository.existsByCodeIgnoreCase(next)) {
-                return next;
-            }
-        }
-        throw new BadRequestException("Unable to generate unique company code");
     }
 
     private String normalizeSearch(String search) {
@@ -377,88 +548,6 @@ public class PlatformAdminService {
             return null;
         }
         return value.trim();
-    }
-
-    private PlatformAdminCompanyCreateRequest mapToCompanyCreateRequest(Map<String, Object> param) {
-        PlatformAdminCompanyCreateRequest request = new PlatformAdminCompanyCreateRequest();
-        String companyName = DataTypeUtility.stringValue(param.get("companyName"));
-        if (companyName.length() == 0) {
-            companyName = DataTypeUtility.stringValue(param.get("company_name"));
-        }
-        if (companyName.length() == 0) {
-            companyName = DataTypeUtility.stringValue(param.get("name"));
-        }
-        request.setCompanyName(companyName);
-        String address = DataTypeUtility.stringValue(param.get("address"));
-        if (address.length() == 0) {
-            address = null;
-        }
-        request.setAddress(address);
-        String gstNumber = DataTypeUtility.stringValue(param.get("gstNumber"));
-        if (gstNumber.length() == 0) {
-            gstNumber = DataTypeUtility.stringValue(param.get("gst_number"));
-        }
-        if (gstNumber.length() == 0) {
-            gstNumber = DataTypeUtility.stringValue(param.get("taxId"));
-        }
-        if (gstNumber.length() == 0) {
-            gstNumber = null;
-        }
-        request.setGstNumber(gstNumber);
-        String mobile = DataTypeUtility.stringValue(param.get("mobile"));
-        if (mobile.length() == 0) {
-            mobile = DataTypeUtility.stringValue(param.get("phone"));
-        }
-        if (mobile.length() == 0) {
-            mobile = null;
-        }
-        request.setMobile(mobile);
-        String email = DataTypeUtility.stringValue(param.get("email"));
-        if (email.length() == 0) {
-            email = null;
-        }
-        request.setEmail(email);
-        String ownerName = DataTypeUtility.stringValue(param.get("ownerName"));
-        if (ownerName.length() == 0) {
-            ownerName = DataTypeUtility.stringValue(param.get("owner_name"));
-        }
-        if (ownerName.length() == 0) {
-            ownerName = null;
-        }
-        request.setOwnerName(ownerName);
-        String ownerUsername = DataTypeUtility.stringValue(param.get("ownerUsername"));
-        if (ownerUsername.length() == 0) {
-            ownerUsername = DataTypeUtility.stringValue(param.get("owner_username"));
-        }
-        if (ownerUsername.length() == 0) {
-            ownerUsername = null;
-        }
-        request.setOwnerUsername(ownerUsername);
-        String ownerEmail = DataTypeUtility.stringValue(param.get("ownerEmail"));
-        if (ownerEmail.length() == 0) {
-            ownerEmail = DataTypeUtility.stringValue(param.get("owner_email"));
-        }
-        if (ownerEmail.length() == 0) {
-            ownerEmail = null;
-        }
-        request.setOwnerEmail(ownerEmail);
-        String ownerMobile = DataTypeUtility.stringValue(param.get("ownerMobile"));
-        if (ownerMobile.length() == 0) {
-            ownerMobile = DataTypeUtility.stringValue(param.get("owner_mobile"));
-        }
-        if (ownerMobile.length() == 0) {
-            ownerMobile = null;
-        }
-        request.setOwnerMobile(ownerMobile);
-        String ownerPassword = DataTypeUtility.stringValue(param.get("ownerPassword"));
-        if (ownerPassword.length() == 0) {
-            ownerPassword = DataTypeUtility.stringValue(param.get("owner_password"));
-        }
-        if (ownerPassword.length() == 0) {
-            ownerPassword = null;
-        }
-        request.setOwnerPassword(ownerPassword);
-        return request;
     }
 
     private PlatformAdminSettingsRequest mapToPlatformAdminSettingsRequest(Map<String, Object> param) {

@@ -12,6 +12,7 @@ import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import com.billing.entity.enums.SmsProviderType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -25,15 +26,14 @@ import lombok.Setter;
 @NoArgsConstructor
 @AllArgsConstructor
 @Entity
-@Table(name = "sms_provider_settings", indexes = @Index(name = "idx_sms_provider_company", columnList = "company_id"))
+@Table(name = "sms_provider_settings")
 public class SmsProviderSetting extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "company_id", nullable = false)
+    @Transient
     private Company company;
 
     @Column(name = "provider_name", nullable = false)

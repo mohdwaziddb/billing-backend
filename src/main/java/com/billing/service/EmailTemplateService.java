@@ -251,7 +251,7 @@ public class EmailTemplateService {
     }
 
     private EmailTemplate getTemplateOrThrow(Company company, Long templateId) {
-        return emailTemplateRepository.findByIdAndCompany(templateId, company)
+        return emailTemplateRepository.findById(templateId)
                 .orElseThrow(() -> new ResourceNotFoundException("Email template not found"));
     }
 

@@ -3,7 +3,6 @@ package com.billing.rest;
 import com.billing.service.AuditLogService;
 import com.billing.util.DataTypeUtility;
 import com.billing.util.GeneralResponse;
-import com.billing.util.MobileResponseDTOFactory;
 import com.billing.util.SanitizeData;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -23,26 +22,16 @@ import java.util.Map;
 public class AuditLogRestController {
 
     private final AuditLogService auditLogService;
-    private final MobileResponseDTOFactory mobileResponseDTOFactory;
 
     @GetMapping("/users")
     public ResponseEntity<?> users(@RequestParam(required = false) Map<String, Object> param, Authentication authentication, HttpServletRequest req) {
-        try {
-            param = SanitizeData.sanitizeMapObj(param);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", auditLogService.users(param, authentication.getName())), HttpStatus.OK);
-        } catch (Exception e) {
-            return mobileResponseDTOFactory.reportInternalServerError(e);
-        }
+        param = SanitizeData.sanitizeMapObj(param);
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", auditLogService.users(param, authentication.getName())), HttpStatus.OK);
     }
 
     @GetMapping
     public ResponseEntity<?> list(@RequestParam(required = false) Map<String, Object> param, Authentication authentication, HttpServletRequest req) {
-        try {
-            param = SanitizeData.sanitizeMapObj(param);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", auditLogService.page(param, authentication.getName())), HttpStatus.OK);
-        } catch (Exception e) {
-            return mobileResponseDTOFactory.reportInternalServerError(e);
-        }
+        param = SanitizeData.sanitizeMapObj(param);
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", auditLogService.page(param, authentication.getName())), HttpStatus.OK);
     }
 }
-

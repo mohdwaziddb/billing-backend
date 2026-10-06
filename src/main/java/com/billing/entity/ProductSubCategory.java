@@ -9,14 +9,13 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import jakarta.persistence.UniqueConstraint;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import org.hibernate.annotations.Filter;
-
 @Getter
 @Setter
 @Builder
@@ -24,17 +23,15 @@ import org.hibernate.annotations.Filter;
 @AllArgsConstructor
 @Entity
 @Table(name = "product_sub_categories", uniqueConstraints = {
-        @UniqueConstraint(name = "uk_product_sub_category_company_category_name", columnNames = {"company_id", "product_category_id", "sub_category_name"})
+        @UniqueConstraint(name = "uk_product_sub_category_category_name", columnNames = {"product_category_id", "sub_category_name"})
 })
-@Filter(name = "tenantFilter", condition = "company_id = :companyId")
 public class ProductSubCategory extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "company_id", nullable = false)
+    @Transient
     private Company company;
 
     @ManyToOne(fetch = FetchType.LAZY)

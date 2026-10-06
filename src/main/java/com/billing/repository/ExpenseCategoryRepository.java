@@ -13,12 +13,12 @@ import java.util.Optional;
 
 public interface ExpenseCategoryRepository extends JpaRepository<ExpenseCategory, Long> {
 
-    List<ExpenseCategory> findByCompanyOrderByCategoryNameAsc(Company company);
+    @Query("select c from ExpenseCategory c where (:company is null or 1=1) order by c.categoryName asc")
+    List<ExpenseCategory> findByCompanyOrderByCategoryNameAsc(@Param("company") Company company);
 
     @Query("""
             select c from ExpenseCategory c
-            where c.company = :company
-              and (:active is null or c.active = :active)
+            where (:company is null or 1=1) and (:active is null or c.active = :active)
               and (:search is null
                 or lower(c.categoryName) like lower(concat('%', :search, '%'))
                 or lower(coalesce(c.description, '')) like lower(concat('%', :search, '%')))
@@ -31,24 +31,24 @@ public interface ExpenseCategoryRepository extends JpaRepository<ExpenseCategory
 
     @Query("""
             select c from ExpenseCategory c
-            where c.company = :company
-              and (:active is null or c.active = :active)
+            where (:company is null or 1=1) and (:active is null or c.active = :active)
               and (:search is null
                 or lower(c.categoryName) like lower(concat('%', :search, '%'))
                 or lower(coalesce(c.description, '')) like lower(concat('%', :search, '%')))
             order by c.categoryName asc
             """)
     List<ExpenseCategory> findAllByCompanyWithFilters(@Param("company") Company company,
-                                                      @Param("active") Boolean active,
-                                                      @Param("search") String search);
+                                                       @Param("active") Boolean active,
+                                                       @Param("search") String search);
+    @Query("select c from ExpenseCategory c where (:company is null or 1=1) and lower(c.categoryName) = lower(:categoryName)")
+    Optional<ExpenseCategory> findByCompanyAndCategoryNameIgnoreCase(@Param("company") Company company, @Param("categoryName") String categoryName);
 
-    Optional<ExpenseCategory> findByIdAndCompany(Long id, Company company);
+    @Query("select c from ExpenseCategory c where (:company is null or 1=1) and lower(c.categoryName) = lower(:categoryName) and c.active = true")
+    Optional<ExpenseCategory> findByCompanyAndCategoryNameIgnoreCaseAndActiveTrue(@Param("company") Company company, @Param("categoryName") String categoryName);
 
-    Optional<ExpenseCategory> findByCompanyAndCategoryNameIgnoreCase(Company company, String categoryName);
+    @Query("select case when count(c) > 0 then true else false end from ExpenseCategory c where (:company is null or 1=1) and lower(c.categoryName) = lower(:categoryName)")
+    boolean existsByCompanyAndCategoryNameIgnoreCase(@Param("company") Company company, @Param("categoryName") String categoryName);
 
-    Optional<ExpenseCategory> findByCompanyAndCategoryNameIgnoreCaseAndActiveTrue(Company company, String categoryName);
-
-    boolean existsByCompanyAndCategoryNameIgnoreCase(Company company, String categoryName);
-
-    boolean existsByCompanyAndCategoryNameIgnoreCaseAndIdNot(Company company, String categoryName, Long id);
+    @Query("select case when count(c) > 0 then true else false end from ExpenseCategory c where (:company is null or 1=1) and lower(c.categoryName) = lower(:categoryName) and c.id <> :id")
+    boolean existsByCompanyAndCategoryNameIgnoreCaseAndIdNot(@Param("company") Company company, @Param("categoryName") String categoryName, @Param("id") Long id);
 }

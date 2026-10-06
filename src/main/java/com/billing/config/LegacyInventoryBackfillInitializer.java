@@ -53,7 +53,7 @@ public class LegacyInventoryBackfillInitializer implements ApplicationRunner {
             return;
         }
         for (Company company : companyRepository.findAll()) {
-            for (Product product : productRepository.findByCompanyOrderByCreatedAtDesc(company)) {
+            for (Product product : productRepository.findAllByOrderByCreatedAtDesc()) {
                 if (!productBatchRepository.findByCompanyAndProductOrderByBatchDateAscIdAsc(company, product).isEmpty()) {
                     continue;
                 }

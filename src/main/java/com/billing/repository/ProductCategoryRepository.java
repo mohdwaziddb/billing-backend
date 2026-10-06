@@ -16,8 +16,7 @@ public interface ProductCategoryRepository extends JpaRepository<ProductCategory
     @Query("""
             SELECT c
             FROM ProductCategory c
-            WHERE c.company = :company
-              AND (:active IS NULL OR c.active = :active)
+            where (:company is null or 1=1) and (:active IS NULL OR c.active = :active)
               AND (
                     :search IS NULL
                     OR TRIM(:search) = ''
@@ -32,8 +31,7 @@ public interface ProductCategoryRepository extends JpaRepository<ProductCategory
     @Query("""
             SELECT c
             FROM ProductCategory c
-            WHERE c.company = :company
-              AND (:active IS NULL OR c.active = :active)
+            where (:company is null or 1=1) and (:active IS NULL OR c.active = :active)
               AND (
                     :search IS NULL
                     OR TRIM(:search) = ''
@@ -47,15 +45,18 @@ public interface ProductCategoryRepository extends JpaRepository<ProductCategory
                                                        @Param("search") String search,
                                                        Pageable pageable);
 
-    Optional<ProductCategory> findByIdAndCompany(Long id, Company company);
+    @Query("select c from ProductCategory c where (:company is null or 1=1) and lower(c.categoryName)=lower(:categoryName)")
+    Optional<ProductCategory> findByCompanyAndCategoryNameIgnoreCase(@Param("company") Company company, @Param("categoryName") String categoryName);
 
-    Optional<ProductCategory> findByCompanyAndCategoryNameIgnoreCase(Company company, String categoryName);
+    @Query("select c from ProductCategory c where (:company is null or 1=1) and lower(c.categoryName)=lower(:categoryName) and c.active=true")
+    Optional<ProductCategory> findByCompanyAndCategoryNameIgnoreCaseAndActiveTrue(@Param("company") Company company, @Param("categoryName") String categoryName);
 
-    Optional<ProductCategory> findByCompanyAndCategoryNameIgnoreCaseAndActiveTrue(Company company, String categoryName);
+    @Query("select c from ProductCategory c where (:company is null or 1=1) and c.active=true order by c.categoryName asc")
+    List<ProductCategory> findByCompanyAndActiveTrueOrderByCategoryNameAsc(@Param("company") Company company);
 
-    List<ProductCategory> findByCompanyAndActiveTrueOrderByCategoryNameAsc(Company company);
+    @Query("select case when count(c)>0 then true else false end from ProductCategory c where (:company is null or 1=1) and lower(c.categoryName)=lower(:categoryName)")
+    boolean existsByCompanyAndCategoryNameIgnoreCase(@Param("company") Company company, @Param("categoryName") String categoryName);
 
-    boolean existsByCompanyAndCategoryNameIgnoreCase(Company company, String categoryName);
-
-    boolean existsByCompanyAndCategoryNameIgnoreCaseAndIdNot(Company company, String categoryName, Long id);
+    @Query("select case when count(c)>0 then true else false end from ProductCategory c where (:company is null or 1=1) and lower(c.categoryName)=lower(:categoryName) and c.id <> :id")
+    boolean existsByCompanyAndCategoryNameIgnoreCaseAndIdNot(@Param("company") Company company, @Param("categoryName") String categoryName, @Param("id") Long id);
 }

@@ -12,14 +12,13 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import jakarta.persistence.UniqueConstraint;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import org.hibernate.annotations.Filter;
-
 import java.math.BigDecimal;
 
 @Getter
@@ -31,19 +30,17 @@ import java.math.BigDecimal;
 @Table(
         name = "tax_master",
         uniqueConstraints = {
-                @UniqueConstraint(name = "uk_tax_master_company_name", columnNames = {"company_id", "tax_name"}),
-                @UniqueConstraint(name = "uk_tax_master_company_code", columnNames = {"company_id", "tax_code"})
+                @UniqueConstraint(name = "uk_tax_master_name", columnNames = {"tax_name"}),
+                @UniqueConstraint(name = "uk_tax_master_code", columnNames = {"tax_code"})
         }
 )
-@Filter(name = "tenantFilter", condition = "company_id = :companyId")
 public class TaxMaster extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "company_id", nullable = false)
+    @Transient
     private Company company;
 
     @Column(nullable = false)

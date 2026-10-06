@@ -9,14 +9,13 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import jakarta.persistence.UniqueConstraint;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import org.hibernate.annotations.Filter;
-
 import java.math.BigDecimal;
 
 @Getter
@@ -28,19 +27,17 @@ import java.math.BigDecimal;
 @Table(
         name = "customers",
         uniqueConstraints = {
-                @UniqueConstraint(name = "uk_customer_company_mobile", columnNames = {"company_id", "mobile"}),
-                @UniqueConstraint(name = "uk_customer_company_email", columnNames = {"company_id", "email"})
+                @UniqueConstraint(name = "uk_customer_mobile", columnNames = {"mobile"}),
+                @UniqueConstraint(name = "uk_customer_email", columnNames = {"email"})
         }
 )
-@Filter(name = "tenantFilter", condition = "company_id = :companyId")
 public class Customer extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "company_id", nullable = false)
+    @Transient
     private Company company;
 
     @Column(nullable = false)

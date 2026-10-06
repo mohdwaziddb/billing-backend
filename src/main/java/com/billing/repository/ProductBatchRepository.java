@@ -19,8 +19,7 @@ public interface ProductBatchRepository extends JpaRepository<ProductBatch, Long
 
     @Query("""
             select b from ProductBatch b
-            where b.company = :company
-              and b.product = :product
+            where (:company is null or 1=1) and b.product = :product
             order by b.batchDate asc, b.id asc
             """)
     List<ProductBatch> findByCompanyAndProductOrderByBatchDateAscIdAsc(@Param("company") Company company, @Param("product") Product product);
@@ -28,8 +27,7 @@ public interface ProductBatchRepository extends JpaRepository<ProductBatch, Long
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
             select b from ProductBatch b
-            where b.company = :company
-              and b.product = :product
+            where (:company is null or 1=1) and b.product = :product
             order by b.batchDate asc, b.id asc
             """)
     List<ProductBatch> lockByCompanyAndProductOrderByBatchDateAscIdAsc(@Param("company") Company company, @Param("product") Product product);
@@ -40,28 +38,28 @@ public interface ProductBatchRepository extends JpaRepository<ProductBatch, Long
 
     @Query("""
             select b from ProductBatch b
-            where b.company = :company
-              and b.product = :product
+            where (:company is null or 1=1) and b.product = :product
             order by b.batchDate desc, b.id desc
             """)
     List<ProductBatch> findByCompanyAndProductOrderByBatchDateDescIdDesc(@Param("company") Company company, @Param("product") Product product);
 
-    Optional<ProductBatch> findTopByCompanyAndProductOrderByBatchDateDescIdDesc(Company company, Product product);
-
-    long countByCompany(Company company);
+    @Query("""
+            select b from ProductBatch b
+            where (:company is null or 1=1) and b.product = :product
+            order by b.batchDate desc, b.id desc
+            """)
+    Optional<ProductBatch> findTopByCompanyAndProductOrderByBatchDateDescIdDesc(@Param("company") Company company, @Param("product") Product product);
 
     @Query("""
             select coalesce(sum(b.remainingQty), 0)
             from ProductBatch b
-            where b.company = :company
-              and b.product = :product
+            where (:company is null or 1=1) and b.product = :product
             """)
     Integer sumRemainingQty(@Param("company") Company company, @Param("product") Product product);
 
     @Query("""
             select b from ProductBatch b
-            where b.company = :company
-              and b.product in :products
+            where (:company is null or 1=1) and b.product in :products
               and b.batchStatus = :status
             order by b.product.id asc, b.batchDate asc, b.id asc
             """)
@@ -71,12 +69,16 @@ public interface ProductBatchRepository extends JpaRepository<ProductBatch, Long
 
     @Query("""
             select b from ProductBatch b
-            where b.company = :company
-              and b.product in :products
+            where (:company is null or 1=1) and b.product in :products
             order by b.product.id asc, b.batchDate asc, b.id asc
             """)
     List<ProductBatch> findByCompanyAndProductInOrderByProductIdAscBatchDateAscIdAsc(@Param("company") Company company,
                                                                                       @Param("products") Collection<Product> products);
 
-    List<ProductBatch> findByCompanyAndPurchaseOrderByBatchDateAscIdAsc(Company company, Purchase purchase);
+    @Query("""
+            select b from ProductBatch b
+            where (:company is null or 1=1) and b.purchase = :purchase
+            order by b.batchDate asc, b.id asc
+            """)
+    List<ProductBatch> findByCompanyAndPurchaseOrderByBatchDateAscIdAsc(@Param("company") Company company, @Param("purchase") Purchase purchase);
 }

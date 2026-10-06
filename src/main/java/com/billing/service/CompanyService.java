@@ -7,6 +7,7 @@ import com.billing.dto.company.CompanyThemeRequest;
 import com.billing.dto.company.CompanyThemeResponse;
 import com.billing.dto.user.CompanySummary;
 import com.billing.exception.BadRequestException;
+import com.billing.multitenancy.TenantContextHolder;
 import com.billing.repository.CompanyRepository;
 import com.billing.repository.CompanyThemeSettingRepository;
 import com.billing.util.DataTypeUtility;
@@ -38,6 +39,82 @@ public class CompanyService {
 
     @Value("${app.upload-dir:uploads}")
     private String uploadDir;
+
+    /**
+     * Current tenant's company for public surfaces (login page branding).
+     * Tenant itself is the truth (set by RequestInterceptor from subdomain/header/domain):
+     * works for subdomains, maacreation.localhost and plain localhost:5173 alike.
+     * Returns null when the tenant has no company row (e.g. platform marker).
+     */
+    @Transactional(readOnly = true)
+    public Map<String, Object> getCurrentTenantCompany() {
+        String tenant = TenantContextHolder.getTenant();
+        if (tenant == null || tenant.isBlank()) {
+            return null;
+        }
+        String db = tenant.replace("_read", "").replace("_write", "").trim();
+        if (db.isEmpty() || "billing_common".equalsIgnoreCase(db)) {
+            return null;
+        }
+        try {
+            java.util.Optional<Company> companyOpt = companyRepository.findByCodeIgnoreCase(db.toUpperCase(Locale.ROOT));
+            if (companyOpt.isEmpty()) {
+                // Single-company per DB: fall back to the lone companies row so public
+                // branding (login page) never goes blank on code/database drift.
+                java.util.List<Company> all = companyRepository.findAll();
+                if (all.isEmpty()) {
+                    return null;
+                }
+                companyOpt = java.util.Optional.of(all.get(0));
+            }
+            Company c = companyOpt.get();
+            java.util.Map<String, Object> map = new java.util.HashMap<>();
+            map.put("id", c.getId());
+            map.put("name", c.getName());
+            map.put("code", c.getCode());
+            map.put("databaseName", c.getDatabaseName());
+            map.put("email", c.getEmail());
+            map.put("phone", c.getPhone());
+            map.put("logoUrl", c.getLogoUrl());
+            map.put("active", c.isActive());
+            return map;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, Object> getByDomain(String domain) {
+        // Local single-DB mode: every subdomain shows the same (only) company,
+        // so return the tenant's single row instead of 404-redirecting.
+        if (!com.billing.core.Registry.IS_ONLINE) {
+            return getCurrentTenantCompany();
+        }
+        String cleanDomain = DataTypeUtility.stringValue(domain).toLowerCase().trim();
+        if (cleanDomain.isBlank()) {
+            return null;
+        }
+        String subdomain = cleanDomain.split("\\.")[0];
+        if (subdomain.isBlank() || subdomain.equalsIgnoreCase("www") || subdomain.equalsIgnoreCase("biziotechnologies") || subdomain.equalsIgnoreCase("localhost")) {
+            return null;
+        }
+        try {
+            java.util.Optional<Company> companyOpt = companyRepository.findByCodeIgnoreCase(subdomain.toUpperCase());
+            if (companyOpt.isPresent()) {
+                Company c = companyOpt.get();
+                java.util.Map<String, Object> map = new java.util.HashMap<>();
+                map.put("id", c.getId());
+                map.put("name", c.getName());
+                map.put("code", c.getCode());
+                map.put("databaseName", c.getDatabaseName());
+                map.put("email", c.getEmail());
+                map.put("logoUrl", c.getLogoUrl());
+                map.put("active", c.isActive());
+                return map;
+            }
+        } catch (Exception ignored) {}
+        return null;
+    }
 
     @Transactional(readOnly = true)
     public CompanySummary getSettings(Map<String, Object> param, String email) {
@@ -406,7 +483,7 @@ public class CompanyService {
     public CompanyThemeResponse theme(String email) {
         Company company = accessControlService.getCurrentCompany(email);
         CompanyThemeSetting setting = companyThemeSettingRepository.findByCompany(company)
-                .orElseGet(() -> CompanyThemeSetting.builder().company(company).themeColor("#0EA5E9").build());
+                .orElseGet(() -> CompanyThemeSetting.builder().company(company).themeColor(com.billing.config.MasterSeedCatalog.DEFAULT_THEME_COLOR).build());
         return toThemeResponse(setting);
     }
 
@@ -443,7 +520,7 @@ public class CompanyService {
         Company company = accessControlService.requireOwnerCompany(email);
         CompanyThemeSetting setting = companyThemeSettingRepository.findByCompany(company)
                 .orElseGet(() -> CompanyThemeSetting.builder().company(company).build());
-        setting.setThemeColor("#0EA5E9");
+        setting.setThemeColor(com.billing.config.MasterSeedCatalog.DEFAULT_THEME_COLOR);
         return toThemeResponse(companyThemeSettingRepository.save(setting));
     }
 

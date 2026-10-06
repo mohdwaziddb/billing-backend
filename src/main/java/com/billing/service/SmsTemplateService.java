@@ -112,7 +112,7 @@ public class SmsTemplateService {
     @Transactional
     public SmsTemplateResponse update(String email, Long id, SmsTemplateRequest request) {
         Company company = accessControlService.getCurrentCompany(email);
-        SmsTemplate template = smsTemplateRepository.findByIdAndCompany(id, company)
+        SmsTemplate template = smsTemplateRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("SMS template not found"));
         Map<String, Object> oldData = snapshot(template);
         String name = required(request.getTemplateName(), "Template name is required");
@@ -156,7 +156,7 @@ public class SmsTemplateService {
     @Transactional
     public void delete(String email, Long id) {
         Company company = accessControlService.getCurrentCompany(email);
-        SmsTemplate template = smsTemplateRepository.findByIdAndCompany(id, company)
+        SmsTemplate template = smsTemplateRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("SMS template not found"));
         Map<String, Object> oldData = snapshot(template);
         template.setActive(false);
@@ -167,7 +167,7 @@ public class SmsTemplateService {
     @Transactional(readOnly = true)
     public EmailPreviewResponse preview(String email, Long id, EmailRenderRequest request) {
         Company company = accessControlService.getCurrentCompany(email);
-        SmsTemplate template = smsTemplateRepository.findByIdAndCompany(id, company)
+        SmsTemplate template = smsTemplateRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("SMS template not found"));
         return EmailPreviewResponse.builder()
                 .subject("")

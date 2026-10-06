@@ -146,7 +146,7 @@ public class ProductCategoryService {
     }
 
     ProductCategory getCategoryOrThrow(Company company, Long categoryId) {
-        return productCategoryRepository.findByIdAndCompany(categoryId, company)
+        return productCategoryRepository.findById(categoryId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product category not found"));
     }
 

@@ -2,7 +2,6 @@ package com.billing.rest;
 
 import com.billing.service.UserPreferenceService;
 import com.billing.util.GeneralResponse;
-import com.billing.util.MobileResponseDTOFactory;
 import com.billing.util.SanitizeData;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -25,26 +24,16 @@ import java.util.Map;
 public class UserPreferenceRestController {
 
     private final UserPreferenceService userPreferenceService;
-    private final MobileResponseDTOFactory mobileResponseDTOFactory;
 
     @GetMapping("/me")
     public ResponseEntity<?> me(@RequestParam(required = false) Map<String, Object> param, Authentication authentication, HttpServletRequest req, HttpServletResponse res) {
-        try {
-            param = SanitizeData.sanitizeMapObj(param);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", userPreferenceService.getPreferences(param, authentication.getName())), HttpStatus.OK);
-        } catch (Exception e) {
-            return mobileResponseDTOFactory.reportInternalServerError(e);
-        }
+        param = SanitizeData.sanitizeMapObj(param);
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", userPreferenceService.getPreferences(param, authentication.getName())), HttpStatus.OK);
     }
 
     @PutMapping("/me")
     public ResponseEntity<?> update(@RequestBody Map<String, Object> param, Authentication authentication, HttpServletRequest request) {
-        try {
-            param = SanitizeData.sanitizeMapObj(param);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", userPreferenceService.updatePreferences(param, authentication.getName())), HttpStatus.OK);
-        } catch (Exception e) {
-            return mobileResponseDTOFactory.reportInternalServerError(e);
-        }
+        param = SanitizeData.sanitizeMapObj(param);
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", userPreferenceService.updatePreferences(param, authentication.getName())), HttpStatus.OK);
     }
 }
-

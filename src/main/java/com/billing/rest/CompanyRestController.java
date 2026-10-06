@@ -4,7 +4,6 @@ import com.billing.security.RequiresPermission;
 import com.billing.service.CompanyService;
 import com.billing.util.DataTypeUtility;
 import com.billing.util.GeneralResponse;
-import com.billing.util.MobileResponseDTOFactory;
 import com.billing.util.SanitizeData;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -29,102 +28,86 @@ import java.util.Map;
 public class CompanyRestController {
 
     private final CompanyService companyService;
-    private final MobileResponseDTOFactory mobileResponseDTOFactory;
 
     @GetMapping
     @RequiresPermission(menu = "ABOUT_COMPANY", action = "VIEW")
     public ResponseEntity<?> settings(@RequestParam(required = false) Map<String, Object> param, Authentication authentication, HttpServletRequest req) {
-        try {
-            param = SanitizeData.sanitizeMapObj(param);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", companyService.getSettings(param, authentication.getName())), HttpStatus.OK);
-        } catch (Exception e) {
-            return mobileResponseDTOFactory.reportInternalServerError(e);
-        }
+        param = SanitizeData.sanitizeMapObj(param);
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", companyService.getSettings(param, authentication.getName())), HttpStatus.OK);
     }
 
     @PutMapping
     @RequiresPermission(menu = "ABOUT_COMPANY", action = "EDIT")
     public ResponseEntity<?> update(@RequestBody Map<String, Object> param, Authentication authentication, HttpServletRequest request) {
-        try {
-            param = SanitizeData.sanitizeMapObj(param);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", companyService.updateSettings(param, authentication.getName())), HttpStatus.OK);
-        } catch (Exception e) {
-            return mobileResponseDTOFactory.reportInternalServerError(e);
-        }
+        param = SanitizeData.sanitizeMapObj(param);
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", companyService.updateSettings(param, authentication.getName())), HttpStatus.OK);
     }
 
     @PutMapping("/logo")
     @RequiresPermission(menu = "ABOUT_COMPANY", action = "EDIT")
     public ResponseEntity<?> uploadLogo(@RequestParam(required = false) Map<String, Object> param, Authentication authentication, @RequestParam("logo") MultipartFile logo, HttpServletRequest req) {
-        try {
-            param = SanitizeData.sanitizeMapObj(param);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", companyService.uploadLogo(authentication.getName(), logo)), HttpStatus.OK);
-        } catch (Exception e) {
-            return mobileResponseDTOFactory.reportInternalServerError(e);
-        }
+        param = SanitizeData.sanitizeMapObj(param);
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", companyService.uploadLogo(authentication.getName(), logo)), HttpStatus.OK);
     }
 
     @PutMapping("/signature")
     @RequiresPermission(menu = "ABOUT_COMPANY", action = "EDIT")
     public ResponseEntity<?> uploadSignature(@RequestParam(required = false) Map<String, Object> param, Authentication authentication, @RequestParam("signature") MultipartFile signature, HttpServletRequest req) {
-        try {
-            param = SanitizeData.sanitizeMapObj(param);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", companyService.uploadSignature(authentication.getName(), signature)), HttpStatus.OK);
-        } catch (Exception e) {
-            return mobileResponseDTOFactory.reportInternalServerError(e);
-        }
+        param = SanitizeData.sanitizeMapObj(param);
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", companyService.uploadSignature(authentication.getName(), signature)), HttpStatus.OK);
     }
 
     @DeleteMapping("/logo")
     @RequiresPermission(menu = "ABOUT_COMPANY", action = "EDIT")
     public ResponseEntity<?> deleteLogo(Authentication authentication, HttpServletRequest req) {
-        try {
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", companyService.deleteLogo(authentication.getName())), HttpStatus.OK);
-        } catch (Exception e) {
-            return mobileResponseDTOFactory.reportInternalServerError(e);
-        }
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", companyService.deleteLogo(authentication.getName())), HttpStatus.OK);
     }
 
     @DeleteMapping("/signature")
     @RequiresPermission(menu = "ABOUT_COMPANY", action = "EDIT")
     public ResponseEntity<?> deleteSignature(Authentication authentication, HttpServletRequest req) {
-        try {
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", companyService.deleteSignature(authentication.getName())), HttpStatus.OK);
-        } catch (Exception e) {
-            return mobileResponseDTOFactory.reportInternalServerError(e);
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", companyService.deleteSignature(authentication.getName())), HttpStatus.OK);
+    }
+
+    @GetMapping("/by-domain")
+    public ResponseEntity<?> byDomain(@RequestParam("domain") String domain, HttpServletRequest req) {
+        domain = DataTypeUtility.stringValue(domain);
+        if (domain.isBlank()) {
+            return new ResponseEntity<>(new GeneralResponse<>(false, "domain is required", null), HttpStatus.BAD_REQUEST);
         }
+        Map<String, Object> info = companyService.getByDomain(domain);
+        if (info == null) {
+            return new ResponseEntity<>(new GeneralResponse<>(false, "Company not found", null), HttpStatus.NOT_FOUND);
+        }
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", info), HttpStatus.OK);
+    }
+
+    @GetMapping("/current")
+    public ResponseEntity<?> current(HttpServletRequest req) {
+        Map<String, Object> info = companyService.getCurrentTenantCompany();
+        if (info == null) {
+            return new ResponseEntity<>(new GeneralResponse<>(false, "Company not found", null), HttpStatus.NOT_FOUND);
+        }
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", info), HttpStatus.OK);
     }
 
     @GetMapping("/theme")
     public ResponseEntity<?> theme(@RequestParam(required = false) Map<String, Object> param, Authentication authentication, HttpServletRequest req) {
-        try {
-            param = SanitizeData.sanitizeMapObj(param);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", companyService.theme(param, authentication.getName())), HttpStatus.OK);
-        } catch (Exception e) {
-            return mobileResponseDTOFactory.reportInternalServerError(e);
-        }
+        param = SanitizeData.sanitizeMapObj(param);
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", companyService.theme(param, authentication.getName())), HttpStatus.OK);
     }
 
     @PutMapping("/theme")
     @RequiresPermission(menu = "THEME_SETTINGS", action = "EDIT")
     public ResponseEntity<?> updateTheme(@RequestBody Map<String, Object> param, Authentication authentication, HttpServletRequest request) {
-        try {
-            param = SanitizeData.sanitizeMapObj(param);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", companyService.updateTheme(param, authentication.getName())), HttpStatus.OK);
-        } catch (Exception e) {
-            return mobileResponseDTOFactory.reportInternalServerError(e);
-        }
+        param = SanitizeData.sanitizeMapObj(param);
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", companyService.updateTheme(param, authentication.getName())), HttpStatus.OK);
     }
 
     @PostMapping("/theme/reset")
     @RequiresPermission(menu = "THEME_SETTINGS", action = "EDIT")
     public ResponseEntity<?> resetTheme(@RequestParam(required = false) Map<String, Object> param, Authentication authentication, HttpServletRequest req) {
-        try {
-            param = SanitizeData.sanitizeMapObj(param);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", companyService.resetTheme(param, authentication.getName())), HttpStatus.OK);
-        } catch (Exception e) {
-            return mobileResponseDTOFactory.reportInternalServerError(e);
-        }
+        param = SanitizeData.sanitizeMapObj(param);
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", companyService.resetTheme(param, authentication.getName())), HttpStatus.OK);
     }
 }
-

@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 public class PlatformAdminCompanyResponse {
     private Long id;
     private String name;
+    private String code;
     private String ownerName;
     private String email;
     private String mobile;

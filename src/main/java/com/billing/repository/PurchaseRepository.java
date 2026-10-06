@@ -16,23 +16,20 @@ import java.util.Optional;
 public interface PurchaseRepository extends JpaRepository<Purchase, Long> {
 
     @EntityGraph(attributePaths = {"items", "items.product"})
-    Optional<Purchase> findByIdAndCompany(Long id, Company company);
-
-    @EntityGraph(attributePaths = {"items", "items.product"})
-    Optional<Purchase> findByCompanyAndPurchaseNo(Company company, String purchaseNo);
+    @Query("select p from Purchase p where (:company is null or 1=1) and p.purchaseNo = :purchaseNo")
+    Optional<Purchase> findByCompanyAndPurchaseNo(@Param("company") Company company, @Param("purchaseNo") String purchaseNo);
 
     @EntityGraph(attributePaths = {"items", "items.product"})
     @Query("""
             select p from Purchase p
             where p.id = :id
-              and p.company = :company
+              and (:company is null or 1=1)
             """)
     Optional<Purchase> findByIdWithItemsAndCompany(@Param("id") Long id, @Param("company") Company company);
 
     @Query("""
             select p from Purchase p
-            where p.company = :company
-              and (:active is null or coalesce(p.active, true) = :active)
+            where (:company is null or 1=1) and (:active is null or coalesce(p.active, true) = :active)
               and (:startDate is null or p.purchaseDate >= :startDate)
               and (:endDate is null or p.purchaseDate <= :endDate)
               and (:search is null
@@ -49,8 +46,9 @@ public interface PurchaseRepository extends JpaRepository<Purchase, Long> {
                           @Param("endDate") LocalDate endDate,
                           Pageable pageable);
 
-    @Query("select count(p) from Purchase p where p.company = :company and p.purchaseDate = current_date")
+    @Query("select count(p) from Purchase p where (:company is null or 1=1) and p.purchaseDate = current_date")
     long countTodayByCompany(@Param("company") Company company);
 
-    List<Purchase> findByCompanyOrderByPurchaseDateDescIdDesc(Company company);
+    @Query("select p from Purchase p where (:company is null or 1=1) order by p.purchaseDate desc, p.id desc")
+    List<Purchase> findByCompanyOrderByPurchaseDateDescIdDesc(@Param("company") Company company);
 }

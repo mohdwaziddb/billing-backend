@@ -2,7 +2,6 @@ package com.billing.rest;
 
 import com.billing.service.RoleService;
 import com.billing.util.GeneralResponse;
-import com.billing.util.MobileResponseDTOFactory;
 import com.billing.util.SanitizeData;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -22,17 +21,11 @@ import java.util.Map;
 public class RoleRestController {
 
     private final RoleService roleService;
-    private final MobileResponseDTOFactory mobileResponseDTOFactory;
 
     @GetMapping
     @com.billing.security.RequiresPermission(menu = "ROLE_PERMISSIONS", action = "VIEW")
     public ResponseEntity<?> roles(@RequestParam(required = false) Map<String, Object> param, HttpServletRequest req, HttpServletResponse res) {
-        try {
-            param = SanitizeData.sanitizeMapObj(param);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", roleService.create(param)), HttpStatus.OK);
-        } catch (Exception e) {
-            return mobileResponseDTOFactory.reportInternalServerError(e);
-        }
+        param = SanitizeData.sanitizeMapObj(param);
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", roleService.create(param)), HttpStatus.OK);
     }
 }
-

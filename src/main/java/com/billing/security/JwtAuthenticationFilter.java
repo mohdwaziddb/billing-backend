@@ -1,6 +1,7 @@
 package com.billing.security;
 
-import com.billing.tenant.TenantContext;
+import com.billing.multitenancy.TenantContextHolder;
+import com.billing.repository.CompanyRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -24,6 +25,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
     private final CustomUserDetailsService userDetailsService;
+    private final CompanyRepository companyRepository;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
@@ -49,9 +51,24 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 return;
             }
 
+            // Bind tenant from the token BEFORE any user lookup: tenant ids
+            // collide across databases (every tenant starts at id 1), so the
+            // lookup must already run in the token's own database.
+            // (RequestInterceptor later re-validates header-vs-token binding.)
+            if (("USER".equals(authType) || "SUPER_ADMIN".equals(authType))
+                    && (TenantContextHolder.getTenant() == null || TenantContextHolder.getTenant().isBlank())) {
+                String claimDb = jwtService.extractDatabaseName(token);
+                if (claimDb == null || claimDb.isBlank()) {
+                    String claimCode = jwtService.extractCompanyCode(token);
+                    claimDb = claimCode != null ? claimCode.toLowerCase(java.util.Locale.ROOT) : null;
+                }
+                if (claimDb != null && !claimDb.isBlank()) {
+                    TenantContextHolder.setTenantId(claimDb);
+                }
+            }
+
             if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-                if ("PLATFORM_ADMIN".equals(authType)) {
-                    PlatformAdminPrincipal platformAdminPrincipal = new PlatformAdminPrincipal(username);
+                if ("PLATFORM_ADMIN".equals(authType)) {                    PlatformAdminPrincipal platformAdminPrincipal = new PlatformAdminPrincipal(username);
                     if (jwtService.isTokenValid(token, platformAdminPrincipal)) {
                         UsernamePasswordAuthenticationToken authenticationToken = new UsernamePasswordAuthenticationToken(
                                 platformAdminPrincipal,
@@ -65,12 +82,38 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     return;
                 }
 
+                if ("SUPER_ADMIN".equals(authType)) {
+                    String code = jwtService.extractCompanyCode(token);
+                    String dbName = jwtService.extractDatabaseName(token);
+                    TenantSuperAdminPrincipal superAdminPrincipal =
+                            new TenantSuperAdminPrincipal(username, code, dbName);
+                    if (!jwtService.isTokenValid(token, superAdminPrincipal)
+                            || !isSuperAdminCompanyActive(code, dbName)) {
+                        SecurityContextHolder.clearContext();
+                        writeCompanyInactiveResponse(response);
+                        return;
+                    }
+                    UsernamePasswordAuthenticationToken authenticationToken = new UsernamePasswordAuthenticationToken(
+                            superAdminPrincipal,
+                            null,
+                            superAdminPrincipal.getAuthorities()
+                    );
+                    authenticationToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                    SecurityContextHolder.getContext().setAuthentication(authenticationToken);
+                    if (dbName != null && !dbName.isBlank()
+                            && (TenantContextHolder.getTenant() == null || TenantContextHolder.getTenant().isBlank())) {
+                        TenantContextHolder.setTenantId(dbName);
+                    }
+                    filterChain.doFilter(request, response);
+                    return;
+                }
+
                 UserDetails userDetails = userId != null
                         ? userDetailsService.loadUserById(userId)
                         : userDetailsService.loadUserByUsername(username);
                 if (jwtService.isTokenValid(token, userDetails)) {
                     if (userDetails instanceof CustomUserDetails customUserDetails
-                            && (customUserDetails.getCompanyId() == null || !customUserDetails.isCompanyActive())) {
+                            && !customUserDetails.isCompanyActive()) {
                         SecurityContextHolder.clearContext();
                         writeCompanyInactiveResponse(response);
                         return;
@@ -83,14 +126,49 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     authenticationToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                     SecurityContextHolder.getContext().setAuthentication(authenticationToken);
                     if (userDetails instanceof CustomUserDetails customUserDetails) {
-                        TenantContext.setCompanyId(customUserDetails.getCompanyId());
+                        String dbName = customUserDetails.getDatabaseName();
+                        if (dbName == null || dbName.isBlank()) {
+                            dbName = jwtService.extractDatabaseName(token);
+                        }
+                        if (dbName == null || dbName.isBlank()) {
+                            String code = jwtService.extractCompanyCode(token);
+                            // DATABASE-per-tenant: database = lower(code), no billing_company_ prefix (e.g. MAACREATION -> maacreation)
+                            dbName = code != null ? code.toLowerCase(java.util.Locale.ROOT) : null;
+                        }
+                        if (dbName != null && !dbName.isBlank()) {
+                            if (TenantContextHolder.getTenant() == null || TenantContextHolder.getTenant().isBlank()) {
+                                TenantContextHolder.setTenantId(dbName);
+                            }
+                        }
                     }
                 }
             }
 
             filterChain.doFilter(request, response);
         } finally {
-            TenantContext.clear();
+            TenantContextHolder.clear();
+        }
+    }
+
+    /**
+     * Fail-closed company check for tenant super-admin tokens: the token is
+     * honored only while its company row exists and is active. Tenant context
+     * is set from the token claims first so the lookup hits the right database.
+     */
+    private boolean isSuperAdminCompanyActive(String companyCode, String databaseName) {
+        if (companyCode == null || companyCode.isBlank() || databaseName == null || databaseName.isBlank()) {
+            return false;
+        }
+        try {
+            if (TenantContextHolder.getTenant() == null || TenantContextHolder.getTenant().isBlank()) {
+                TenantContextHolder.setTenantId(databaseName.trim());
+            }
+            return companyRepository.findByCodeIgnoreCase(companyCode.trim().toUpperCase(java.util.Locale.ROOT))
+                    .or(() -> companyRepository.findByCodeIgnoreCase(companyCode.trim()))
+                    .map(com.billing.entity.Company::isActive)
+                    .orElse(false);
+        } catch (Exception ignored) {
+            return false;
         }
     }
 

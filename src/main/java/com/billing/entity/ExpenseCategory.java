@@ -9,14 +9,13 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import jakarta.persistence.UniqueConstraint;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import org.hibernate.annotations.Filter;
-
 @Getter
 @Setter
 @Builder
@@ -24,9 +23,8 @@ import org.hibernate.annotations.Filter;
 @AllArgsConstructor
 @Entity
 @Table(name = "expense_categories", uniqueConstraints = {
-        @UniqueConstraint(name = "uk_expense_category_company_name", columnNames = {"company_id", "category_name"})
+        @UniqueConstraint(name = "uk_expense_category_name", columnNames = {"category_name"})
 })
-@Filter(name = "tenantFilter", condition = "company_id = :companyId")
 public class ExpenseCategory extends BaseEntity {
 
     @Id
@@ -43,7 +41,6 @@ public class ExpenseCategory extends BaseEntity {
     @Column(nullable = false)
     private boolean active = true;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "company_id", nullable = false)
+    @Transient
     private Company company;
 }

@@ -136,6 +136,11 @@
             <artifactId>jsoup</artifactId>
             <version>1.17.2</version>
         </dependency>
+        <dependency>
+            <groupId>org.json</groupId>
+            <artifactId>json</artifactId>
+            <version>20240303</version>
+        </dependency>
         <!-- Spring AI: OpenAI-compatible chat support -->
         <dependency>
             <groupId>org.springframework.ai</groupId>

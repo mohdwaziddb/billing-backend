@@ -731,19 +731,19 @@ public class AnalyticsService {
     }
 
     private List<Invoice> invoicesFor(Company company) {
-        return invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company);
+        return invoiceRepository.findAllByOrderByInvoiceDateDescIdDesc();
     }
 
     private List<Payment> paymentsFor(Company company) {
-        return paymentRepository.findByCompanyOrderByPaymentDateDescIdDesc(company);
+        return paymentRepository.findAllByOrderByPaymentDateDescIdDesc();
     }
 
     private List<Customer> customersFor(Company company) {
-        return customerRepository.findByCompanyOrderByCreatedAtDesc(company);
+        return customerRepository.findAllByOrderByCreatedAtDesc();
     }
 
     private List<Product> productsFor(Company company) {
-        return productRepository.findByCompanyOrderByCreatedAtDesc(company);
+        return productRepository.findAllByOrderByCreatedAtDesc();
     }
 
     private List<ProductCategory> categoriesFor(Company company) {

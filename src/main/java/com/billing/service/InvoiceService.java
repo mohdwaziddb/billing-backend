@@ -122,7 +122,7 @@ public class InvoiceService {
         User user = accessControlService.getCurrentUser(email);
         Company company = accessControlService.requireCompany(user);
         List<Invoice> invoices = customerId == null
-                ? invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company)
+                ? invoiceRepository.findAllByOrderByInvoiceDateDescIdDesc()
                 : invoiceRepository.findByCompanyAndCustomerOrderByInvoiceDateDescIdDesc(
                 company,
                 customerService.getCustomerOrThrow(company, customerId)
@@ -309,7 +309,7 @@ public class InvoiceService {
     }
 
     public Invoice getInvoiceOrThrow(Company company, Long invoiceId) {
-        return invoiceRepository.findByIdAndCompany(invoiceId, company)
+        return invoiceRepository.findById(invoiceId)
                 .orElseThrow(() -> new ResourceNotFoundException("Invoice not found"));
     }
 
@@ -575,7 +575,7 @@ public class InvoiceService {
     }
 
     private String generateInvoiceNumber(Company company, Customer customer, LocalDate invoiceDate) {
-        long nextSequence = invoiceRepository.countByCompanyAndInvoiceDate(company, invoiceDate) + 1L;
+        long nextSequence = invoiceRepository.countByInvoiceDate( invoiceDate) + 1L;
         String customerRef = buildCustomerReference(customer.getName());
         String mobileSuffix = buildMobileSuffix(customer.getMobile());
         String dateSegment = invoiceDate.format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE);
@@ -858,7 +858,7 @@ public class InvoiceService {
         if (referByUserId == null) {
             return null;
         }
-        User user = userRepository.findByIdAndCompany(referByUserId, company)
+        User user = userRepository.findById(referByUserId)
                 .orElseThrow(() -> new BadRequestException("Refer By user not found in this company"));
         if (!user.isActive()) {
             throw new BadRequestException("Refer By user must be active");

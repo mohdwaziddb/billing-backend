@@ -14,8 +14,11 @@ import java.util.Optional;
 import java.util.Set;
 
 public interface ProductRepository extends JpaRepository<Product, Long> {
-    List<Product> findByCompanyOrderByCreatedAtDesc(Company company);
-    List<Product> findByCompanyAndActiveTrueOrderByCreatedAtDesc(Company company);
+    List<Product> findAllByOrderByCreatedAtDesc();
+    @Query("select p from Product p where (:company is null or 1=1) order by p.createdAt desc")
+    List<Product> findByCompanyOrderByCreatedAtDesc(@Param("company") Company company);
+    @Query("select p from Product p where (:company is null or 1=1) and p.active = true order by p.createdAt desc")
+    List<Product> findByCompanyAndActiveTrueOrderByCreatedAtDesc(@Param("company") Company company);
 
     @EntityGraph(attributePaths = {"productCategory", "productSubCategory", "taxMaster"})
     @Query("""
@@ -23,7 +26,7 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
             FROM Product p
             LEFT JOIN p.productCategory pc
             LEFT JOIN p.productSubCategory psc
-            WHERE (:company IS NULL OR p.company = :company)
+            WHERE (:company IS NULL OR 1=1)
               AND (:active IS NULL OR p.active = :active)
               AND (:categoryId IS NULL OR pc.id = :categoryId)
               AND (:subCategoryId IS NULL OR psc.id = :subCategoryId)
@@ -49,7 +52,7 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
             FROM Product p
             LEFT JOIN p.productCategory pc
             LEFT JOIN p.productSubCategory psc
-            WHERE (:company IS NULL OR p.company = :company)
+            WHERE (:company IS NULL OR 1=1)
               AND (:active IS NULL OR p.active = :active)
               AND (:categoryId IS NULL OR pc.id = :categoryId)
               AND (:subCategoryId IS NULL OR psc.id = :subCategoryId)
@@ -71,16 +74,20 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
                                                Pageable pageable);
 
     @EntityGraph(attributePaths = {"productCategory", "productSubCategory", "taxMaster"})
-    Optional<Product> findByIdAndCompany(Long id, Company company);
+    @Query("select p from Product p where p.id = :id and (:company is null or 1=1)")
+    Optional<Product> findByIdAndCompany(@Param("id") Long id, @Param("company") Company company);
 
-    boolean existsByCompanyAndSkuIgnoreCase(Company company, String sku);
-    boolean existsByCompanyAndSkuIgnoreCaseAndIdNot(Company company, String sku, Long id);
-    long countByCompany(Company company);
+    @Query("select case when count(p) > 0 then true else false end from Product p where (:company is null or 1=1) and lower(p.sku) = lower(:sku)")
+    boolean existsByCompanyAndSkuIgnoreCase(@Param("company") Company company, @Param("sku") String sku);
+    @Query("select case when count(p) > 0 then true else false end from Product p where (:company is null or 1=1) and lower(p.sku) = lower(:sku) and p.id <> :id")
+    boolean existsByCompanyAndSkuIgnoreCaseAndIdNot(@Param("company") Company company, @Param("sku") String sku, @Param("id") Long id);
+    @Query("select count(p) from Product p where (:company is null or 1=1)")
+    long countByCompany(@Param("company") Company company);
 
     @Query("""
             SELECT LOWER(TRIM(p.sku))
             FROM Product p
-            WHERE p.company = :company
+            where (:company is null or 1=1)
             """)
     Set<String> findNormalizedSkusByCompany(@Param("company") Company company);
 }

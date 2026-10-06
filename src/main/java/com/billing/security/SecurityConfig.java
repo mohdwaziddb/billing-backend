@@ -48,10 +48,15 @@ public class SecurityConfig {
                 )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/v1/auth/**").permitAll()
+                        .requestMatchers("/api/v1/company/by-domain").permitAll()
+                        .requestMatchers("/api/v1/company/current").permitAll()
                         .requestMatchers("/api/v1/platform-admin/login").permitAll()
                         .requestMatchers("/uploads/public/**").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/actuator/health").permitAll()
+                        // Error dispatches re-enter the security chain (JWT filter is skipped there),
+                        // so /error must be open or sendError statuses get overwritten with 401.
+                        .requestMatchers("/error").permitAll()
                         .anyRequest().authenticated()
                 )
                 .authenticationProvider(authenticationProvider())

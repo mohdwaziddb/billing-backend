@@ -12,14 +12,13 @@ import jakarta.persistence.PostLoad;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import jakarta.persistence.UniqueConstraint;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import org.hibernate.annotations.Filter;
-
 @Getter
 @Setter
 @Builder
@@ -27,10 +26,9 @@ import org.hibernate.annotations.Filter;
 @AllArgsConstructor
 @Entity
 @Table(name = "payment_modes", uniqueConstraints = {
-        @UniqueConstraint(name = "uk_payment_mode_company_code", columnNames = {"company_id", "mode_code"}),
-        @UniqueConstraint(name = "uk_payment_mode_company_name", columnNames = {"company_id", "mode_name"})
+        @UniqueConstraint(name = "uk_payment_mode_code", columnNames = {"mode_code"}),
+        @UniqueConstraint(name = "uk_payment_mode_name", columnNames = {"mode_name"})
 })
-@Filter(name = "tenantFilter", condition = "company_id = :companyId")
 public class PaymentModeMaster extends BaseEntity {
 
     @Id
@@ -53,8 +51,7 @@ public class PaymentModeMaster extends BaseEntity {
     @Column(nullable = false)
     private boolean active = true;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "company_id", nullable = false)
+    @Transient
     private Company company;
 
     @PrePersist

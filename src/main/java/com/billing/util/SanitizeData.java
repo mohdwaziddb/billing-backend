@@ -8,6 +8,13 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class SanitizeData {
+
+    /**
+     * Max traversal depth. Deeper levels fall back to flat string cleaning
+     * (the historical behavior) so pathological input can never overflow.
+     */
+    private static final int MAX_DEPTH = 20;
+
     public static Map<String, String> sanitizeMap(Map<String, String> map) {
         Map<String, String> sanitizeMap = new HashMap<>();
         if (map != null && map.size() > 0) {
@@ -19,31 +26,58 @@ public class SanitizeData {
         return sanitizeMap;
     }
 
+    /**
+     * Deep-sanitizes a request map WITHOUT destroying its structure.
+     * Maps stay Maps, Lists stay Lists (any depth); only leaf values go
+     * through the string cleaner. Scalar output is byte-identical to the
+     * historical behavior, so every existing mapper keeps working.
+     * Historical bug fixed here: nested objects/arrays used to be flattened
+     * into garbage strings, silently dropping e.g. purchase/invoice items.
+     */
     public static Map<String, Object> sanitizeMapObj(Map<String, Object> map) {
         Map<String, Object> sanitizeMap = new HashMap<>();
         if (map != null && map.size() > 0) {
             map.forEach((paramName, inputobj) -> {
-                if (inputobj instanceof ArrayList) {
-                    ArrayList<Object> resultList = new ArrayList<>();
-                    ((ArrayList<?>) inputobj).forEach(obj -> {
-                        String result = sanitizeData(paramName, obj);
-                        resultList.add(result);
-                    });
-                    sanitizeMap.put(paramName, resultList);
-                } else if (inputobj instanceof HashMap) {
-                    HashMap<String,String> resultMap = new HashMap();
-                    ((HashMap<?, ?>) inputobj).forEach((key,value)->{
-                        String result = sanitizeData(DataTypeUtility.stringNullValue(key), value);
-                        resultMap.put(DataTypeUtility.stringNullValue(key), result);
-                    });
-                    sanitizeMap.put(paramName, resultMap);
-                } else {
-                    String result = sanitizeData(paramName, inputobj);
-                    sanitizeMap.put(paramName, result);
-                }
+                sanitizeMap.put(
+                        DataTypeUtility.stringNullValue(paramName),
+                        sanitizeValue(paramName, inputobj, 0));
             });
         }
         return sanitizeMap;
+    }
+
+    private static Object sanitizeValue(String paramName, Object value, int depth) {
+        if (value == null) {
+            return null;
+        }
+        if (depth >= MAX_DEPTH) {
+            // Fail-safe: behave like the historical flattener past the cap.
+            return sanitizeData(paramName, value);
+        }
+        if (value instanceof Map) {
+            Map<String, Object> nested = new HashMap<>();
+            ((Map<?, ?>) value).forEach((key, nestedValue) -> {
+                String keyName = DataTypeUtility.stringNullValue(key);
+                nested.put(keyName, sanitizeValue(keyName, nestedValue, depth + 1));
+            });
+            return nested;
+        }
+        if (value instanceof java.util.List) {
+            ArrayList<Object> resultList = new ArrayList<>();
+            for (Object element : (java.util.List<?>) value) {
+                resultList.add(sanitizeValue(paramName, element, depth + 1));
+            }
+            return resultList;
+        }
+        if (value.getClass().isArray()) {
+            ArrayList<Object> resultList = new ArrayList<>();
+            int length = java.lang.reflect.Array.getLength(value);
+            for (int i = 0; i < length; i++) {
+                resultList.add(sanitizeValue(paramName, java.lang.reflect.Array.get(value, i), depth + 1));
+            }
+            return resultList;
+        }
+        return sanitizeData(paramName, value);
     }
 
     private static String sanitizeData(String paramName, Object inputobj) {

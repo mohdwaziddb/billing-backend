@@ -189,9 +189,10 @@ public class AuditLogService {
                                                 String search) {
         return (root, query, builder) -> {
             List<Predicate> predicates = new ArrayList<>();
-            if (company != null) {
-                predicates.add(builder.equal(root.get("company"), company));
-            }
+            // NOTE: no company predicate here. AuditLog.company is @Transient
+            // (not a JPA attribute, so root.get("company") blows up), and in
+            // DATABASE-per-tenant mode the connection itself is the tenant
+            // scope — every row in this table already belongs to one company.
             if (hasText(moduleName)) {
                 CriteriaBuilder.In<String> moduleIn = builder.in(builder.lower(root.get("moduleName")));
                 moduleNameAliases(moduleName).forEach(moduleIn::value);
