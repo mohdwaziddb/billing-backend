@@ -72,6 +72,10 @@ public class MultiTenancyJpaConfiguration {
     public Map<String, DataSource> dataSourcesMtApp(
             @Qualifier("billingCommonJdbcTemplate") JdbcTemplate billingCommonJdbcTemplate) {
         Map<String, DataSource> result = new HashMap<>();
+        // Env-aware credentials (DB_USERNAME/DB_PASSWORD, else root defaults)
+        // for BOTH modes: the ONLINE branch below reads Registry.dbmap too,
+        // and nothing else populates it there.
+        MysqlDataSourceService.loadDatabaseCredentialsFromLocalHost();
         String url = "jdbc:mysql://localhost:" + localDbPort + "/";
         String readerUrl = "jdbc:mysql://localhost:" + localDbPort + "/";
         String username = "";
@@ -95,7 +99,6 @@ public class MultiTenancyJpaConfiguration {
             if (envUser != null) username = envUser;
             if (envPass != null) password = envPass;
         } else {
-            MysqlDataSourceService.loadDatabaseCredentialsFromLocalHost();
             username = Registry.dbmap.get("username");
             password = Registry.dbmap.get("password");
             String dbUrl = Registry.dbmap.get("url");

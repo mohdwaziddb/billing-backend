@@ -95,12 +95,23 @@ public class MysqlDataSourceService extends AbstractDataSourceService {
     }
 
     public static final HashMap<String, String> loadDatabaseCredentialsFromLocalHost() {
+        // Live DB host is this same EC2 (localhost:3306); only user/password
+        // come from env (DB_USERNAME/DB_PASSWORD, set in systemd .env).
+        // Local dev has no such env, so it keeps root/root as before.
         Registry.dbmap.put("url", "localhost:3306");
         Registry.dbmap.put("urlreader", "localhost:3306");
-        Registry.dbmap.put("username", "root");
-        Registry.dbmap.put("password", "root");
+        Registry.dbmap.put("username", envOrDefault("DB_USERNAME", "root"));
+        Registry.dbmap.put("password", envOrDefault("DB_PASSWORD", "root"));
         Registry.dbmap.put("driverClassName", "com.mysql.cj.jdbc.Driver");
-        Registry.dbmap.put("databasename", "sample");
+        Registry.dbmap.putIfAbsent("databasename", "sample");
         return Registry.dbmap;
+    }
+
+    private static String envOrDefault(String key, String fallback) {
+        String value = System.getenv(key);
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        return value;
     }
 }

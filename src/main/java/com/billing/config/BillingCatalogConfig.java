@@ -15,10 +15,10 @@ public class BillingCatalogConfig {
     @Value("${microservice.local.database.port:3306}")
     private String localDbPort;
 
-    @Value("${microservice.local.database.username:root}")
+    @Value("${DB_USERNAME:${microservice.local.database.username:root}}")
     private String username;
 
-    @Value("${microservice.local.database.password:root}")
+    @Value("${DB_PASSWORD:${microservice.local.database.password:root}}")
     private String password;
 
     @Bean(name = "billingCommonDataSource")
