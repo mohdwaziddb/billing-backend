@@ -58,6 +58,32 @@ public class RequestInterceptor implements HandlerInterceptor {
                 && !hostOnly.equalsIgnoreCase("biziotechnologies.com")
                 && !hostOnly.equalsIgnoreCase("www.biziotechnologies.com");
 
+        // Maintenance stop (all modes, including local single-DB dev):
+        // an INACTIVE tenant shows the maintenance screen everywhere.
+        // Header first (frontend always sends X-Company-Code from its own
+        // subdomain, and local dev calls the backend directly so Host is
+        // just localhost:9009), then the Host subdomain. Unknown codes
+        // (no registry row) keep their existing behavior below.
+        // Platform paths are exempt: admin ops must work on INACTIVE tenants too.
+        if (!isPlatformPath && companyRegistryService != null) {
+            String maintenanceHeaderCode = resolveCompanyCodeHeader(request);
+            if (maintenanceHeaderCode != null && !maintenanceHeaderCode.isBlank()) {
+                String headerStatus = companyRegistryService.getStatusByCode(maintenanceHeaderCode.trim());
+                if (headerStatus != null && !headerStatus.trim().isEmpty() && !"ACTIVE".equalsIgnoreCase(headerStatus.trim())) {
+                    writeMaintenanceResponse(response, "TENANT_INACTIVE");
+                    return false;
+                }
+            }
+            String maintenanceSubdomain = resolveTenantSubdomain(hostOnly);
+            if (maintenanceSubdomain != null && !maintenanceSubdomain.isBlank()) {
+                String maintenanceStatus = companyRegistryService.getStatusByCode(maintenanceSubdomain);
+                if (maintenanceStatus != null && !maintenanceStatus.trim().isEmpty() && !"ACTIVE".equalsIgnoreCase(maintenanceStatus.trim())) {
+                    writeMaintenanceResponse(response, "TENANT_INACTIVE");
+                    return false;
+                }
+            }
+        }
+
         // Platform-admin is main-domain only: block it on tenant subdomains (403).
         if (isPlatformPath && isTenantSubdomain) {
             try {
@@ -93,22 +119,7 @@ public class RequestInterceptor implements HandlerInterceptor {
             // by construction, so cross-tenant routing is impossible locally.
             databaseName = Registry.dbmap.get("databasename");
         } else {
-        String companyCode = request.getHeader("X-Company-Code");
-        if (companyCode == null || companyCode.trim().isEmpty()) {
-            companyCode = request.getHeader("x-company-code");
-        }
-        if (companyCode == null || companyCode.trim().isEmpty()) {
-            companyCode = request.getHeader("company_code");
-        }
-        if (companyCode == null || companyCode.trim().isEmpty()) {
-            companyCode = request.getParameter("company_code");
-        }
-        if (companyCode == null || companyCode.trim().isEmpty()) {
-            companyCode = request.getParameter("companyCode");
-        }
-        if (companyCode == null || companyCode.trim().isEmpty()) {
-            companyCode = request.getParameter("companyCode");
-        }
+        String companyCode = resolveCompanyCodeHeader(request);
 
         if (companyCode != null && !companyCode.trim().isEmpty() && companyRegistryService != null) {
             String dbFromCode = companyRegistryService.resolveDbName(companyCode.trim());
@@ -119,11 +130,31 @@ public class RequestInterceptor implements HandlerInterceptor {
             }
         }
 
+        // Maintenance stop: header points to an INACTIVE tenant (resolveDbName
+        // only returns ACTIVE, so databaseName is still null here). Platform
+        // paths are exempt: admin ops must work on INACTIVE tenants too.
+        if (!isPlatformPath && databaseName == null && companyCode != null && !companyCode.trim().isEmpty() && companyRegistryService != null) {
+            String headerStatus = companyRegistryService.getStatusByCode(companyCode.trim());
+            if (headerStatus != null && !headerStatus.trim().isEmpty() && !"ACTIVE".equalsIgnoreCase(headerStatus.trim())) {
+                writeMaintenanceResponse(response, "TENANT_INACTIVE");
+                return false;
+            }
+        }
+
         if (databaseName == null && isTenantSubdomain) {
             String subdomain = hostOnly.split("\\.")[0];
             if (subdomain != null && !subdomain.isBlank() && companyRegistryService != null) {
                 String dbFromSubdomain = companyRegistryService.resolveDbName(subdomain);
                 if (dbFromSubdomain == null || dbFromSubdomain.isBlank()) {
+                    // Maintenance stop: subdomain is registered but INACTIVE.
+                    // Unknown subdomains (no row at all) keep the old behavior below.
+                    if (!isPlatformPath) {
+                        String subStatus = companyRegistryService.getStatusByCode(subdomain);
+                        if (subStatus != null && !subStatus.trim().isEmpty() && !"ACTIVE".equalsIgnoreCase(subStatus.trim())) {
+                            writeMaintenanceResponse(response, "TENANT_INACTIVE");
+                            return false;
+                        }
+                    }
                     // Unknown subdomain: browser page loads redirect to main site,
                     // API/XHR calls get 404 so the frontend can redirect itself.
                     if (requestUri != null && requestUri.startsWith("/api/")) {
@@ -166,10 +197,36 @@ public class RequestInterceptor implements HandlerInterceptor {
                     databaseName = dbFromDomain;
                     String dbHost = companyRegistryService.resolveDbHostByDomain(domain);
                     ensureTenantDataSource(databaseName, dbHost);
+                } else if (!isPlatformPath && isTenantSubdomain) {
+                    // Maintenance stop: full-domain row exists but is INACTIVE.
+                    String domainStatus = companyRegistryService.getStatusByDomain(domain);
+                    if (domainStatus != null && !domainStatus.trim().isEmpty() && !"ACTIVE".equalsIgnoreCase(domainStatus.trim())) {
+                        writeMaintenanceResponse(response, "TENANT_INACTIVE");
+                        return false;
+                    }
                 }
             }
         } // end domain resolution
         } // end live multi-tenant resolution (local single-DB assigned above)
+
+        // Maintenance stop: registry says ACTIVE but the database is gone.
+        // Platform paths are exempt: admin ops resolve their own tenant pools.
+        if (!isPlatformPath && databaseName != null && !databaseName.isBlank()
+                && !"billing_common".equalsIgnoreCase(databaseName.trim())
+                && companyRegistryService != null && Registry.IS_ONLINE) {
+            String dbHostForCheck = null;
+            try {
+                dbHostForCheck = companyRegistryService.resolveDbHostByDatabase(databaseName.trim());
+            } catch (Exception ignored) {
+                dbHostForCheck = null;
+            }
+            boolean poolMissing = dataSourcesMtApp != null && !dataSourcesMtApp.containsKey(databaseName.trim());
+            boolean schemaMissing = isSameServerAsCommon(dbHostForCheck) && !companyRegistryService.databaseExists(databaseName.trim());
+            if (poolMissing || schemaMissing) {
+                writeMaintenanceResponse(response, "TENANT_UNAVAILABLE");
+                return false;
+            }
+        }
 
         if (databaseName == null) {
             if (Registry.IS_ONLINE) {
@@ -259,6 +316,95 @@ public class RequestInterceptor implements HandlerInterceptor {
         MDC.clear();
         MDC.put("url", domain);
         return true;
+    }
+
+    /**
+     * Company code from header or request parameter, all modes.
+     * Null when the caller sent none.
+     */
+    private String resolveCompanyCodeHeader(HttpServletRequest request) {
+        String companyCode = request.getHeader("X-Company-Code");
+        if (companyCode == null || companyCode.trim().isEmpty()) {
+            companyCode = request.getHeader("x-company-code");
+        }
+        if (companyCode == null || companyCode.trim().isEmpty()) {
+            companyCode = request.getHeader("company_code");
+        }
+        if (companyCode == null || companyCode.trim().isEmpty()) {
+            companyCode = request.getParameter("company_code");
+        }
+        if (companyCode == null || companyCode.trim().isEmpty()) {
+            companyCode = request.getParameter("companyCode");
+        }
+        if (companyCode == null || companyCode.trim().isEmpty()) {
+            return null;
+        }
+        return companyCode;
+    }
+
+    /**
+     * Tenant subdomain from any host, for the maintenance stop:
+     * sample.biziotechnologies.com -> sample (live),
+     * sample.localhost -> sample (local dev). Plain localhost,
+     * 127.0.0.1 and the main domain return null.
+     */
+    private String resolveTenantSubdomain(String hostOnly) {
+        if (hostOnly == null || hostOnly.isBlank()) {
+            return null;
+        }
+        String host = hostOnly.toLowerCase(java.util.Locale.ROOT);
+        if (host.endsWith(".biziotechnologies.com")
+                && !host.equalsIgnoreCase("biziotechnologies.com")
+                && !host.equalsIgnoreCase("www.biziotechnologies.com")) {
+            String sub = host.split("\\.")[0];
+            if (sub != null && !sub.isBlank() && !"www".equalsIgnoreCase(sub)) {
+                return sub;
+            }
+            return null;
+        }
+        if (host.endsWith(".localhost") && !host.equalsIgnoreCase("localhost")) {
+            String sub = host.split("\\.")[0];
+            if (sub != null && !sub.isBlank() && !"localhost".equalsIgnoreCase(sub)) {
+                return sub;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Maintenance stop: INACTIVE tenant or missing database. No login, no
+     * page and no API may proceed; the frontend shows a static screen.
+     */
+    private void writeMaintenanceResponse(HttpServletResponse response, String code) {
+        try {
+            TenantContextHolder.clear();
+        } catch (Exception ignored) {
+        }
+        try {
+            MDC.clear();
+        } catch (Exception ignored) {
+        }
+        try {
+            response.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+            response.setContentType("application/json;charset=UTF-8");
+            response.setHeader("Cache-Control", "no-store");
+            response.getWriter().write("{\"success\":false,\"message\":\"This workspace is temporarily unavailable. Please contact support.\",\"code\":\"" + code + "\"}");
+        } catch (Exception ignored) {
+        }
+    }
+
+    /**
+     * billing_common always lives on localhost (BillingCatalogConfig), so a
+     * schema-existence check via the common connection is only meaningful
+     * when the tenant's db_host is the same server.
+     */
+    private boolean isSameServerAsCommon(String dbHost) {
+        if (dbHost == null || dbHost.isBlank()) {
+            return true;
+        }
+        String cleaned = dbHost.trim().replace("jdbc:mysql://", "").replace("/", "");
+        String hostPart = cleaned.contains(":") ? cleaned.split(":")[0] : cleaned;
+        return hostPart.equalsIgnoreCase("localhost") || hostPart.equals("127.0.0.1");
     }
 
     private synchronized void ensureTenantDataSource(String tenant, String dbHost) {

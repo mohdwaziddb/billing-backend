@@ -124,6 +124,66 @@ public class CompanyRegistryService {
     }
 
     /**
+     * Raw status (ACTIVE/INACTIVE/...) for a company code, any status.
+     * Null when no registry row exists.
+     */
+    public String getStatusByCode(String companyCode) {
+        if (companyCode == null || companyCode.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            String sql = "SELECT status FROM billing_common.company_registry WHERE company_code=? LIMIT 1";
+            try {
+                return jdbcTemplate.queryForObject(sql, String.class, companyCode.trim().toUpperCase());
+            } catch (Exception e) {
+                return jdbcTemplate.queryForObject(sql, String.class, companyCode.trim());
+            }
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Raw status for a full domain (company_registry.domain column).
+     * Null when no registry row exists.
+     */
+    public String getStatusByDomain(String domain) {
+        if (domain == null || domain.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            String sql = "SELECT status FROM billing_common.company_registry WHERE domain=? LIMIT 1";
+            try {
+                return jdbcTemplate.queryForObject(sql, String.class, domain.trim());
+            } catch (Exception e) {
+                String domainWithoutPort = domain.split(":")[0];
+                return jdbcTemplate.queryForObject(sql, String.class, domainWithoutPort);
+            }
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * True when the schema exists on the billing_common server.
+     * Fail-open (true) when the check itself errors, so a permissions
+     * issue never shows a false maintenance page; the pool then decides.
+     */
+    public boolean databaseExists(String databaseName) {
+        if (databaseName == null || databaseName.trim().isEmpty()) {
+            return false;
+        }
+        try {
+            Integer count = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME=?",
+                    Integer.class, databaseName.trim());
+            return count != null && count > 0;
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
+    /**
      * Registry gate: tenant pool/connection is created ONLY if its database is
      * registered in billing_common.company_registry (common-DB-driven tenancy).
      * Any status allowed here (admin ops need INACTIVE tenants too); request
