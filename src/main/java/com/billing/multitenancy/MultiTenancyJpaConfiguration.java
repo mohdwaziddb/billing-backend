@@ -136,6 +136,12 @@ public class MultiTenancyJpaConfiguration {
                     e.printStackTrace();
                 }
             }
+            // Registry-driven tenants: every database registered in
+            // billing_common.company_registry gets WRITE+READ pools at startup,
+            // otherwise the map stays empty and the first JPA access fails with
+            // "DataSources not initialized for tenant" and kills the boot.
+            // (ACTIVE or INACTIVE alike; request routing still honors status.)
+            addRegistryTenants(result, dbSet, billingCommonJdbcTemplate, url, readerUrl, username, password, driverClassName);
         } else {
             // local: create for each unique tenant in domainInfoJSON
             for (String key : CompanyDomainInfo.domainInfoJSON.keySet()) {
