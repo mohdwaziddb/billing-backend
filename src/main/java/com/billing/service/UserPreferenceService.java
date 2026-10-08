@@ -41,6 +41,9 @@ public class UserPreferenceService {
     @Transactional(readOnly = true)
     public UserPreferenceResponse getPreferences(String email) {
         User user = requireUser(email);
+        if (isSyntheticUser(user)) {
+            return UserPreferenceResponse.builder().darkModeEnabled(false).build();
+        }
         UserPreference preference = userPreferenceRepository.findByUser(user)
                 .orElseGet(() -> UserPreference.builder().user(user).darkModeEnabled(false).build());
         return toResponse(preference);
@@ -65,6 +68,9 @@ public class UserPreferenceService {
     @Transactional
     public UserPreferenceResponse updatePreferences(String email, UserPreferenceRequest request) {
         User user = requireUser(email);
+        if (isSyntheticUser(user)) {
+            return UserPreferenceResponse.builder().darkModeEnabled(request.isDarkModeEnabled()).build();
+        }
         UserPreference preference = userPreferenceRepository.findByUser(user)
                 .orElseGet(() -> UserPreference.builder().user(user).build());
         preference.setDarkModeEnabled(request.isDarkModeEnabled());
@@ -84,6 +90,9 @@ public class UserPreferenceService {
             return emptyColumnPreferenceResponse(normalizedTableName);
         }
         User user = requireUser(email);
+        if (isSyntheticUser(user)) {
+            return emptyColumnPreferenceResponse(normalizedTableName);
+        }
         UserPreference preference = userPreferenceRepository.findByUser(user)
                 .orElseGet(() -> UserPreference.builder().user(user).darkModeEnabled(false).build());
         Map<String, List<String>> preferences = readColumnPreferences(preference);
@@ -150,6 +159,11 @@ public class UserPreferenceService {
             return emptyColumnPreferenceResponse(normalizedTableName);
         }
         User user = requireUser(email);
+        if (isSyntheticUser(user)) {
+            List<String> normalizedColumns = normalizeVisibleColumns(request == null ? null : request.getVisibleColumns());
+            UserPreference transientPreference = UserPreference.builder().user(user).darkModeEnabled(false).build();
+            return toColumnPreferenceResponse(transientPreference, user, normalizedTableName, normalizedColumns);
+        }
         UserPreference preference = userPreferenceRepository.findByUser(user)
                 .orElseGet(() -> UserPreference.builder().user(user).darkModeEnabled(false).build());
         List<String> normalizedColumns = normalizeVisibleColumns(request == null ? null : request.getVisibleColumns());
@@ -200,6 +214,15 @@ public class UserPreferenceService {
 
     private User requireUser(String email) {
         return accessControlService.getCurrentUser(email);
+    }
+
+    /**
+     * Tenant super-admin sessions use a synthetic User that is never persisted
+     * (no id). Any repository call with it fails (TransientObjectException),
+     * so callers serve defaults instead of touching the database.
+     */
+    private static boolean isSyntheticUser(User user) {
+        return user == null || user.getId() == null;
     }
 
     private UserPreferenceResponse toResponse(UserPreference preference) {
