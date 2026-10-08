@@ -53,6 +53,11 @@ public class CompanySettingsRequest {
 
     private String websiteUrl;
 
+    /**
+     * @deprecated Immutable server-side. Always ignored on update; kept only
+     * for backwards-compatible deserialization of old clients.
+     */
+    @Deprecated
     private String databaseName;
 
     private String bankName;

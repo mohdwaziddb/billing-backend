@@ -309,8 +309,14 @@ public class InvoiceService {
     }
 
     public Invoice getInvoiceOrThrow(Company company, Long invoiceId) {
-        return invoiceRepository.findById(invoiceId)
+        Invoice invoice = invoiceRepository.findById(invoiceId)
                 .orElseThrow(() -> new ResourceNotFoundException("Invoice not found"));
+        // Soft-deleted rows must behave as not-found so enumeration of
+        // deleted IDs does not leak existence/timing info.
+        if (invoice.isDeleted()) {
+            throw new ResourceNotFoundException("Invoice not found");
+        }
+        return invoice;
     }
 
     public void applyPayment(Invoice invoice, BigDecimal amount) {

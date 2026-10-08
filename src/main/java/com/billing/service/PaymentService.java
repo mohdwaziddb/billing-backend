@@ -280,8 +280,12 @@ public class PaymentService {
     }
 
     private Payment getPaymentOrThrow(Company company, Long paymentId) {
-        return paymentRepository.findById(paymentId)
+        Payment payment = paymentRepository.findById(paymentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found"));
+        if (payment.isDeleted()) {
+            throw new ResourceNotFoundException("Payment not found");
+        }
+        return payment;
     }
 
     private Invoice resolveInvoice(Company company, Long invoiceId, Customer customer) {

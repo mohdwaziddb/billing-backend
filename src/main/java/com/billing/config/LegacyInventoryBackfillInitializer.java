@@ -175,7 +175,10 @@ public class LegacyInventoryBackfillInitializer implements ApplicationRunner {
         if (!historicalItems.isEmpty()) {
             return historicalItems.get(0).getInvoice().getInvoiceDate();
         }
-        return createdAt != null ? createdAt.toLocalDateTime().toLocalDate() : LocalDate.now();
+        // Stored timestamps are UTC wall-time; opening-day grouping is IST.
+        return createdAt != null
+                ? com.billing.core.AppDateTime.toIstDate(createdAt.toLocalDateTime())
+                : com.billing.core.AppDateTime.istToday();
     }
 
     private BigDecimal scale(BigDecimal value) {

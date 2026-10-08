@@ -25,8 +25,30 @@ public class SecretEncryptionService {
     private final SecureRandom secureRandom = new SecureRandom();
     private final SecretKeySpec keySpec;
 
-    public SecretEncryptionService(@Value("${app.encryption.secret:${app.jwt.secret:billing-default-secret}}") String secret) {
+    public SecretEncryptionService(
+            @Value("${app.encryption.secret:}") String encryptionSecret,
+            @Value("${app.jwt.secret:}") String jwtSecret) {
+        String secret = (encryptionSecret != null && !encryptionSecret.isBlank())
+                ? encryptionSecret
+                : jwtSecret;
+        if (secret == null || secret.isBlank()
+                || secret.contains("CHANGE-ME")
+                || secret.contains("billing-default-secret")
+                || (secret.contains("local-dev-only-dummy-secret") && isProdProfile())) {
+            throw new IllegalStateException("Secret encryption is not configured. Set the APP_ENCRYPTION_SECRET environment variable.");
+        }
+        if (secret.length() < 32) {
+            throw new IllegalStateException("Secret encryption configuration is invalid. Ensure APP_ENCRYPTION_SECRET is at least 32 characters.");
+        }
+        if (encryptionSecret == null || encryptionSecret.isBlank()) {
+            log.warn("APP_ENCRYPTION_SECRET is not set; falling back to JWT secret for decryption compatibility. Set a separate APP_ENCRYPTION_SECRET and rotate stored secrets.");
+        }
         this.keySpec = new SecretKeySpec(sha256(secret), "AES");
+    }
+
+    private boolean isProdProfile() {
+        String profile = System.getenv("SPRING_PROFILES_ACTIVE");
+        return profile != null && profile.contains("prod");
     }
 
     public String encrypt(String plainText) {

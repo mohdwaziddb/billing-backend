@@ -1,5 +1,6 @@
 package com.billing.multitenancy;
 
+import com.billing.core.AppDomains;
 import com.billing.core.CompanyDomainInfo;
 import com.billing.core.Registry;
 import com.billing.core.appconfig.ApplicationConstant;
@@ -37,7 +38,7 @@ public class RequestInterceptor implements HandlerInterceptor {
         } catch (Exception e) {
             domain = request.getHeader("Host");
             if (domain == null) {
-                domain = "localhost:9009";
+                domain = AppDomains.LOCAL_BACKEND_HOST;
             }
         }
 
@@ -54,9 +55,9 @@ public class RequestInterceptor implements HandlerInterceptor {
             hostOnly = hostOnly.split(":")[0];
         }
         boolean isPlatformPath = requestUri != null && requestUri.startsWith("/api/v1/platform-admin");
-        boolean isTenantSubdomain = hostOnly != null && hostOnly.toLowerCase().endsWith(".biziotechnologies.com")
-                && !hostOnly.equalsIgnoreCase("biziotechnologies.com")
-                && !hostOnly.equalsIgnoreCase("www.biziotechnologies.com");
+        // Live tenant subdomain check — single shared domain constants in
+        // core/AppDomains. Domain change ho to sirf wahi file badlo.
+        boolean isTenantSubdomain = hostOnly != null && AppDomains.isLiveTenantSubdomain(hostOnly);
 
         // Maintenance stop (all modes, including local single-DB dev):
         // an INACTIVE tenant shows the maintenance screen everywhere.
@@ -88,7 +89,7 @@ public class RequestInterceptor implements HandlerInterceptor {
         if (isPlatformPath && isTenantSubdomain) {
             try {
                 response.sendError(HttpServletResponse.SC_FORBIDDEN,
-                        "Platform admin is available only on biziotechnologies.com");
+                        "Platform admin is available only on " + AppDomains.MAIN_DOMAIN);
             } catch (Exception ignored) {}
             return false;
         }
@@ -141,6 +142,24 @@ public class RequestInterceptor implements HandlerInterceptor {
             }
         }
 
+        // Ghost-tenant stop: X-Company-Code header names a code with NO registry
+        // row at all (status blank). Never fall through to the default/sample DB —
+        // that would silently log the user into the wrong database (local dev calls
+        // the backend directly, so Host-based unknown-subdomain 404 below never fires
+        // there). API/XHR calls get 404 so the frontend can show "unknown workspace".
+        // No header at all (plain localhost, pre-login branding) keeps the old
+        // fallback below — only a WRONG code is rejected here. Platform paths exempt.
+        if (!isPlatformPath && databaseName == null && companyCode != null && !companyCode.trim().isEmpty()
+                && companyRegistryService != null && requestUri != null && requestUri.startsWith("/api/")) {
+            String headerStatus = companyRegistryService.getStatusByCode(companyCode.trim());
+            if (headerStatus == null || headerStatus.trim().isEmpty()) {
+                try {
+                    response.sendError(HttpServletResponse.SC_NOT_FOUND, "Company not found");
+                } catch (Exception ignored) {}
+                return false;
+            }
+        }
+
         if (databaseName == null && isTenantSubdomain) {
             String subdomain = hostOnly.split("\\.")[0];
             if (subdomain != null && !subdomain.isBlank() && companyRegistryService != null) {
@@ -163,7 +182,7 @@ public class RequestInterceptor implements HandlerInterceptor {
                         } catch (Exception ignored) {}
                     } else {
                         try {
-                            response.sendRedirect("https://biziotechnologies.com");
+                            response.sendRedirect(AppDomains.MAIN_SITE_URL);
                         } catch (Exception ignored) {}
                     }
                     return false;
@@ -268,7 +287,7 @@ public class RequestInterceptor implements HandlerInterceptor {
             // Live -> main site; local -> 400 so misrouting never serves wrong company data.
             if (Registry.IS_ONLINE) {
                 try {
-                    response.sendRedirect("https://biziotechnologies.com");
+                    response.sendRedirect(AppDomains.MAIN_SITE_URL);
                 } catch (Exception ignored) {}
                 return false;
             }
@@ -344,27 +363,28 @@ public class RequestInterceptor implements HandlerInterceptor {
 
     /**
      * Tenant subdomain from any host, for the maintenance stop:
-     * sample.biziotechnologies.com -> sample (live),
+     * sample.&lt;main-domain&gt; -> sample (live),
      * sample.localhost -> sample (local dev). Plain localhost,
      * 127.0.0.1 and the main domain return null.
+     * Domain strings: core/AppDomains — do not hardcode here.
      */
     private String resolveTenantSubdomain(String hostOnly) {
         if (hostOnly == null || hostOnly.isBlank()) {
             return null;
         }
         String host = hostOnly.toLowerCase(java.util.Locale.ROOT);
-        if (host.endsWith(".biziotechnologies.com")
-                && !host.equalsIgnoreCase("biziotechnologies.com")
-                && !host.equalsIgnoreCase("www.biziotechnologies.com")) {
+        if (host.endsWith(AppDomains.LIVE_TENANT_SUFFIX)
+                && !AppDomains.MAIN_DOMAIN.equalsIgnoreCase(host)
+                && !AppDomains.WWW_MAIN_DOMAIN.equalsIgnoreCase(host)) {
             String sub = host.split("\\.")[0];
             if (sub != null && !sub.isBlank() && !"www".equalsIgnoreCase(sub)) {
                 return sub;
             }
             return null;
         }
-        if (host.endsWith(".localhost") && !host.equalsIgnoreCase("localhost")) {
+        if (host.endsWith(AppDomains.LOCAL_TENANT_SUFFIX) && !host.equalsIgnoreCase(AppDomains.LOCALHOST)) {
             String sub = host.split("\\.")[0];
-            if (sub != null && !sub.isBlank() && !"localhost".equalsIgnoreCase(sub)) {
+            if (sub != null && !sub.isBlank() && !AppDomains.LOCALHOST.equalsIgnoreCase(sub)) {
                 return sub;
             }
         }
@@ -404,7 +424,7 @@ public class RequestInterceptor implements HandlerInterceptor {
         }
         String cleaned = dbHost.trim().replace("jdbc:mysql://", "").replace("/", "");
         String hostPart = cleaned.contains(":") ? cleaned.split(":")[0] : cleaned;
-        return hostPart.equalsIgnoreCase("localhost") || hostPart.equals("127.0.0.1");
+        return hostPart.equalsIgnoreCase(AppDomains.LOCALHOST) || hostPart.equals(AppDomains.LOCAL_LOOPBACK);
     }
 
     private synchronized void ensureTenantDataSource(String tenant, String dbHost) {

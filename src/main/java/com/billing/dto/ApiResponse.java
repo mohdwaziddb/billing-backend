@@ -20,7 +20,7 @@ public class ApiResponse<T> {
                 .success(true)
                 .message(message)
                 .data(data)
-                .timestamp(LocalDateTime.now())
+                .timestamp(com.billing.core.AppDateTime.istNow())
                 .build();
     }
 
@@ -28,7 +28,7 @@ public class ApiResponse<T> {
         return ApiResponse.<T>builder()
                 .success(false)
                 .message(message)
-                .timestamp(LocalDateTime.now())
+                .timestamp(com.billing.core.AppDateTime.istNow())
                 .build();
     }
 }

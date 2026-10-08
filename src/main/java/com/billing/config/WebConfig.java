@@ -3,7 +3,6 @@ package com.billing.config;
 import com.billing.multitenancy.RequestInterceptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
@@ -21,10 +20,9 @@ public class WebConfig implements WebMvcConfigurer {
         WebMvcConfigurer.super.addInterceptors(registry);
     }
 
-    @Override
-    public void addCorsMappings(CorsRegistry registry) {
-        registry.addMapping("/**").allowedHeaders("*").allowedMethods("*").allowedOrigins("*");
-    }
+    // SECURITY: CORS is configured centrally in SecurityConfig with explicit
+    // origins. Do NOT add a wildcard mapping here — it would override the
+    // hardened policy and allow any origin with credentials.
 
     @Override
     public void addViewControllers(ViewControllerRegistry registry) {

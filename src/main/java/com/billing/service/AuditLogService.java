@@ -207,8 +207,10 @@ public class AuditLogService {
             if (hasText(actionType)) {
                 predicates.add(builder.equal(builder.lower(root.get("actionType")), actionType.trim().toLowerCase()));
             }
-            LocalDateTime from = parseDate(startDate, LocalTime.MIN);
-            LocalDateTime to = parseDate(endDate, LocalTime.MAX);
+            // User picks IST calendar days; stored createdAt is UTC wall-time —
+            // convert day bounds so the filter matches what the user sees.
+            LocalDateTime from = istBound(startDate, true);
+            LocalDateTime to = istBound(endDate, false);
             if (from != null) {
                 predicates.add(builder.greaterThanOrEqualTo(root.get("createdAt"), from));
             }
@@ -388,6 +390,20 @@ public class AuditLogService {
         } catch (RuntimeException ex) {
             throw new BadRequestException("Invalid audit log date filter");
         }
+    }
+
+    private LocalDateTime istBound(String value, boolean startOfDay) {
+        if (!hasText(value)) {
+            return null;
+        }
+        java.time.LocalDate day;
+        try {
+            day = LocalDate.parse(value.trim());
+        } catch (RuntimeException ex) {
+            throw new BadRequestException("Invalid audit log date filter");
+        }
+        LocalDateTime[] bounds = com.billing.core.AppDateTime.istDayBounds(day);
+        return startOfDay ? bounds[0] : bounds[1];
     }
 
     private boolean hasText(String value) {

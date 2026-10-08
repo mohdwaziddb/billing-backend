@@ -208,7 +208,8 @@ public class InvoiceTemplateRenderService {
 
     private Map<String, Object> buildInvoiceModel(Company company, Invoice invoice, CompanyInvoiceSetting settings, InvoiceTemplateDefinition definition) {
         Map<String, Object> root = baseModel(company, settings, definition);
-        LocalDateTime renderedAt = LocalDateTime.now();
+        // Print-time shown on the PDF: IST wall-time, not server UTC.
+        LocalDateTime renderedAt = com.billing.core.AppDateTime.istNow();
         List<Map<String, Object>> itemRows = new ArrayList<>();
         for (InvoiceItem item : invoice.getItems()) {
             Map<String, Object> row = new LinkedHashMap<>();
@@ -264,7 +265,7 @@ public class InvoiceTemplateRenderService {
 
     private Map<String, Object> buildSampleModel(Company company, CompanyInvoiceSetting settings, InvoiceTemplateDefinition definition) {
         Map<String, Object> root = baseModel(company, settings, definition);
-        LocalDateTime renderedAt = LocalDateTime.now();
+        LocalDateTime renderedAt = com.billing.core.AppDateTime.istNow();
         List<Map<String, Object>> itemRows = List.of(
                 item("Demo Office Chair", "9401", 6, "4500.00", "1500.00", "25500.00", "2295.00", "2295.00", "0.00", "30090.00", "CGST 9% + SGST 9%"),
                 item("Demo Workstation Desk", "9403", 3, "8200.00", "600.00", "24000.00", "2160.00", "2160.00", "0.00", "28320.00", "CGST 9% + SGST 9%"),
@@ -272,8 +273,8 @@ public class InvoiceTemplateRenderService {
         );
         root.put("invoice", invoiceData(
                 "INV-SAMPLE-20260629-001",
-                LocalDate.now(),
-                LocalDate.now().plusDays(7),
+                com.billing.core.AppDateTime.istToday(),
+                com.billing.core.AppDateTime.istToday().plusDays(7),
                 renderedAt,
                 coalesce(company.getState(), "Maharashtra"),
                 "Demo Retail Private Limited",
@@ -403,7 +404,7 @@ public class InvoiceTemplateRenderService {
                 "version", definition.getVersion(),
                 "colors", definition.getDefaultColors()
         ));
-        model.put("generatedAt", INDIAN_DATE_TIME_FORMAT.format(LocalDateTime.now()));
+        model.put("generatedAt", INDIAN_DATE_TIME_FORMAT.format(com.billing.core.AppDateTime.istNow()));
         return model;
     }
 

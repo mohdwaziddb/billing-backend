@@ -17,4 +17,6 @@ public class UserProfileResponse {
     private boolean active;
     private LocalDateTime createdAt;
     private CompanySummary company;
+    /** True only for tenant super-admin sessions (additive; defaults false). */
+    private boolean superAdmin;
 }

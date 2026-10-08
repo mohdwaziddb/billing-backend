@@ -124,6 +124,7 @@ public class AccessControlService {
                 .role(RoleName.OWNER)
                 .active(true)
                 .company(company)
+                .superAdmin(true)
                 .build();
     }
 

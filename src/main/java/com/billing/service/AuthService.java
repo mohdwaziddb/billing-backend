@@ -94,6 +94,7 @@ public class AuthService {
                 .role(RoleName.OWNER)
                 .active(true)
                 .company(company)
+                .superAdmin(true)
                 .build();
         UserProfileResponse profileResponse = userMapper.toProfile(synthetic, company);
         return AuthResponse.builder()

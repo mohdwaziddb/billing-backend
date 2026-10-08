@@ -1,5 +1,6 @@
 package com.billing.platform.aws;
 
+import com.billing.core.AppDomains;
 import com.billing.core.Registry;
 import com.billing.platform.tomcat.AbstractDataSourceService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -44,7 +45,7 @@ public class AwsDataSourceService extends AbstractDataSourceService {
             }
             if (database == null) {
                 String url = request.getRequestURL().toString();
-                String domain = url.split("/").length > 2 ? url.split("/")[2] : "localhost:9009";
+                String domain = url.split("/").length > 2 ? url.split("/")[2] : AppDomains.LOCAL_BACKEND_HOST;
                 database = Registry.dbmap.get("databasename");
                 if (database == null) {
                     database = "billing_common";

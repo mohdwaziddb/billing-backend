@@ -25,6 +25,7 @@ public class UserMapper {
                 .active(user.isActive())
                 .createdAt(user.getCreatedAt())
                 .company(toCompanySummary(company))
+                .superAdmin(user.isSuperAdmin())
                 .build();
     }
 

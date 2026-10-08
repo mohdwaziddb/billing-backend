@@ -466,7 +466,7 @@ public class DashboardService {
                 .filter(payment -> endDate == null || (payment.getPaymentDate() != null && !payment.getPaymentDate().isAfter(endDate)))
                 .collect(Collectors.groupingBy(payment -> payment.getInvoice().getId(),
                         Collectors.mapping(Payment::getAmount, Collectors.reducing(BigDecimal.ZERO, BigDecimal::add))));
-        boolean useCurrentBalance = endDate == null || !endDate.isBefore(LocalDate.now());
+        boolean useCurrentBalance = endDate == null || !endDate.isBefore(com.billing.core.AppDateTime.istToday());
 
         return invoices.stream()
                 .filter(invoice -> endDate == null || (invoice.getInvoiceDate() != null && !invoice.getInvoiceDate().isAfter(endDate)))
@@ -632,11 +632,12 @@ public class DashboardService {
     }
 
     private LocalDate toLocalDate(LocalDateTime value) {
-        return value == null ? null : value.toLocalDate();
+        // Stored datetimes are UTC wall-time; user-facing day grouping is IST.
+        return com.billing.core.AppDateTime.toIstDate(value);
     }
 
     private BigDecimal calculateOutstandingAsOf(List<Customer> customers, List<Invoice> invoices, List<Payment> payments, LocalDate endDate) {
-        if (endDate == null || !endDate.isBefore(LocalDate.now())) {
+        if (endDate == null || !endDate.isBefore(com.billing.core.AppDateTime.istToday())) {
             return customers.stream()
                     .map(Customer::getCurrentBalance)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);

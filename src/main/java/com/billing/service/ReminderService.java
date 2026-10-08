@@ -69,7 +69,7 @@ public class ReminderService {
         if (overdueDays == null) {
             Page<OverdueCustomerResponse> responsePage = customerRepository
                     .findOutstandingPageByCompanyWithFilters(company, normalizedSearch, scaledMinBalance, pageable)
-                    .map(customer -> toOverdueCustomerResponse(company, customer, LocalDate.now()))
+                    .map(customer -> toOverdueCustomerResponse(company, customer, com.billing.core.AppDateTime.istToday()))
                     .map(item -> item.orElse(null));
             List<OverdueCustomerResponse> records = responsePage.getContent().stream()
                     .filter(Objects::nonNull)
@@ -260,7 +260,7 @@ public class ReminderService {
     }
 
     private List<OverdueCustomerResponse> buildOverdueCustomers(Company company, String search, BigDecimal minBalance, Integer overdueDays) {
-        LocalDate today = LocalDate.now();
+        LocalDate today = com.billing.core.AppDateTime.istToday();
 
         return customerRepository.findByCurrentBalanceGreaterThanOrderByCurrentBalanceDesc( BigDecimal.ZERO).stream()
                 .map(customer -> toOverdueCustomerResponse(company, customer, today).orElse(null))
@@ -340,7 +340,7 @@ public class ReminderService {
         variables.put("Company_Name", company.getName());
         variables.put("Company_Email", company.getEmail());
         variables.put("Company_Phone", company.getPhone());
-        variables.put("Current_Date", LocalDate.now().toString());
+        variables.put("Current_Date", com.billing.core.AppDateTime.istToday().toString());
         return variables;
     }
 

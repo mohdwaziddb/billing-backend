@@ -67,7 +67,7 @@ public class AnalyticsService {
         List<Payment> payments = paymentsFor(company);
         List<Customer> customers = customersFor(company);
 
-        LocalDate today = LocalDate.now();
+        LocalDate today = com.billing.core.AppDateTime.istToday();
         LocalDate yesterday = today.minusDays(1);
         YearMonth thisMonth = YearMonth.from(today);
         YearMonth lastMonth = thisMonth.minusMonths(1);
@@ -91,7 +91,7 @@ public class AnalyticsService {
                 .count();
         long dueCustomers = customers.stream().filter(customer -> scale(customer.getCurrentBalance()).compareTo(BigDecimal.ZERO) > 0).count();
         long newCustomers = customers.stream()
-                .filter(customer -> customer.getCreatedAt() != null && isWithinRange(customer.getCreatedAt().toLocalDate(), startDate, endDate))
+                .filter(customer -> customer.getCreatedAt() != null && isWithinRange(com.billing.core.AppDateTime.toIstDate(customer.getCreatedAt()), startDate, endDate))
                 .count();
 
         BigDecimal totalSales = filteredInvoices.stream()
@@ -139,11 +139,11 @@ public class AnalyticsService {
         int parsedMonth = DataTypeUtility.integerValue(param.get("month"));
         int targetYear = parsedYear;
         if (targetYear == 0) {
-            targetYear = LocalDate.now().getYear();
+            targetYear = com.billing.core.AppDateTime.istToday().getYear();
         }
         int targetMonth = parsedMonth;
         if (targetMonth == 0) {
-            targetMonth = LocalDate.now().getMonthValue();
+            targetMonth = com.billing.core.AppDateTime.istToday().getMonthValue();
         }
         return dayWiseSales(email, targetYear, targetMonth);
     }
@@ -153,7 +153,7 @@ public class AnalyticsService {
         int parsedYear = DataTypeUtility.integerValue(param.get("year"));
         int targetYear = parsedYear;
         if (targetYear == 0) {
-            targetYear = LocalDate.now().getYear();
+            targetYear = com.billing.core.AppDateTime.istToday().getYear();
         }
         return monthWiseSales(email, targetYear);
     }
@@ -442,7 +442,7 @@ public class AnalyticsService {
         List<Customer> customers = customersFor(company);
         List<Expense> expenses = expensesFor(company);
 
-        LocalDate safeEnd = endDate != null ? endDate : LocalDate.now();
+        LocalDate safeEnd = endDate != null ? endDate : com.billing.core.AppDateTime.istToday();
         LocalDate safeStart = startDate != null ? startDate : safeEnd.minusDays(29);
 
         List<Invoice> filteredInvoices = invoices.stream()
@@ -466,7 +466,7 @@ public class AnalyticsService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal outstandingAmount = calculateOutstandingAsOf(customers, invoices, payments, safeEnd);
         long newCustomers = customers.stream()
-                .filter(customer -> customer.getCreatedAt() != null && isWithinRange(customer.getCreatedAt().toLocalDate(), safeStart, safeEnd))
+                .filter(customer -> customer.getCreatedAt() != null && isWithinRange(com.billing.core.AppDateTime.toIstDate(customer.getCreatedAt()), safeStart, safeEnd))
                 .count();
 
         List<LocalDate> periodStarts = buildPeriodStarts(safeStart, safeEnd);
@@ -498,7 +498,7 @@ public class AnalyticsService {
                     .map(Expense::getAmount)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
             long periodNewCustomers = customers.stream()
-                    .filter(customer -> customer.getCreatedAt() != null && isWithinRange(customer.getCreatedAt().toLocalDate(), periodStart, periodEnd))
+                    .filter(customer -> customer.getCreatedAt() != null && isWithinRange(com.billing.core.AppDateTime.toIstDate(customer.getCreatedAt()), periodStart, periodEnd))
                     .count();
 
             runningOutstanding = scale(runningOutstanding.add(periodSales).subtract(periodCollection));
@@ -580,7 +580,7 @@ public class AnalyticsService {
     }
 
     private BigDecimal calculateOutstandingAsOf(List<Customer> customers, List<Invoice> invoices, List<Payment> payments, LocalDate endDate) {
-        if (endDate == null || !endDate.isBefore(LocalDate.now())) {
+        if (endDate == null || !endDate.isBefore(com.billing.core.AppDateTime.istToday())) {
             return customers.stream()
                     .map(Customer::getCurrentBalance)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);

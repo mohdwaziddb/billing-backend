@@ -31,7 +31,7 @@ public class EmailTemplateVariableService {
         variables.put("Company_Name", company.getName());
         variables.put("Company_Email", company.getEmail());
         variables.put("Company_Phone", company.getPhone());
-        variables.put("Current_Date", LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE));
+        variables.put("Current_Date", com.billing.core.AppDateTime.istToday().format(DateTimeFormatter.ISO_LOCAL_DATE));
         return variables;
     }
 

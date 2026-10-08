@@ -33,7 +33,7 @@ public class GlobalExceptionHandler {
                 .success(false)
                 .message("Validation failed")
                 .data(errors)
-                .timestamp(java.time.LocalDateTime.now())
+                .timestamp(com.billing.core.AppDateTime.istNow())
                 .build());
     }
 
@@ -97,8 +97,10 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(IllegalStateException.class)
     public ResponseEntity<ApiResponse<Void>> handleIllegalState(IllegalStateException ex) {
         log.error("Configuration error: {}", ex.getMessage(), ex);
+        // SECURITY: never echo internal messages (tenant names, secret status)
+        // to the client. Log full detail server-side only.
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(ApiResponse.error(ex.getMessage()));
+                .body(ApiResponse.error("An unexpected error occurred"));
     }
 
     @ExceptionHandler(Exception.class)

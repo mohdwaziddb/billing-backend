@@ -67,7 +67,7 @@ public class AiService {
         try {
             List<Message> historyMessages = toMessages(request.getHistory());
             String rawContent = chatClient.prompt()
-                    .system(SYSTEM_PROMPT + "\n\nCurrent date: " + LocalDate.now() + " (use this as today's date for all date-related questions).")
+                    .system(SYSTEM_PROMPT + "\n\nCurrent date: " + com.billing.core.AppDateTime.istToday() + " (use this as today's date for all date-related questions).")
                     .messages(historyMessages)
                     .user(request.getMessage())
                     .call()

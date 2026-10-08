@@ -61,4 +61,14 @@ public class User extends BaseEntity {
 
     @Transient
     private Company company;
+
+    /**
+     * Display-only marker for tenant super-admin sessions. Synthetic users
+     * built for SUPER_ADMIN logins set this true; real users always false.
+     * Never persisted (@Transient) — only flows into the profile response
+     * so the UI can show a "SUPER ADMIN" chip instead of the OWNER role.
+     */
+    @Transient
+    @Builder.Default
+    private boolean superAdmin = false;
 }

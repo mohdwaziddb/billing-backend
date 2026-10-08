@@ -65,7 +65,7 @@ public class BillingAiToolService {
     public String getSalesSummary() {
         try {
             Company company = accessControlService.getCurrentCompany(); // for per-tenant
-            LocalDate today = LocalDate.now();
+            LocalDate today = com.billing.core.AppDateTime.istToday();
             AnalyticsSummaryResponse todayStats = analyticsService.summary("x", today, today);
             AnalyticsSummaryResponse totals = analyticsService.summary("x", MIN_DATE, today);
             AnalyticsSummaryResponse thisMonth = analyticsService.summary("x", today.withDayOfMonth(1), today);
@@ -91,7 +91,7 @@ public class BillingAiToolService {
     @Tool(name = "get_daily_collection_chart", description = "Get day-wise sales and collection amounts for the CURRENT month (today's month). Use this when the user asks for a graph or chart of sales or collection. This tool always uses the current month, so do not ask the user for a month.")
     public String getDailyCollectionChart() {
         try {
-            LocalDate today = LocalDate.now();
+            LocalDate today = com.billing.core.AppDateTime.istToday();
             int targetMonth = today.getMonthValue();
             int targetYear = today.getYear();
             List<SalesChartPointResponse> salesPoints = analyticsService.dayWiseSales("x", targetYear, targetMonth);
@@ -253,7 +253,7 @@ public class BillingAiToolService {
         }
         InvoiceRequest request = new InvoiceRequest();
         request.setCustomerId(customerId);
-        request.setInvoiceDate(parseDate(invoiceDate, LocalDate.now()));
+        request.setInvoiceDate(parseDate(invoiceDate, com.billing.core.AppDateTime.istToday()));
         request.setDiscountAmount(discountAmount);
         request.setPaidAmount(paidAmount);
         request.setPaymentMode(blankToNull(paymentMode));
@@ -297,7 +297,7 @@ public class BillingAiToolService {
         request.setCustomerId(customerId);
         request.setInvoiceId(invoiceId);
         request.setAmount(amount);
-        request.setPaymentDate(parseDate(paymentDate, LocalDate.now()));
+        request.setPaymentDate(parseDate(paymentDate, com.billing.core.AppDateTime.istToday()));
         request.setMode(mode.trim());
         request.setRemarks(blankToNull(remarks));
         try {
@@ -393,7 +393,7 @@ public class BillingAiToolService {
             @ToolParam(description = "Start date in YYYY-MM-DD format. Optional, defaults to 30 days ago.", required = false) String startDate,
             @ToolParam(description = "End date in YYYY-MM-DD format. Optional, defaults to today.", required = false) String endDate) {
         try {
-            LocalDate today = LocalDate.now();
+            LocalDate today = com.billing.core.AppDateTime.istToday();
             LocalDate safeStart = parseDate(startDate, today.minusDays(29));
             LocalDate safeEnd = parseDate(endDate, today);
             if (safeStart.isAfter(safeEnd)) {
@@ -473,7 +473,7 @@ public class BillingAiToolService {
             @ToolParam(description = "End date in YYYY-MM-DD format. Optional, defaults to today.", required = false) String endDate,
             @ToolParam(description = "How many products to show, between 1 and 10. Defaults to 5.", required = false) Integer limit) {
         try {
-            LocalDate today = LocalDate.now();
+            LocalDate today = com.billing.core.AppDateTime.istToday();
             LocalDate safeStart = parseDate(startDate, today.minusDays(29));
             LocalDate safeEnd = parseDate(endDate, today);
             if (safeStart.isAfter(safeEnd)) {

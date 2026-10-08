@@ -31,8 +31,10 @@ public class JwtService {
 
     @PostConstruct
     public void validateJwtSecret() {
-        if (jwtSecret == null || jwtSecret.isBlank()) {
-            throw new IllegalStateException("JWT secret is not configured. Set the JWT_SECRET environment variable or app.jwt.secret property.");
+        if (jwtSecret == null || jwtSecret.isBlank()
+                || jwtSecret.contains("CHANGE-ME")
+                || jwtSecret.length() < 32) {
+            throw new IllegalStateException("JWT secret is not configured. Set the JWT_SECRET environment variable to a 32+ character secret.");
         }
     }
 
@@ -139,8 +141,10 @@ public class JwtService {
     }
 
     private SecretKey getSigningKey() {
-        if (jwtSecret == null || jwtSecret.isBlank()) {
-            throw new IllegalStateException("JWT secret is not configured. Set the JWT_SECRET environment variable or app.jwt.secret property.");
+        if (jwtSecret == null || jwtSecret.isBlank()
+                || jwtSecret.contains("CHANGE-ME")
+                || jwtSecret.length() < 32) {
+            throw new IllegalStateException("JWT secret configuration is invalid. Ensure JWT_SECRET is set to a 32+ character secret.");
         }
         byte[] keyBytes = jwtSecret.getBytes(StandardCharsets.UTF_8);
         try {

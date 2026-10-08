@@ -841,7 +841,7 @@ public class PaymentHierarchyService {
 
     private int yearFromNode(String nodeId) {
         String[] parts = nodeId == null ? new String[0] : nodeId.split("\\|");
-        return parts.length > 2 ? Integer.parseInt(parts[2]) : (parts.length > 1 ? Integer.parseInt(parts[1]) : LocalDate.now().getYear());
+        return parts.length > 2 ? Integer.parseInt(parts[2]) : (parts.length > 1 ? Integer.parseInt(parts[1]) : com.billing.core.AppDateTime.istToday().getYear());
     }
 
     private Long invoiceIdFromNode(String nodeId) {
@@ -1182,7 +1182,7 @@ public class PaymentHierarchyService {
             if (range.startDate() == null) {
                 return "Selected Period";
             }
-            LocalDate today = LocalDate.now();
+            LocalDate today = com.billing.core.AppDateTime.istToday();
             if (range.startDate().equals(today)) {
                 return "Today";
             }
@@ -1201,7 +1201,7 @@ public class PaymentHierarchyService {
         if (range.startDate() == null || range.endDate() == null) {
             return false;
         }
-        LocalDate today = LocalDate.now();
+        LocalDate today = com.billing.core.AppDateTime.istToday();
         LocalDate startOfWeek = today.minusDays(today.getDayOfWeek().getValue() - 1L);
         return range.startDate().equals(startOfWeek) && range.endDate().equals(today);
     }

@@ -95,7 +95,10 @@ public class CompanyService {
             return null;
         }
         String subdomain = cleanDomain.split("\\.")[0];
-        if (subdomain.isBlank() || subdomain.equalsIgnoreCase("www") || subdomain.equalsIgnoreCase("biziotechnologies") || subdomain.equalsIgnoreCase("localhost")) {
+        // Reserved labels are never tenant codes (single shared constants).
+        if (subdomain.isBlank() || subdomain.equalsIgnoreCase("www")
+                || subdomain.equalsIgnoreCase(com.billing.core.AppDomains.MAIN_DOMAIN.split("\\.")[0])
+                || subdomain.equalsIgnoreCase(com.billing.core.AppDomains.LOCALHOST)) {
             return null;
         }
         try {
@@ -255,14 +258,10 @@ public class CompanyService {
             websiteUrlValue = null;
         }
         companySettingsRequest.setWebsiteUrl(websiteUrlValue);
-        String databaseNameValue = DataTypeUtility.stringValue(param.get("databaseName"));
-        if (databaseNameValue.length() == 0) {
-            databaseNameValue = DataTypeUtility.stringValue(param.get("database_name"));
-        }
-        if (databaseNameValue.length() == 0) {
-            databaseNameValue = null;
-        }
-        companySettingsRequest.setDatabaseName(databaseNameValue);
+        // SECURITY: databaseName is immutable via public API. It is resolved
+        // server-side from the tenant context (JWT + registry). Accepting it
+        // from the client would allow registry/schema desync and tenant confusion.
+        companySettingsRequest.setDatabaseName(null);
         String bankNameValue = DataTypeUtility.stringValue(param.get("bankName"));
         if (bankNameValue.length() == 0) {
             bankNameValue = DataTypeUtility.stringValue(param.get("bank_name"));
@@ -382,7 +381,7 @@ public class CompanyService {
         company.setUpiId(blankToNull(request.getUpiId()));
         company.setInvoiceNotes(blankToNull(request.getInvoiceNotes()));
         company.setInvoiceTerms(blankToNull(request.getInvoiceTerms()));
-        company.setDatabaseName(blankToNull(request.getDatabaseName()));
+        // SECURITY: never update databaseName from client request (see above).
 
         return toSummary(companyRepository.save(company));
     }
