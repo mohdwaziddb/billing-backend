@@ -240,11 +240,36 @@ public class RequestInterceptor implements HandlerInterceptor {
                 dbHostForCheck = null;
             }
             boolean poolMissing = dataSourcesMtApp != null && !dataSourcesMtApp.containsKey(databaseName.trim());
+            // Lazy model: valid par kabhi-visit-na-hua tenant ka pool abhi tak
+            // bana hi nahi hoga — pehle ek ensure attempt, phir bhi missing
+            // hua to hi maintenance. (Header/subdomain/domain paths upar already
+            // ensure kar chuke hain; ye fallback path ko cover karta hai.)
+            if (poolMissing && companyRegistryService.isValidDatabase(databaseName.trim())) {
+                ensureTenantDataSource(databaseName.trim(), dbHostForCheck);
+                poolMissing = dataSourcesMtApp != null && !dataSourcesMtApp.containsKey(databaseName.trim());
+            }
             boolean schemaMissing = isSameServerAsCommon(dbHostForCheck) && !companyRegistryService.databaseExists(databaseName.trim());
             if (poolMissing || schemaMissing) {
                 writeMaintenanceResponse(response, "TENANT_UNAVAILABLE");
                 return false;
             }
+        }
+
+        // Live main-domain stop: tenant APIs do not exist on the main host.
+        // Without this, the sample-DB fallback below would silently serve the wrong
+        // workspace (e.g. POST /api/v1/auth/login on biziotechnologies.com would
+        // authenticate against the default database). Platform paths, public
+        // branding lookup and infra endpoints are exempt; local dev is unaffected.
+        // A valid tenant resolved above (header/subdomain/domain) still passes.
+        if (Registry.IS_ONLINE && !isPlatformPath && databaseName == null
+                && hostOnly != null && AppDomains.isMainDomain(hostOnly)
+                && requestUri != null
+                && (requestUri.startsWith("/api/v1/auth/")
+                        || requestUri.equals("/api/v1/company/current"))) {
+            try {
+                response.sendError(HttpServletResponse.SC_NOT_FOUND, "Company not found");
+            } catch (Exception ignored) {}
+            return false;
         }
 
         if (databaseName == null) {
@@ -427,7 +452,7 @@ public class RequestInterceptor implements HandlerInterceptor {
         return hostPart.equalsIgnoreCase(AppDomains.LOCALHOST) || hostPart.equals(AppDomains.LOCAL_LOOPBACK);
     }
 
-    private synchronized void ensureTenantDataSource(String tenant, String dbHost) {
+    private void ensureTenantDataSource(String tenant, String dbHost) {
         ensureTenantDataSourceWithHost(tenant, dbHost);
     }
 
@@ -464,7 +489,18 @@ public class RequestInterceptor implements HandlerInterceptor {
         return null;
     }
 
-    private synchronized void ensureTenantDataSourceWithHost(String tenant, String dbHost) {
+    // Per-tenant locks: 500 tenants par ek tenant ka pool-create (10s timeout
+    // tak ja sakta hai) baaki tenants ki requests ko stall na kare. Global
+    // synchronized ki jagah har tenant ka apna lock.
+    private final java.util.concurrent.ConcurrentHashMap<String, Object> tenantInitLocks =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    // Orphan rows (registry me naam, DB bani hi nahi — jaise `test`) par har
+    // request me WARN spam na ho: pehli failure ke baad chup. DB banne par
+    // agli request me pool ban jayega (failure map me save nahi hota).
+    private final java.util.Set<String> lazyInitWarnedTenants =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    private void ensureTenantDataSourceWithHost(String tenant, String dbHost) {
         if (dataSourcesMtApp == null) {
             return;
         }
@@ -473,11 +509,17 @@ public class RequestInterceptor implements HandlerInterceptor {
         if (tenant == null || tenant.isBlank() || "billing_common".equalsIgnoreCase(tenant.trim())) {
             return;
         }
-        if (companyRegistryService != null && !companyRegistryService.isValidDatabase(tenant.trim())) {
+        String key = tenant.trim();
+        if (dataSourcesMtApp.containsKey(key) && dataSourcesMtApp.containsKey(key + ApplicationConstant.CONNECTION_READ_STRING)) {
+            return;
+        }
+        Object lock = tenantInitLocks.computeIfAbsent(key, k -> new Object());
+        synchronized (lock) {
+        if (companyRegistryService != null && !companyRegistryService.isValidDatabase(key)) {
             System.err.println("[WARN] Refusing tenant DataSource for unregistered database: " + tenant);
             return;
         }
-        if (dataSourcesMtApp.containsKey(tenant) && dataSourcesMtApp.containsKey(tenant + ApplicationConstant.CONNECTION_READ_STRING)) {
+        if (dataSourcesMtApp.containsKey(key) && dataSourcesMtApp.containsKey(key + ApplicationConstant.CONNECTION_READ_STRING)) {
             return;
         }
         try {
@@ -488,7 +530,10 @@ public class RequestInterceptor implements HandlerInterceptor {
             hostPort = hostPort.trim().replace("jdbc:mysql://", "").replace("/", "");
             String jdbcBase = "jdbc:mysql://" + hostPort + "/";
             String username = Registry.dbmap.getOrDefault("username", "root");
-            String password = Registry.dbmap.getOrDefault("password", "root");
+            // Single source: Registry.dbmap password (Spring spring.datasource.password
+            // local / DB_PASSWORD prod). Koi hardcoded fallback nahi — galat password
+            // se silent login se acha fail-loud hai.
+            String password = Registry.dbmap.get("password");
             String driver = Registry.dbmap.getOrDefault("driverClassName", "com.mysql.cj.jdbc.Driver");
 
             HikariConfig cfgW = new HikariConfig();
@@ -523,7 +568,16 @@ public class RequestInterceptor implements HandlerInterceptor {
             }
             System.out.println("[INFO] Lazy initialized tenant DataSources for: " + tenant);
         } catch (Exception e) {
-            System.err.println("[WARN] Failed to lazy init DataSource for tenant " + tenant + ": " + e.getMessage());
+            String failure = e.getMessage() == null ? "" : e.getMessage();
+            if (failure.toLowerCase(java.util.Locale.ROOT).contains("unknown database")) {
+                if (lazyInitWarnedTenants.add(key)) {
+                    System.err.println("[WARN] Skipping tenant '" + key + "': database missing (orphan registry row?). "
+                            + "Remove it from billing_common.company_registry or create the database. " + failure);
+                }
+            } else {
+                System.err.println("[WARN] Failed to lazy init DataSource for tenant " + tenant + ": " + failure);
+            }
+        }
         }
     }
 

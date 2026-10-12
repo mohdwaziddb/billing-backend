@@ -62,6 +62,11 @@ public class CompanyRegistryService {
         if (domain == null || domain.trim().isEmpty()) {
             return null;
         }
+        // Main host is never a tenant: even a stray registry row with the main
+        // domain must not bind the main host to a tenant database.
+        if (com.billing.core.AppDomains.isMainDomain(domain.trim().split(":")[0])) {
+            return null;
+        }
         try {
             String sql = "SELECT database_name FROM billing_common.company_registry WHERE domain=? AND status='ACTIVE' LIMIT 1";
             try {
@@ -76,6 +81,10 @@ public class CompanyRegistryService {
     }
 
     public String resolveDbHostByDomain(String domain) {        if (!Registry.IS_ONLINE) {
+            return "localhost:3306";
+        }
+        // Main host is never a tenant (see resolveDbNameByDomain).
+        if (domain != null && com.billing.core.AppDomains.isMainDomain(domain.trim().split(":")[0])) {
             return "localhost:3306";
         }
         try {

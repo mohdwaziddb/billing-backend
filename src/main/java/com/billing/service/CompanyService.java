@@ -59,13 +59,18 @@ public class CompanyService {
         try {
             java.util.Optional<Company> companyOpt = companyRepository.findByCodeIgnoreCase(db.toUpperCase(Locale.ROOT));
             if (companyOpt.isEmpty()) {
-                // Single-company per DB: fall back to the lone companies row so public
-                // branding (login page) never goes blank on code/database drift.
-                java.util.List<Company> all = companyRepository.findAll();
-                if (all.isEmpty()) {
+                // Local single-DB mode only: fall back to the lone companies row so
+                // public branding (login page) never goes blank on code/database drift.
+                // Live: return null so drift never serves the WRONG company's branding.
+                if (!com.billing.core.Registry.IS_ONLINE) {
+                    java.util.List<Company> all = companyRepository.findAll();
+                    if (!all.isEmpty()) {
+                        companyOpt = java.util.Optional.of(all.get(0));
+                    }
+                }
+                if (companyOpt.isEmpty()) {
                     return null;
                 }
-                companyOpt = java.util.Optional.of(all.get(0));
             }
             Company c = companyOpt.get();
             java.util.Map<String, Object> map = new java.util.HashMap<>();

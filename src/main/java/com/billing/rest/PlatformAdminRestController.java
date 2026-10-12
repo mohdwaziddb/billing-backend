@@ -1,12 +1,15 @@
 package com.billing.rest;
 
+import com.billing.service.DatabaseDumpService;
 import com.billing.service.PlatformAdminService;
 import com.billing.util.DataTypeUtility;
 import com.billing.util.GeneralResponse;
 import com.billing.util.SanitizeData;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -18,8 +21,13 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -29,6 +37,7 @@ import java.util.Map;
 public class PlatformAdminRestController {
 
     private final PlatformAdminService platformAdminService;
+    private final DatabaseDumpService databaseDumpService;
 
     @GetMapping("/dashboard")
     public ResponseEntity<?> dashboard() {
@@ -106,5 +115,87 @@ public class PlatformAdminRestController {
     public ResponseEntity<?> updateSettings(@RequestBody Map<String, Object> param, HttpServletRequest request) {
         param = SanitizeData.sanitizeMapObj(param);
         return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", platformAdminService.updateSettings(param)), HttpStatus.OK);
+    }
+
+    @GetMapping("/dumps/instances")
+    public ResponseEntity<?> dumpInstances() {
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", databaseDumpService.mysqlInstances()), HttpStatus.OK);
+    }
+
+    @GetMapping("/dumps/databases")
+    public ResponseEntity<?> dumpDatabases() {
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", databaseDumpService.knownDatabases()), HttpStatus.OK);
+    }
+
+    @PostMapping("/dumps/validate")
+    public ResponseEntity<?> validateDump(@RequestBody(required = false) Map<String, Object> param) {
+        if (param == null) {
+            param = new HashMap<>();
+        }
+        param = SanitizeData.sanitizeMapObj(param);
+        String database = DataTypeUtility.stringValue(param.get("database"));
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully",
+                databaseDumpService.validateDatabase(database, dumpTables(param.get("tables")))), HttpStatus.OK);
+    }
+
+    @PostMapping("/dumps")
+    public ResponseEntity<?> queueDump(@RequestBody(required = false) Map<String, Object> param, Authentication authentication) {
+        if (param == null) {
+            param = new HashMap<>();
+        }
+        param = SanitizeData.sanitizeMapObj(param);
+        String database = DataTypeUtility.stringValue(param.get("database"));
+        String mode = DataTypeUtility.stringValue(param.get("mode"));
+        String requestedBy = authentication == null ? "" : authentication.getName();
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Dump queued successfully",
+                databaseDumpService.queueDump(database, mode, dumpTables(param.get("tables")), requestedBy)), HttpStatus.OK);
+    }
+
+    @GetMapping("/dumps")
+    public ResponseEntity<?> dumpHistory(@RequestParam(required = false) Map<String, Object> param) {
+        param = SanitizeData.sanitizeMapObj(param);
+        String date = DataTypeUtility.stringValue(param.get("date"));
+        String status = DataTypeUtility.stringValue(param.get("status"));
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully",
+                databaseDumpService.history(date, status)), HttpStatus.OK);
+    }
+
+    @GetMapping("/dumps/stats")
+    public ResponseEntity<?> dumpStats() {
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", databaseDumpService.stats()), HttpStatus.OK);
+    }
+
+    @GetMapping("/dumps/{id}/file")
+    public ResponseEntity<StreamingResponseBody> downloadDump(@PathVariable long id) {
+        Path file = databaseDumpService.dumpFile(id);
+        String fileName = databaseDumpService.dumpFileName(id);
+        StreamingResponseBody body = output -> {
+            Files.copy(file, output);
+            output.flush();
+        };
+        long size = 0;
+        try {
+            size = Files.size(file);
+        } catch (Exception ignored) {
+        }
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_TYPE, "application/sql")
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileName + "\"")
+                .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(size))
+                .body(body);
+    }
+
+    private List<String> dumpTables(Object tables) {
+        List<String> out = new ArrayList<>();
+        if (tables instanceof List<?> list) {
+            for (Object item : list) {
+                if (item != null) {
+                    out.add(String.valueOf(item));
+                }
+            }
+        } else if (tables != null) {
+            out.add(String.valueOf(tables));
+        }
+        return out;
     }
 }

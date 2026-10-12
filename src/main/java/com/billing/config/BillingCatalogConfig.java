@@ -2,6 +2,7 @@ package com.billing.config;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -12,13 +13,17 @@ import javax.sql.DataSource;
 @Configuration
 public class BillingCatalogConfig {
 
-    @Value("${microservice.local.database.port:3306}")
-    private String localDbPort;
+    // Single source: spring.datasource.* (local -> application-local.properties,
+    // prod -> DB_URL / DB_USERNAME / DB_PASSWORD via application-prod.properties).
+    // billing_common same server par hai, isliye host:port primary URL se nikalo.
+    // Java me koi password literal nahi — hrhk sirf application-local.properties me.
+    @Value("${spring.datasource.url}")
+    private String primaryUrl;
 
-    @Value("${DB_USERNAME:${microservice.local.database.username:root}}")
+    @Value("${spring.datasource.username}")
     private String username;
 
-    @Value("${DB_PASSWORD:${microservice.local.database.password:root}}")
+    @Value("${spring.datasource.password}")
     private String password;
 
     @Bean(name = "billingCommonDataSource")
@@ -27,7 +32,7 @@ public class BillingCatalogConfig {
         // NOTE: no createDatabaseIfNotExist here on purpose. Databases are
         // created manually (sample.sql / registry docs). If billing_common
         // is missing, boot must FAIL LOUD so it gets created by hand.
-        config.setJdbcUrl("jdbc:mysql://localhost:" + localDbPort + "/billing_common?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Kolkata");
+        config.setJdbcUrl("jdbc:mysql://" + extractHostPort(primaryUrl) + "/billing_common?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Kolkata");
         config.setUsername(username);
         config.setPassword(password);
         config.setDriverClassName("com.mysql.cj.jdbc.Driver");
@@ -40,7 +45,22 @@ public class BillingCatalogConfig {
     }
 
     @Bean(name = "billingCommonJdbcTemplate")
-    public JdbcTemplate billingCommonJdbcTemplate() {
-        return new JdbcTemplate(billingCommonDataSource());
+    public JdbcTemplate billingCommonJdbcTemplate(
+            @Qualifier("billingCommonDataSource") DataSource ds) {
+        return new JdbcTemplate(ds);
+    }
+
+    private static String extractHostPort(String jdbcUrl) {
+        // jdbc:mysql://localhost:3306/billing?params -> localhost:3306
+        String tmp = jdbcUrl.replace("jdbc:mysql://", "");
+        int slash = tmp.indexOf('/');
+        if (slash > 0) {
+            tmp = tmp.substring(0, slash);
+        }
+        tmp = tmp.trim();
+        if (tmp.isEmpty()) {
+            return "localhost:3306";
+        }
+        return tmp;
     }
 }
