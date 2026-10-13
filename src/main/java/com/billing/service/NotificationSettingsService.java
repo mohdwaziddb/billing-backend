@@ -33,7 +33,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
@@ -133,16 +135,21 @@ public class NotificationSettingsService {
         return toResponse(saved);
     }
 
-    @Transactional(readOnly = true)
+    // NOTE: plain @Transactional (NOT readOnly) — success path writes the
+    // EMAIL_TEST_SENT audit row. readOnly here crashed every successful test
+    // mail with "An unexpected error occurred" after the mail was already sent.
+    @Transactional
     public ProviderSettingsResponse sendTestEmail(Map<String, Object> param, String email) {
         EmailProviderTestRequest emailProviderTestRequest = mapToEmailTestRequest(param);
         return sendTestEmail(email, emailProviderTestRequest);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public ProviderSettingsResponse sendTestEmail(String email, EmailProviderTestRequest request) {
         return sendTestEmailForCompany(accessControlService.getCurrentCompany(email), request, email, false);
     }
+
+    private static final Pattern TEST_RECIPIENT_EMAIL = Pattern.compile("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$");
 
     private ProviderSettingsResponse sendTestEmailForCompany(Company company, EmailProviderTestRequest request, String actorName, boolean actorScopedAudit) {
         EmailProviderSetting activeProvider = emailProviderSettingRepository.findFirstByCompanyAndActiveTrueOrderByIdDesc(company)
@@ -152,6 +159,9 @@ public class NotificationSettingsService {
                 : request.getRecipientEmail().trim();
         if (recipient == null || recipient.isBlank()) {
             throw new BadRequestException("Test recipient email is required");
+        }
+        if (!TEST_RECIPIENT_EMAIL.matcher(recipient).matches()) {
+            throw new BadRequestException("Enter a valid recipient email address (e.g. name@company.com).");
         }
         EmailService.EmailDeliveryResult result = emailService.sendEmail(
                 company,
@@ -164,7 +174,7 @@ public class NotificationSettingsService {
                 actorName
         );
         if (result.status() != NotificationStatus.SENT) {
-            throw new BadRequestException("Test email failed: " + result.providerResponse());
+            throw new BadRequestException(friendlyTestEmailError(result.providerResponse()));
         }
         logEvent(actorName, actorScopedAudit, company, "Email Provider", "EmailProviderSetting", activeProvider.getId(), "EMAIL_TEST_SENT", Map.of(
                 "provider_name", activeProvider.getProviderName(),
@@ -172,6 +182,34 @@ public class NotificationSettingsService {
                 "status", result.status().name()
         ));
         return toResponse(activeProvider);
+    }
+
+    /**
+     * Raw SMTP/provider failures are technical noise (550 codes, JavaMail
+     * chains). Map the common ones to something a user can act on.
+     * NOTE: async bounces (server accepts, bounces later by mail) can never
+     * be detected here — those surface in the sender mailbox, not the API.
+     */
+    private String friendlyTestEmailError(String providerResponse) {
+        String raw = providerResponse == null ? "" : providerResponse;
+        String lowered = raw.toLowerCase(Locale.ROOT);
+        if (lowered.contains("550") || lowered.contains("553") || lowered.contains("mailbox unavailable")
+                || lowered.contains("no such user") || lowered.contains("recipient address rejected")
+                || lowered.contains("user unknown")) {
+            return "Recipient address was rejected by the mail server (mailbox unavailable). Check the address and try again.";
+        }
+        if (lowered.contains("535") || lowered.contains("534") || lowered.contains("authentication failed")
+                || lowered.contains("bad credentials") || lowered.contains("username and password not accepted")) {
+            return "Mail server rejected the username or password. Check the provider credentials and try again.";
+        }
+        if (lowered.contains("unknownhost") || lowered.contains("could not connect") || lowered.contains("connection refused")
+                || lowered.contains("connect timed out") || lowered.contains("timed out")) {
+            return "Could not reach the mail server. Check the SMTP host/port and internet connection, then try again.";
+        }
+        if (lowered.contains("no active email provider")) {
+            return raw;
+        }
+        return raw.isBlank() ? "Test email failed. Please try again." : "Test email failed: " + raw;
     }
 
     @Transactional(readOnly = true)
