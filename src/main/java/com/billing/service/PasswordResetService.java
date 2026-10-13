@@ -14,10 +14,7 @@ import com.billing.repository.CompanyRepository;
 import com.billing.repository.EmailProviderSettingRepository;
 import com.billing.repository.PasswordResetOtpRepository;
 import com.billing.repository.RefreshTokenRepository;
-import com.billing.repository.SmsProviderSettingRepository;
 import com.billing.repository.UserRepository;
-import com.billing.service.sms.CommonSmsService;
-import com.billing.service.sms.SmsSendResult;
 import com.billing.util.DataTypeUtility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -37,10 +34,13 @@ import java.util.Map;
  * password, no proof of ownership) is intentionally gone: anyone knowing an
  * email/mobile could hijack any account with it.
  *
- * Rules: 6-digit OTP, BCrypt-hashed at rest, 10-minute expiry, max 5
- * attempts, single active challenge per user, 60-second resend cooldown.
- * Unknown/inactive identifiers get a generic success (no user enumeration).
- * A provider (SMS or email) must be configured or reset is refused outright.
+ * Rules: 6-digit OTP over EMAIL ONLY, BCrypt-hashed at rest, 10-minute
+ * expiry, max 5 attempts, single active challenge per user, 60-second
+ * resend cooldown. Unknown/inactive identifiers get a generic success
+ * (no user enumeration). An active EMAIL provider must be configured or
+ * reset is refused outright. Flow is 3-step: request OTP -> verify OTP ->
+ * set new + confirm password (confirm re-checks the OTP, so skipping the
+ * verify step via direct API call cannot bypass proof of ownership).
  */
 @Service
 @RequiredArgsConstructor
@@ -58,9 +58,7 @@ public class PasswordResetService {
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
-    private final CommonSmsService commonSmsService;
     private final AuditLogService auditLogService;
-    private final SmsProviderSettingRepository smsProviderSettingRepository;
     private final EmailProviderSettingRepository emailProviderSettingRepository;
 
     private final SecureRandom secureRandom = new SecureRandom();
@@ -76,7 +74,6 @@ public class PasswordResetService {
         if (identifier.isEmpty()) {
             throw new BadRequestException("Email / Mobile / Username is required");
         }
-        String channel = normalizeChannel(request.getChannel());
         java.util.Optional<User> userOpt = findActiveUser(identifier);
         if (userOpt.isEmpty()) {
             // Generic success: never reveal whether the identifier exists.
@@ -88,7 +85,7 @@ public class PasswordResetService {
         if (!company.isActive()) {
             return PasswordResetChallengeResponse.builder().build();
         }
-        String resolvedChannel = resolveChannel(channel, user, company);
+        String resolvedChannel = resolveChannel(user, company);
         if (resolvedChannel == null) {
             throw new BadRequestException("Password reset is not available. Please contact your administrator.");
         }
@@ -112,25 +109,16 @@ public class PasswordResetService {
                 .build();
         challenge = passwordResetOtpRepository.save(challenge);
 
-        String destination;
-        if ("SMS".equals(resolvedChannel)) {
-            destination = user.getMobileNumber();
-            SmsSendResult result = commonSmsService.sendOtp(company, destination,
-                    "Your password reset OTP is " + otp + ". Valid for 10 minutes. Do not share it.");
-            if (result.status() != NotificationStatus.SENT) {
-                passwordResetOtpRepository.delete(challenge);
-                throw new BadRequestException("Unable to send OTP right now. Please try again later.");
-            }
-        } else {
-            destination = user.getEmail();
-            var result = emailService.sendEmail(company,
-                    "Password reset OTP",
-                    "<p>Your password reset OTP is <b>" + otp + "</b>. Valid for 10 minutes. Do not share it.</p>",
-                    List.of(destination), null, null, null, "system");
-            if (result.status() != NotificationStatus.SENT) {
-                passwordResetOtpRepository.delete(challenge);
-                throw new BadRequestException("Unable to send OTP right now. Please try again later.");
-            }
+        // EMAIL ONLY: no SMS branch (removed). The destination is always the
+        // user's registered email address.
+        String destination = user.getEmail();
+        var result = emailService.sendEmail(company,
+                "Password reset OTP",
+                "<p>Your password reset OTP is <b>" + otp + "</b>. Valid for 10 minutes. Do not share it.</p>",
+                List.of(destination), null, null, null, "system");
+        if (result.status() != NotificationStatus.SENT) {
+            passwordResetOtpRepository.delete(challenge);
+            throw new BadRequestException("Unable to send OTP right now. Please try again later.");
         }
         return PasswordResetChallengeResponse.builder()
                 .challengeId(challenge.getId())
@@ -145,20 +133,53 @@ public class PasswordResetService {
         confirmOtp(mapToConfirm(param));
     }
 
+    /**
+     * Step 2 of 3: OTP-only check. Never consumes the challenge and never
+     * touches the password — it only proves ownership so the UI can reveal
+     * the new-password fields. Wrong guesses count toward MAX_ATTEMPTS.
+     */
+    @Transactional
+    public void verifyOtp(Map<String, Object> param) {
+        PasswordResetConfirmRequest request = mapToConfirm(param);
+        requireValidChallenge(request.getChallengeId(), request.getOtp());
+    }
+
     @Transactional
     public void confirmOtp(PasswordResetConfirmRequest request) {
-        if (request.getChallengeId() == null) {
-            throw new BadRequestException("Invalid OTP request. Please request a new OTP.");
-        }
-        String otp = request.getOtp() == null ? "" : request.getOtp().trim();
-        if (otp.isEmpty()) {
-            throw new BadRequestException("OTP is required");
-        }
         String newPassword = request.getNewPassword() == null ? "" : request.getNewPassword().trim();
         if (newPassword.length() < MIN_PASSWORD_LENGTH) {
             throw new BadRequestException("New password must be at least 8 characters");
         }
-        PasswordResetOtp challenge = passwordResetOtpRepository.findById(request.getChallengeId())
+        String confirmPassword = request.getConfirmPassword() == null ? "" : request.getConfirmPassword().trim();
+        if (!newPassword.equals(confirmPassword)) {
+            throw new BadRequestException("New password and confirm password must match.");
+        }
+        // Re-checks the OTP itself: skipping the verify step via direct API
+        // call cannot bypass proof of ownership.
+        PasswordResetOtp challenge = requireValidChallenge(request.getChallengeId(), request.getOtp());
+        User user = userRepository.findById(challenge.getUserId())
+                .orElseThrow(() -> new BadRequestException("Invalid OTP request. Please request a new OTP."));
+        if (!user.isActive()) {
+            throw new BadRequestException("This user account is inactive.");
+        }
+        challenge.setConsumed(true);
+        passwordResetOtpRepository.save(challenge);
+        passwordResetOtpRepository.deleteByUserId(user.getId());
+        user.setPassword(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+        refreshTokenRepository.deleteByUser(user);
+        auditPasswordReset(user);
+    }
+
+    private PasswordResetOtp requireValidChallenge(Long challengeId, String otpRaw) {
+        if (challengeId == null) {
+            throw new BadRequestException("Invalid OTP request. Please request a new OTP.");
+        }
+        String otp = otpRaw == null ? "" : otpRaw.trim();
+        if (otp.isEmpty()) {
+            throw new BadRequestException("OTP is required");
+        }
+        PasswordResetOtp challenge = passwordResetOtpRepository.findById(challengeId)
                 .orElseThrow(() -> new BadRequestException("Invalid OTP request. Please request a new OTP."));
         if (challenge.isConsumed()
                 || challenge.getExpiresAt() == null
@@ -178,18 +199,7 @@ public class PasswordResetService {
             passwordResetOtpRepository.save(challenge);
             throw new BadRequestException("Incorrect OTP. Please try again.");
         }
-        User user = userRepository.findById(challenge.getUserId())
-                .orElseThrow(() -> new BadRequestException("Invalid OTP request. Please request a new OTP."));
-        if (!user.isActive()) {
-            throw new BadRequestException("This user account is inactive.");
-        }
-        challenge.setConsumed(true);
-        passwordResetOtpRepository.save(challenge);
-        passwordResetOtpRepository.deleteByUserId(user.getId());
-        user.setPassword(passwordEncoder.encode(newPassword));
-        userRepository.save(user);
-        refreshTokenRepository.deleteByUser(user);
-        auditPasswordReset(user);
+        return challenge;
     }
 
     private void auditPasswordReset(User user) {
@@ -221,35 +231,13 @@ public class PasswordResetService {
         return user.isActive() ? java.util.Optional.of(user) : java.util.Optional.empty();
     }
 
-    private String resolveChannel(String requested, User user, Company company) {
-        if (requested != null) {
-            if ("SMS".equals(requested)
-                    && user.getMobileNumber() != null && !user.getMobileNumber().isBlank()
-                    && hasSmsProvider(company)) {
-                return "SMS";
-            }
-            if ("EMAIL".equals(requested)
-                    && user.getEmail() != null && !user.getEmail().isBlank()
-                    && hasEmailProvider(company)) {
-                return "EMAIL";
-            }
-            return null;
-        }
-        if (user.getMobileNumber() != null && !user.getMobileNumber().isBlank() && hasSmsProvider(company)) {
-            return "SMS";
-        }
+    // EMAIL ONLY: the requested channel (old clients may still send one) is
+    // intentionally ignored — OTP always goes to the registered email.
+    private String resolveChannel(User user, Company company) {
         if (user.getEmail() != null && !user.getEmail().isBlank() && hasEmailProvider(company)) {
             return "EMAIL";
         }
         return null;
-    }
-
-    private boolean hasSmsProvider(Company company) {
-        try {
-            return smsProviderSettingRepository.findFirstByCompanyAndActiveTrueOrderByIdDesc(company).isPresent();
-        } catch (Exception ignored) {
-            return false;
-        }
     }
 
     private boolean hasEmailProvider(Company company) {
@@ -265,13 +253,6 @@ public class PasswordResetService {
             return "";
         }
         String value = destination.trim();
-        if ("SMS".equals(channel)) {
-            String digits = value.replaceAll("\\D", "");
-            if (digits.length() <= 4) {
-                return "XXXX";
-            }
-            return "XXXXXX" + digits.substring(digits.length() - 4);
-        }
         int at = value.indexOf('@');
         if (at <= 1) {
             return "***";
@@ -282,17 +263,6 @@ public class PasswordResetService {
     private String generateOtp() {
         int number = secureRandom.nextInt(900000) + 100000;
         return String.valueOf(number);
-    }
-
-    private String normalizeChannel(String channel) {
-        if (channel == null) {
-            return null;
-        }
-        String value = channel.trim().toUpperCase(Locale.ROOT);
-        if ("SMS".equals(value) || "EMAIL".equals(value)) {
-            return value;
-        }
-        return null;
     }
 
     private java.util.Optional<Company> resolveTenantCompany() {
@@ -327,7 +297,7 @@ public class PasswordResetService {
             identifier = DataTypeUtility.stringValue(param.get("mobile"));
         }
         request.setIdentifier(identifier);
-        request.setChannel(normalizeChannel(DataTypeUtility.stringValue(param.get("channel"))));
+        // Channel ignored: OTP is always emailed (see resolveChannel).
         return request;
     }
 
@@ -348,6 +318,11 @@ public class PasswordResetService {
             password = DataTypeUtility.stringValue(param.get("password"));
         }
         request.setNewPassword(password);
+        String confirmPassword = DataTypeUtility.stringValue(param.get("confirmPassword"));
+        if (confirmPassword.length() == 0) {
+            confirmPassword = DataTypeUtility.stringValue(param.get("confirm_password"));
+        }
+        request.setConfirmPassword(confirmPassword);
         return request;
     }
 }

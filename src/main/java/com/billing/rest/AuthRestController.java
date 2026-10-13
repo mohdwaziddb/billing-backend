@@ -53,6 +53,19 @@ public class AuthRestController {
         }
     }
 
+    @PostMapping("/forgot-password/verify")
+    public ResponseEntity<?> forgotPasswordVerify(@RequestBody Map<String, Object> param, HttpServletRequest request) {
+        try {
+            param = sanitizePreservingSecrets(param);
+            passwordResetService.verifyOtp(param);
+            return new ResponseEntity<>(new GeneralResponse<>(true, "OTP verified successfully", Map.of("status", "ok")), HttpStatus.OK);
+        } catch (BadRequestException e) {
+            return ResponseEntity.badRequest().body(new GeneralResponse<>(false, e.getMessage(), null));
+        } catch (CompanyInactiveException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(new GeneralResponse<>(false, e.getMessage(), null));
+        }
+    }
+
     @PostMapping("/forgot-password/confirm")
     public ResponseEntity<?> forgotPasswordConfirm(@RequestBody Map<String, Object> param, HttpServletRequest request) {
         try {

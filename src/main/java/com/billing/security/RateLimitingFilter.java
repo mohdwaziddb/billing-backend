@@ -23,6 +23,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * Limits (per client IP, sliding window):
  * - /api/v1/auth/login, /api/v1/platform-admin/login: 10/min
  * - /api/v1/auth/forgot-password/*: 5/min
+ * - /api/v1/auth/forgot-password/verify, /api/v1/auth/forgot-password/confirm: 10/min
  * - /api/v1/auth/refresh: 30/min
  */
 public class RateLimitingFilter extends OncePerRequestFilter {
@@ -33,6 +34,7 @@ public class RateLimitingFilter extends OncePerRequestFilter {
             "/api/v1/auth/login", new Rule(10, 60_000L),
             "/api/v1/platform-admin/login", new Rule(10, 60_000L),
             "/api/v1/auth/forgot-password/request", new Rule(5, 60_000L),
+            "/api/v1/auth/forgot-password/verify", new Rule(10, 60_000L),
             "/api/v1/auth/forgot-password/confirm", new Rule(10, 60_000L),
             "/api/v1/auth/refresh", new Rule(30, 60_000L));
 

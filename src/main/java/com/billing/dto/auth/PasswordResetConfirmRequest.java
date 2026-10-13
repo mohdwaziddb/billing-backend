@@ -9,4 +9,5 @@ public class PasswordResetConfirmRequest {
     private Long challengeId;
     private String otp;
     private String newPassword;
+    private String confirmPassword;
 }
