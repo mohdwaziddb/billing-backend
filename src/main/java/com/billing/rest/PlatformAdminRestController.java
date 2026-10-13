@@ -13,6 +13,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -156,8 +157,30 @@ public class PlatformAdminRestController {
         param = SanitizeData.sanitizeMapObj(param);
         String date = DataTypeUtility.stringValue(param.get("date"));
         String status = DataTypeUtility.stringValue(param.get("status"));
+        int page = dumpPageNumber(param.get("page"));
+        int size = dumpPageSize(param.get("size"));
         return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully",
-                databaseDumpService.history(date, status)), HttpStatus.OK);
+                databaseDumpService.history(date, status, page, size)), HttpStatus.OK);
+    }
+
+    @PostMapping("/dumps/{id}/cancel")
+    public ResponseEntity<?> cancelDump(@PathVariable long id, Authentication authentication) {
+        String requestedBy = authentication == null ? "" : authentication.getName();
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Dump stop requested",
+                databaseDumpService.cancelDump(id, requestedBy)), HttpStatus.OK);
+    }
+
+    @PostMapping("/dumps/{id}/retry")
+    public ResponseEntity<?> retryDump(@PathVariable long id, Authentication authentication) {
+        String requestedBy = authentication == null ? "" : authentication.getName();
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Dump queued successfully",
+                databaseDumpService.retryDump(id, requestedBy)), HttpStatus.OK);
+    }
+
+    @DeleteMapping("/dumps/{id}")
+    public ResponseEntity<?> deleteDump(@PathVariable long id) {
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Dump deleted successfully",
+                databaseDumpService.deleteDump(id)), HttpStatus.OK);
     }
 
     @GetMapping("/dumps/stats")
@@ -183,6 +206,24 @@ public class PlatformAdminRestController {
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileName + "\"")
                 .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(size))
                 .body(body);
+    }
+
+    private int dumpPageNumber(Object page) {
+        try {
+            int value = Integer.parseInt(String.valueOf(page));
+            return Math.max(0, value);
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    private int dumpPageSize(Object size) {
+        try {
+            int value = Integer.parseInt(String.valueOf(size));
+            return Math.min(100, Math.max(1, value));
+        } catch (Exception e) {
+            return 10;
+        }
     }
 
     private List<String> dumpTables(Object tables) {

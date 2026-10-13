@@ -50,7 +50,7 @@ public class DatabaseDumpService {
     private static final Pattern SAFE_NAME = Pattern.compile("^[A-Za-z0-9_]{1,64}$");
     private static final Pattern DATE_ONLY = Pattern.compile("^\\d{4}-\\d{2}-\\d{2}$");
     private static final Set<String> MODES = Set.of("FULL", "INCLUDE", "EXCLUDE");
-    private static final Set<String> STATUSES = Set.of("QUEUED", "RUNNING", "COMPLETED", "FAILED");
+    private static final Set<String> STATUSES = Set.of("QUEUED", "RUNNING", "COMPLETED", "FAILED", "CANCELLED");
     private static final DateTimeFormatter FILE_STAMP = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
     private static final int HISTORY_LIMIT = 100;
     private static final long STDERR_CAP = 64 * 1024;
@@ -72,6 +72,19 @@ public class DatabaseDumpService {
     private long timeoutMinutes;
 
     private volatile boolean reclaimed;
+
+    // Running dumps for Stop support: id -> live process (binary path).
+    private final java.util.concurrent.ConcurrentHashMap<Long, Process> runningProcesses =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    // Cancel requests: id -> requested-by. Both paths check this and stop.
+    private final java.util.concurrent.ConcurrentHashMap<Long, String> cancelRequested =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static final class DumpCancelled extends RuntimeException {
+        DumpCancelled() {
+            super("cancelled");
+        }
+    }
 
     @PostConstruct
     public void init() {
@@ -227,23 +240,35 @@ public class DatabaseDumpService {
                 "SELECT * FROM billing_common.dump_requests WHERE id=?", id));
     }
 
-    public List<Map<String, Object>> history(String date, String status) {
-        StringBuilder sql = new StringBuilder("SELECT * FROM billing_common.dump_requests WHERE 1=1");
+    public Map<String, Object> history(String date, String status, int page, int size) {
+        int safePage = Math.max(0, page);
+        int safeSize = Math.min(100, Math.max(1, size));
+        StringBuilder where = new StringBuilder(" WHERE 1=1");
         List<Object> args = new ArrayList<>();
         if (date != null && DATE_ONLY.matcher(date.trim()).matches()) {
-            sql.append(" AND DATE(created_at)=?");
+            where.append(" AND DATE(created_at)=?");
             args.add(date.trim());
         }
         if (status != null && STATUSES.contains(status.trim().toUpperCase(Locale.ROOT))) {
-            sql.append(" AND status=?");
+            where.append(" AND status=?");
             args.add(status.trim().toUpperCase(Locale.ROOT));
         }
-        sql.append(" ORDER BY id DESC LIMIT ").append(HISTORY_LIMIT);
-        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql.toString(), args.toArray());
-        List<Map<String, Object>> out = new ArrayList<>();
+        Integer total = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM billing_common.dump_requests" + where, Integer.class, args.toArray());
+        List<Object> pageArgs = new ArrayList<>(args);
+        pageArgs.add(safeSize);
+        pageArgs.add(safePage * safeSize);
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT * FROM billing_common.dump_requests" + where + " ORDER BY id DESC LIMIT ? OFFSET ?", pageArgs.toArray());
+        List<Map<String, Object>> records = new ArrayList<>();
         for (Map<String, Object> row : rows) {
-            out.add(dumpRow(row));
+            records.add(dumpRow(row));
         }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("records", records);
+        out.put("total", total == null ? 0 : total);
+        out.put("page", safePage);
+        out.put("size", safeSize);
         return out;
     }
 
@@ -382,10 +407,10 @@ public class DatabaseDumpService {
             outFile = resolveDumpDir().resolve(
                     db + "_" + LocalDateTime.now().format(FILE_STAMP) + "_" + UUID.randomUUID().toString().substring(0, 6) + ".sql");
             if (mysqldumpAvailable()) {
-                runMysqldump(db, mode, splitCsv(tablesCsv), outFile);
+                runMysqldump(db, mode, splitCsv(tablesCsv), outFile, id);
             } else {
                 // Windows dev (no binary): same .sql via pure JDBC, no binary needed.
-                runJdbcDump(db, mode, splitCsv(tablesCsv), outFile);
+                runJdbcDump(db, mode, splitCsv(tablesCsv), outFile, id);
             }
             long size = Files.size(outFile);
             jdbcTemplate.update(
@@ -393,6 +418,8 @@ public class DatabaseDumpService {
                     outFile.toString(), size, id);
             log.info("Dump completed: id={} database={} size={} bytes", id, db, size);
         } catch (Exception e) {
+            String cancelledBy = cancelRequested.remove(id);
+            boolean cancelled = cancelledBy != null || e instanceof DumpCancelled;
             String message = e.getMessage() == null ? "dump failed" : e.getMessage();
             if (message.length() > 2000) {
                 message = message.substring(0, 2000);
@@ -401,12 +428,25 @@ public class DatabaseDumpService {
                 if (outFile != null) {
                     Files.deleteIfExists(outFile);
                 }
-                jdbcTemplate.update(
-                        "UPDATE billing_common.dump_requests SET status='FAILED', finished_at=NOW(), error=? WHERE id=?",
-                        message, id);
+                if (cancelled) {
+                    jdbcTemplate.update(
+                            "UPDATE billing_common.dump_requests SET status='CANCELLED', finished_at=NOW(), error=? WHERE id=?",
+                            "Cancelled" + (cancelledBy == null || cancelledBy.isBlank() ? "" : " by " + cancelledBy), id);
+                } else {
+                    jdbcTemplate.update(
+                            "UPDATE billing_common.dump_requests SET status='FAILED', finished_at=NOW(), error=? WHERE id=?",
+                            message, id);
+                }
             } catch (Exception ignored) {
             }
-            log.warn("Dump failed: id={} database={}: {}", id, db, message);
+            if (cancelled) {
+                log.info("Dump cancelled: id={} database={}", id, db);
+            } else {
+                log.warn("Dump failed: id={} database={}: {}", id, db, message);
+            }
+        } finally {
+            runningProcesses.remove(id);
+            cancelRequested.remove(id);
         }
     }
 
@@ -437,7 +477,7 @@ public class DatabaseDumpService {
      * (FULL only) routines. Slower than the binary on GB-scale databases,
      * exact for our MB-scale tenants.
      */
-    private void runJdbcDump(String db, String mode, List<String> tables, Path outFile) throws Exception {
+    private void runJdbcDump(String db, String mode, List<String> tables, Path outFile, long dumpId) throws Exception {
         String hostPort = resolveHost(db);
         String username = Registry.dbmap.get("username");
         String password = Registry.dbmap.get("password");
@@ -467,7 +507,10 @@ public class DatabaseDumpService {
                 wanted = kept;
             }
             for (String table : wanted) {
-                dumpJdbcTable(conn, db, table, out);
+                if (cancelRequested.containsKey(dumpId)) {
+                    throw new DumpCancelled();
+                }
+                dumpJdbcTable(conn, db, table, out, dumpId);
             }
             out.write("\nSET FOREIGN_KEY_CHECKS=1;\n");
             dumpJdbcTriggers(conn, db, out);
@@ -499,7 +542,7 @@ public class DatabaseDumpService {
         return out;
     }
 
-    private static void dumpJdbcTable(java.sql.Connection conn, String db, String table, java.io.BufferedWriter out) throws Exception {
+    private void dumpJdbcTable(java.sql.Connection conn, String db, String table, java.io.BufferedWriter out, long dumpId) throws Exception {
         String quoted = "`" + db + "`.`" + table + "`";
         String create;
         try (java.sql.Statement st = conn.createStatement();
@@ -546,6 +589,9 @@ public class DatabaseDumpService {
                         out.write(batch.toString());
                         batch.setLength(0);
                         inBatch = 0;
+                        if (cancelRequested.containsKey(dumpId)) {
+                            throw new DumpCancelled();
+                        }
                     }
                 }
                 if (inBatch > 0) {
@@ -660,7 +706,7 @@ public class DatabaseDumpService {
         }
     }
 
-    private void runMysqldump(String db, String mode, List<String> tables, Path outFile) throws Exception {
+    private void runMysqldump(String db, String mode, List<String> tables, Path outFile, long dumpId) throws Exception {
         String hostPort = resolveHost(db);
         String host = hostPort.contains(":") ? hostPort.substring(0, hostPort.indexOf(':')) : hostPort;
         String port = hostPort.contains(":") ? hostPort.substring(hostPort.indexOf(':') + 1) : "3306";
@@ -712,6 +758,7 @@ public class DatabaseDumpService {
             } catch (java.io.IOException e) {
                 throw new BadRequestException("mysqldump not found on this server. Dumps run on Linux hosts with mysql-client installed.");
             }
+            runningProcesses.put(dumpId, process);
             ByteArrayOutputStream stderr = new ByteArrayOutputStream();
             Thread drainer = new Thread(() -> {
                 try (InputStream err = process.getErrorStream()) {
@@ -740,7 +787,13 @@ public class DatabaseDumpService {
             drainer.join(5000);
             if (!done) {
                 process.destroyForcibly();
+                if (cancelRequested.containsKey(dumpId)) {
+                    throw new DumpCancelled();
+                }
                 throw new BadRequestException("Dump timed out after " + minutes + " minutes and was stopped.");
+            }
+            if (cancelRequested.containsKey(dumpId)) {
+                throw new DumpCancelled();
             }
             if (process.exitValue() != 0) {
                 String detail = stderr.toString(StandardCharsets.UTF_8).trim();
@@ -772,7 +825,88 @@ public class DatabaseDumpService {
         out.put("fileSize", num(row.get("file_size")));
         out.put("error", str(row.get("error")));
         out.put("createdAt", str(row.get("created_at")));
+        out.put("startedAt", str(row.get("started_at")));
         out.put("finishedAt", str(row.get("finished_at")));
+        String filePath = str(row.get("file_path"));
+        String fileName = null;
+        if (filePath != null && !filePath.isBlank()) {
+            try {
+                Path name = Paths.get(filePath).getFileName();
+                fileName = name == null ? null : name.toString();
+            } catch (Exception ignored) {
+            }
+        }
+        out.put("fileName", fileName);
+        return out;
+    }
+
+    /** Stop a QUEUED/RUNNING dump. RUNNING binary dumps are killed; the row becomes CANCELLED. */
+    public Map<String, Object> cancelDump(long id, String requestedBy) {
+        Map<String, Object> row;
+        try {
+            row = jdbcTemplate.queryForMap("SELECT * FROM billing_common.dump_requests WHERE id=?", id);
+        } catch (Exception e) {
+            throw new ResourceNotFoundException("Dump request not found");
+        }
+        String status = str(row.get("status"));
+        if ("QUEUED".equalsIgnoreCase(status)) {
+            jdbcTemplate.update("UPDATE billing_common.dump_requests SET status='CANCELLED', finished_at=NOW(), error=? WHERE id=?",
+                    "Cancelled by " + requestedBy, id);
+        } else if ("RUNNING".equalsIgnoreCase(status)) {
+            cancelRequested.put(id, requestedBy == null ? "" : requestedBy);
+            Process live = runningProcesses.get(id);
+            if (live != null) {
+                live.destroyForcibly();
+            }
+        } else {
+            throw new BadRequestException("Dump #" + id + " is already " + status + ".");
+        }
+        log.info("Dump cancelled: id={} by={}", id, requestedBy);
+        return dumpRow(jdbcTemplate.queryForMap("SELECT * FROM billing_common.dump_requests WHERE id=?", id));
+    }
+
+    /** Re-queue a FAILED/CANCELLED dump as a fresh row (revalidates the database first). */
+    public Map<String, Object> retryDump(long id, String requestedBy) {
+        Map<String, Object> row;
+        try {
+            row = jdbcTemplate.queryForMap("SELECT * FROM billing_common.dump_requests WHERE id=?", id);
+        } catch (Exception e) {
+            throw new ResourceNotFoundException("Dump request not found");
+        }
+        String status = str(row.get("status"));
+        if (!"FAILED".equalsIgnoreCase(status) && !"CANCELLED".equalsIgnoreCase(status)) {
+            throw new BadRequestException("Only failed or cancelled dumps can be retried.");
+        }
+        String db = str(row.get("database_name"));
+        String mode = str(row.get("mode"));
+        return queueDump(db, mode == null ? "FULL" : mode, splitCsv(str(row.get("tables"))), requestedBy);
+    }
+
+    /** Delete a terminal dump row (and its file, if still on disk). Running dumps must be stopped first. */
+    public Map<String, Object> deleteDump(long id) {
+        Map<String, Object> row;
+        try {
+            row = jdbcTemplate.queryForMap("SELECT * FROM billing_common.dump_requests WHERE id=?", id);
+        } catch (Exception e) {
+            throw new ResourceNotFoundException("Dump request not found");
+        }
+        String status = str(row.get("status"));
+        if ("QUEUED".equalsIgnoreCase(status) || "RUNNING".equalsIgnoreCase(status)) {
+            throw new BadRequestException("Stop the dump before deleting it.");
+        }
+        String path = str(row.get("file_path"));
+        try {
+            if (path != null && !path.isBlank()) {
+                Files.deleteIfExists(Paths.get(path));
+            }
+        } catch (Exception e) {
+            log.warn("Dump file delete failed for id {}: {}", id, e.getMessage());
+        }
+        jdbcTemplate.update("DELETE FROM billing_common.dump_requests WHERE id=?", id);
+        log.info("Dump row deleted: id={}", id);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("deleted", true);
+        out.put("id", id);
         return out;
     }
 
