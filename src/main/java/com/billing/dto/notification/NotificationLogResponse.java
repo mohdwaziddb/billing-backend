@@ -15,6 +15,7 @@ public class NotificationLogResponse {
     private String subject;
     private String message;
     private String providerName;
+    private String sender;
     private String messageId;
     private String failureReason;
     private String providerResponse;

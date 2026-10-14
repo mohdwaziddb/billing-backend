@@ -47,6 +47,9 @@ public class NotificationLog extends BaseEntity {
     @Column(nullable = false)
     private String recipient;
 
+    @Column(name = "sender")
+    private String sender;
+
     private String subject;
 
     @Column(columnDefinition = "TEXT")

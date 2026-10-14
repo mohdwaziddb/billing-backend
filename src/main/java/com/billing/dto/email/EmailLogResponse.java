@@ -13,6 +13,8 @@ public class EmailLogResponse {
     private String recipientEmail;
     private String subject;
     private String emailBody;
+    private String providerName;
+    private String senderEmail;
     private String status;
     private String errorMessage;
     private String sentBy;

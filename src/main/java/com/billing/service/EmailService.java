@@ -36,6 +36,7 @@ import software.amazon.awssdk.services.ses.model.SendRawEmailRequest;
 
 import java.io.ByteArrayOutputStream;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Properties;
@@ -60,6 +61,8 @@ public class EmailService {
                 .recipientEmail(request.getRecipientEmail().trim())
                 .subject(subject)
                 .emailBody(body)
+                .providerName(activeEmailProviderName(company))
+                .senderEmail(activeEmailSender(company))
                 .status(result.status().name())
                 .errorMessage(result.providerResponse())
                 .sentBy(email)
@@ -67,6 +70,32 @@ public class EmailService {
                 .build();
 
         return toResponse(emailLogRepository.save(log));
+    }
+
+    private String activeEmailProviderName(Company company) {
+        try {
+            return emailProviderSettingRepository.findFirstByCompanyAndActiveTrueOrderByIdDesc(company)
+                    .map(setting -> {
+                        String providerName = normalizeProvider(setting.getProviderName());
+                        return providerName.isEmpty() ? null : providerName;
+                    })
+                    .orElse(null);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private String activeEmailSender(Company company) {
+        try {
+            return emailProviderSettingRepository.findFirstByCompanyAndActiveTrueOrderByIdDesc(company)
+                    .map(setting -> {
+                        String senderEmail = setting.getSenderEmail();
+                        return senderEmail == null || senderEmail.isBlank() ? null : senderEmail.trim();
+                    })
+                    .orElse(null);
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     public EmailDeliveryResult sendEmail(Company company,
@@ -100,6 +129,66 @@ public class EmailService {
 
     private String stripHtml(String value) {
         return value == null ? "" : value.replaceAll("<[^>]*>", " ").replaceAll("\\s+", " ").trim();
+    }
+
+    /**
+     * Company footer for outgoing mails (OTP, test mails, ...): name in bold
+     * plus one muted contact line composed from whatever the company profile
+     * has. Blank fields are skipped — no empty lines, no "null".
+     */
+    public String companySignatureHtml(Company company) {
+        if (company == null) {
+            return "";
+        }
+        String name = blankOrNull(company.getName());
+        List<String> contactParts = new ArrayList<>();
+        addSignaturePart(contactParts, company.getPhone());
+        addSignaturePart(contactParts, company.getEmail());
+        List<String> addressParts = new ArrayList<>();
+        addSignaturePart(addressParts, company.getAddressLine1());
+        addSignaturePart(addressParts, company.getAddressLine2());
+        addSignaturePart(addressParts, company.getCity());
+        addSignaturePart(addressParts, company.getState());
+        addSignaturePart(addressParts, company.getPincode());
+        addSignaturePart(addressParts, company.getCountry());
+        StringBuilder footer = new StringBuilder("<hr><p>");
+        if (name != null) {
+            footer.append("<b>").append(escapeSignatureHtml(name)).append("</b>");
+        }
+        if (!contactParts.isEmpty()) {
+            if (name != null) {
+                footer.append("<br>");
+            }
+            footer.append("<small>").append(escapeSignatureHtml(String.join(" • ", contactParts))).append("</small>");
+        }
+        List<String> extraParts = new ArrayList<>();
+        addSignaturePart(extraParts, company.getWebsiteUrl());
+        if (company.getGstin() != null && !company.getGstin().isBlank()) {
+            extraParts.add("GSTIN: " + company.getGstin().trim());
+        }
+        if (!addressParts.isEmpty()) {
+            extraParts.add(String.join(", ", addressParts));
+        }
+        if (!extraParts.isEmpty()) {
+            footer.append("<br><small>").append(escapeSignatureHtml(String.join(" • ", extraParts))).append("</small>");
+        }
+        footer.append("</p>");
+        String built = footer.toString();
+        return "<hr><p></p>".equals(built) ? "" : built;
+    }
+
+    private static void addSignaturePart(List<String> parts, String value) {
+        if (value != null && !value.isBlank()) {
+            parts.add(value.trim());
+        }
+    }
+
+    private static String blankOrNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private static String escapeSignatureHtml(String value) {
+        return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
     private EmailDeliveryResult sendWithSes(EmailProviderSetting settings,
@@ -328,6 +417,8 @@ public class EmailService {
                 .recipientEmail(log.getRecipientEmail())
                 .subject(log.getSubject())
                 .emailBody(log.getEmailBody())
+                .providerName(log.getProviderName())
+                .senderEmail(log.getSenderEmail())
                 .status(log.getStatus())
                 .errorMessage(log.getErrorMessage())
                 .sentBy(log.getSentBy())

@@ -23,6 +23,7 @@ public class CommunicationHistoryItem {
     private String status;
     private String errorMessage;
     private String providerName;
+    private String sender;
     private String messageId;
     private String sentBy;
     private LocalDateTime sentAt;

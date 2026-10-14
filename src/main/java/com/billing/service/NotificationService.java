@@ -11,10 +11,12 @@ import com.billing.entity.NotificationLog;
 import com.billing.entity.SmsTemplate;
 import com.billing.exception.BadRequestException;
 import com.billing.exception.ResourceNotFoundException;
+import com.billing.repository.EmailProviderSettingRepository;
 import com.billing.repository.EmailTemplateRepository;
 import com.billing.repository.NotificationLogRepository;
 import com.billing.repository.SmsProviderSettingRepository;
 import com.billing.repository.SmsTemplateRepository;
+import com.billing.repository.WhatsAppProviderSettingRepository;
 import com.billing.service.sms.CommonSmsService;
 import com.billing.service.sms.SmsSendResult;
 import com.billing.service.whatsapp.CommonWhatsAppService;
@@ -41,6 +43,8 @@ public class NotificationService {
     private final SmsTemplateRepository smsTemplateRepository;
     private final NotificationLogRepository notificationLogRepository;
     private final SmsProviderSettingRepository smsProviderSettingRepository;
+    private final EmailProviderSettingRepository emailProviderSettingRepository;
+    private final WhatsAppProviderSettingRepository whatsAppProviderSettingRepository;
     private final EmailTemplateVariableService variableService;
     private final EmailService emailService;
     private final CommonSmsService commonSmsService;
@@ -108,7 +112,7 @@ public class NotificationService {
         }
         EmailService.EmailDeliveryResult result = emailService.sendEmail(company, subject, body, toEmails, safeList(request.getCcEmails()), safeList(request.getBccEmails()), request.getAttachments(), email);
         String recipient = String.join(",", toEmails);
-        NotificationLog saved = saveLog(company, NotificationChannelType.EMAIL, templateId, recipient, subject, body, "EMAIL", null, null, result.providerResponse(), result.status(), email, result.sentAt());
+        NotificationLog saved = saveLog(company, NotificationChannelType.EMAIL, templateId, recipient, subject, body, "EMAIL", resolveSender(company, NotificationChannelType.EMAIL), null, null, result.providerResponse(), result.status(), email, result.sentAt());
         writeAudit(email, company, saved, result.status() == NotificationStatus.SENT ? "EMAIL_SENT" : result.status() == NotificationStatus.FAILED ? "EMAIL_FAILED" : "EMAIL_PENDING");
         return List.of(toResponse(saved));
     }
@@ -131,7 +135,7 @@ public class NotificationService {
                 .map(setting -> setting.getProviderName() == null || setting.getProviderName().isBlank() ? setting.getProviderType().name() : setting.getProviderName())
                 .orElse("SMS");
         return results.stream().map(result -> {
-            NotificationLog saved = saveLog(company, NotificationChannelType.SMS, templateId, result.mobileNumber(), null, message, providerName, null, result.status() == NotificationStatus.FAILED ? result.providerResponse() : null, result.providerResponse(), result.status(), email, result.sentAt());
+            NotificationLog saved = saveLog(company, NotificationChannelType.SMS, templateId, result.mobileNumber(), null, message, providerName, resolveSender(company, NotificationChannelType.SMS), null, result.status() == NotificationStatus.FAILED ? result.providerResponse() : null, result.providerResponse(), result.status(), email, result.sentAt());
             writeAudit(email, company, saved, result.status() == NotificationStatus.SENT ? "SMS_SENT" : result.status() == NotificationStatus.FAILED ? "SMS_FAILED" : "SMS_PENDING");
             return toResponse(saved);
         }).toList();
@@ -151,7 +155,7 @@ public class NotificationService {
             throw new BadRequestException("At least one valid mobile number is required");
         }
         return results.stream().map(result -> {
-            NotificationLog saved = saveLog(company, NotificationChannelType.WHATSAPP, request.getTemplateId(), result.mobileNumber(), null, message, result.providerName(), result.messageId(), result.failureReason(), result.providerResponse(), result.status(), email, result.sentAt());
+            NotificationLog saved = saveLog(company, NotificationChannelType.WHATSAPP, request.getTemplateId(), result.mobileNumber(), null, message, result.providerName(), resolveSender(company, NotificationChannelType.WHATSAPP), result.messageId(), result.failureReason(), result.providerResponse(), result.status(), email, result.sentAt());
             writeAudit(email, company, saved, result.status() == NotificationStatus.SENT ? "WHATSAPP_SENT" : result.status() == NotificationStatus.FAILED ? "WHATSAPP_FAILED" : "WHATSAPP_PENDING");
             return toResponse(saved);
         }).toList();
@@ -193,7 +197,9 @@ public class NotificationService {
      * History write for flows that don't go through sendNotification (OTP mail,
      * settings test sends). REQUIRES_NEW so the row survives even when the
      * caller rolls back on failure — history must record failures too.
-     * Never stores OTP codes or secrets: message carries generic text only.
+     * NOTE: password-reset OTP rows now carry the full OTP text (owner
+     * decision) so Mail History shows the exact mail. Anyone with history
+     * access can read live OTPs — treat history permission accordingly.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void logDirectNotification(Company company,
@@ -202,12 +208,54 @@ public class NotificationService {
                                       String subject,
                                       String message,
                                       String providerName,
+                                      String sender,
                                       String messageId,
                                       NotificationStatus status,
                                       String failureReason,
                                       String sentBy) {
-        saveLog(company, channel, null, recipient, subject, message, providerName, messageId,
+        String resolvedSender = sender;
+        if (resolvedSender == null || resolvedSender.isBlank()) {
+            resolvedSender = resolveSender(company, channel);
+        }
+        saveLog(company, channel, null, recipient, subject, message, providerName, resolvedSender, messageId,
                 failureReason, failureReason != null ? failureReason : status.name(), status, sentBy, LocalDateTime.now());
+    }
+
+    /**
+     * Sender identity for history ("kisse gaya"): the provider account the
+     * message went FROM — sender-email / SMS sender-ID / WhatsApp number
+     * from the company's active provider settings. Null when unconfigured.
+     */
+    private String resolveSender(Company company, NotificationChannelType channel) {
+        if (company == null || channel == null) {
+            return null;
+        }
+        try {
+            if (channel == NotificationChannelType.EMAIL) {
+                return emailProviderSettingRepository.findFirstByCompanyAndActiveTrueOrderByIdDesc(company)
+                        .map(setting -> {
+                            String senderEmail = setting.getSenderEmail();
+                            return senderEmail == null || senderEmail.isBlank() ? null : senderEmail.trim();
+                        })
+                        .orElse(null);
+            }
+            if (channel == NotificationChannelType.SMS) {
+                return smsProviderSettingRepository.findFirstByCompanyAndActiveTrueOrderByIdDesc(company)
+                        .map(setting -> {
+                            String senderId = setting.getSenderId();
+                            return senderId == null || senderId.isBlank() ? null : senderId.trim();
+                        })
+                        .orElse(null);
+            }
+            return whatsAppProviderSettingRepository.findFirstByCompanyAndActiveTrueOrderByIdDesc(company)
+                    .map(setting -> {
+                        String whatsappNumber = setting.getWhatsappNumber();
+                        return whatsappNumber == null || whatsappNumber.isBlank() ? null : whatsappNumber.trim();
+                    })
+                    .orElse(null);
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private NotificationLog saveLog(Company company,
@@ -217,6 +265,7 @@ public class NotificationService {
                                     String subject,
                                     String message,
                                     String providerName,
+                                    String sender,
                                     String messageId,
                                     String failureReason,
                                     String providerResponse,
@@ -231,6 +280,7 @@ public class NotificationService {
                 .subject(subject)
                 .message(message)
                 .providerName(providerName)
+                .sender(sender)
                 .messageId(messageId)
                 .failureReason(failureReason)
                 .providerResponse(providerResponse)
@@ -265,6 +315,7 @@ public class NotificationService {
                 .subject(log.getSubject())
                 .message(log.getMessage())
                 .providerName(log.getProviderName())
+                .sender(log.getSender())
                 .messageId(log.getMessageId())
                 .failureReason(log.getFailureReason())
                 .providerResponse(log.getProviderResponse())

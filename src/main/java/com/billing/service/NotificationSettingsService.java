@@ -168,7 +168,8 @@ public class NotificationSettingsService {
         EmailService.EmailDeliveryResult result = emailService.sendEmail(
                 company,
                 "Test email from " + company.getName(),
-                "<p>This is a test email from your active email provider.</p>",
+                "<p>This is a test email from your active email provider.</p>"
+                        + emailService.companySignatureHtml(company),
                 List.of(recipient),
                 List.of(),
                 List.of(),
@@ -178,7 +179,7 @@ public class NotificationSettingsService {
         // History (Mail): own transaction, recorded on success and failure alike.
         notificationService.logDirectNotification(company, NotificationChannelType.EMAIL, recipient,
                 "Test email from " + company.getName(), "Test email from active email provider.",
-                activeProvider.getProviderName(), null, result.status(),
+                activeProvider.getProviderName(), activeProvider.getSenderEmail(), null, result.status(),
                 result.status() != NotificationStatus.SENT ? result.providerResponse() : null, actorName);
         if (result.status() != NotificationStatus.SENT) {
             throw new BadRequestException(friendlyTestEmailError(result.providerResponse()));
@@ -309,7 +310,7 @@ public class NotificationSettingsService {
         // History (SMS): own transaction, recorded on success and failure alike.
         notificationService.logDirectNotification(company, NotificationChannelType.SMS, mobileNumber,
                 null, "Test SMS from active SMS provider.",
-                activeProvider.getProviderName(), null, result.status(),
+                activeProvider.getProviderName(), activeProvider.getSenderId(), null, result.status(),
                 result.status() != NotificationStatus.SENT ? result.providerResponse() : null, actorName);
         if (result.status() != NotificationStatus.SENT) {
             throw new BadRequestException("Test SMS failed: " + result.providerResponse());
@@ -416,7 +417,7 @@ public class NotificationSettingsService {
         // History (WhatsApp): own transaction, recorded on success and failure alike.
         notificationService.logDirectNotification(company, NotificationChannelType.WHATSAPP, mobileNumber,
                 null, message,
-                activeProvider.getProviderName(), result.messageId(), result.status(),
+                activeProvider.getProviderName(), activeProvider.getWhatsappNumber(), result.messageId(), result.status(),
                 result.status() != NotificationStatus.SENT ? result.providerResponse() : null, actorName);
         if (result.status() != NotificationStatus.SENT) {
             throw new BadRequestException("Test WhatsApp message failed: " + result.providerResponse());

@@ -45,6 +45,12 @@ public class EmailLog extends BaseEntity {
     @Column(name = "recipient_email", nullable = false)
     private String recipientEmail;
 
+    @Column(name = "provider_name")
+    private String providerName;
+
+    @Column(name = "sender_email")
+    private String senderEmail;
+
     @Column(nullable = false)
     private String subject;
 
