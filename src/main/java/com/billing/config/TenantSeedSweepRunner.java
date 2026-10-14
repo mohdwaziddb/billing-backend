@@ -1,7 +1,9 @@
 package com.billing.config;
 
+import com.billing.core.Registry;
 import com.billing.service.PlatformAdminService;
 import com.billing.service.TenantSchemaMigrationService;
+import com.billing.service.TenantSchemaVerifier;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
@@ -31,6 +33,7 @@ public class TenantSeedSweepRunner implements ApplicationRunner {
 
     private final TenantSchemaMigrationService tenantSchemaMigrationService;
     private final PlatformAdminService platformAdminService;
+    private final TenantSchemaVerifier tenantSchemaVerifier;
 
     @Value("${app.migration.enabled:true}")
     private boolean migrationEnabled;
@@ -63,12 +66,29 @@ public class TenantSeedSweepRunner implements ApplicationRunner {
                         .count();
                 System.out.println("[INFO] Boot seed sweep done: tenants=" + seeds.size()
                         + " failed=" + failed);
+                if (seeds.isEmpty() && Registry.IS_ONLINE) {
+                    System.err.println("[ERROR] Boot seed sweep found ZERO tenants — seeds NOT applied. Check billing_common.company_registry rows/status and DB privileges.");
+                }
             } catch (Exception e) {
                 System.err.println("[WARN] Boot seed sweep skipped: "
                         + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
             }
         } else {
             System.out.println("[INFO] Boot seed sweep disabled (app.seed-sweep.enabled=false).");
+        }
+        try {
+            List<Map<String, Object>> verification = tenantSchemaVerifier.verifyAll();
+            long drift = verification.stream()
+                    .filter(result -> "DRIFT".equals(result.get("status")))
+                    .count();
+            System.out.println("[INFO] Boot schema verification done: databases=" + verification.size()
+                    + " drift=" + drift);
+            if (drift > 0) {
+                System.err.println("[ERROR] Boot schema verification found DRIFT — entity/DB mismatch (see [Verify] DRIFT lines above). Run repair-all or apply the missing migration, then restart.");
+            }
+        } catch (Exception e) {
+            System.err.println("[WARN] Boot schema verification skipped: "
+                    + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
         }
     }
 }

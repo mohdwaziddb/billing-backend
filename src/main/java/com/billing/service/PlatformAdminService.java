@@ -49,6 +49,7 @@ public class PlatformAdminService {
     private final CompanyRegistryService companyRegistryService;
     private final RequestInterceptor requestInterceptor;
     private final TenantSchemaMigrationService tenantSchemaMigrationService;
+    private final TenantSchemaVerifier tenantSchemaVerifier;
     @Qualifier("billingCommonJdbcTemplate")
     private final JdbcTemplate billingCommonJdbcTemplate;
 
@@ -222,7 +223,8 @@ public class PlatformAdminService {
 
     /**
      * One-call full sync (bulk backup for post-deploy): schema migrations
-     * first (new tables must exist before seeds), then seed sweep.
+     * first (new tables must exist before seeds), then seed sweep, then
+     * schema verification proving entity/DB match.
      */
     public Map<String, Object> repairAll() {
         Map<String, Object> result = new LinkedHashMap<>();
@@ -237,6 +239,16 @@ public class PlatformAdminService {
         }
         result.put("migrations", migrations);
         result.put("seeds", sweepSeedsForAllActiveTenants());
+        List<Map<String, Object>> verification = new ArrayList<>();
+        try {
+            verification = tenantSchemaVerifier.verifyAll();
+        } catch (Exception e) {
+            Map<String, Object> failure = new LinkedHashMap<>();
+            failure.put("status", "SKIPPED");
+            failure.put("detail", e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
+            verification.add(failure);
+        }
+        result.put("verification", verification);
         return result;
     }
 

@@ -92,6 +92,9 @@ public class TenantSchemaMigrationService {
         }
         results.add(migrateDatabase("billing_common", "COMMON", null, commonFiles));
         List<Map<String, Object>> tenants = activeTenants();
+        if (tenants.isEmpty() && Registry.IS_ONLINE) {
+            log.error("[Migrate] registry returned ZERO active tenants — tenant migrations SKIPPED. Check billing_common.company_registry rows/status and DB privileges.");
+        }
         for (Map<String, Object> tenant : tenants) {
             String code = DataTypeUtility.stringValue(tenant.get("company_code"));
             String databaseName = DataTypeUtility.stringValue(tenant.get("database_name"));

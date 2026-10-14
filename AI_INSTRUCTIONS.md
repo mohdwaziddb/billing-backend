@@ -157,6 +157,9 @@ Long id = Long.parseLong(param.get("id").toString());
 - **INACTIVE tenant sweep me SKIP hota hai.** Activate karte waqt ek baar `POST /api/v1/platform-admin/maintenance/repair-all` maarna (bulk backup endpoint, `src/main/java/com/billing/rest/PlatformAdminRestController.java`).
 - **Band karna ho to:** `app.migration.enabled=false` / `app.seed-sweep.enabled=false` (default dono true).
 - **Naya menu/permission** sirf `MasterSeedCatalog.MENUS` me entry maangta hai — sweep khud pahuncha dega. Permission rows bhi banengi (ADMIN/USER ko menu dikhe, isliye zaroori).
+- **Deploy jar me saari files HONI chahiye (untracked/new files samet).** Live `Unknown column` 500 ka root cause yahi tha: entity field deploy ho gaya par migration runner + `V*.sql` jar me gaye hi nahi (uncommitted the). Deploy se pehle `git status` me koi `??` Java/SQL file nahi rehni chahiye.
+- **Har deploy-boot ka proof log me dekho:** `[INFO] Boot migration sweep done`, `[INFO] Boot seed sweep done`, `[INFO] Boot schema verification done: drift=0`. Koi line missing ho ya `drift>0` / `[ERROR]` dikhe to usi waqt `POST /api/v1/platform-admin/maintenance/repair-all` ka `verification` section dekho — user request se pehle drift pakda jayega.
+- **`TenantSchemaVerifier` (boot + repair-all) entity-metamodel ko INFORMATION_SCHEMA se milata hai** (tenant DBs me `platform_settings` chhodkar, wo `billing_common` me check hota hai). Ye read-only hai — kuch banata/bigadta nahi, sirf `DRIFT` chillata hai.
 
 ---
 
