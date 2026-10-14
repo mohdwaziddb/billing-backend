@@ -3,6 +3,7 @@ package com.billing.service;
 import com.billing.dto.auth.PasswordResetChallengeResponse;
 import com.billing.dto.auth.PasswordResetConfirmRequest;
 import com.billing.dto.auth.PasswordResetRequestRequest;
+import com.billing.dto.notification.NotificationChannelType;
 import com.billing.dto.notification.NotificationStatus;
 import com.billing.entity.Company;
 import com.billing.entity.PasswordResetOtp;
@@ -59,6 +60,7 @@ public class PasswordResetService {
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
     private final AuditLogService auditLogService;
+    private final NotificationService notificationService;
     private final EmailProviderSettingRepository emailProviderSettingRepository;
 
     private final SecureRandom secureRandom = new SecureRandom();
@@ -114,8 +116,15 @@ public class PasswordResetService {
         String destination = user.getEmail();
         var result = emailService.sendEmail(company,
                 "Password reset OTP",
-                "<p>Your password reset OTP is <b>" + otp + "</b>. Valid for 10 minutes. Do not share it.</p>",
+                "<p>Your password reset OTP is <b>" + otp + "</b>. Valid for 10 minutes. Do not share it.</p>"
+                        + companySignatureHtml(company),
                 List.of(destination), null, null, null, "system");
+        // History (Mail): committed in its own transaction so failures are
+        // recorded too. Message carries no OTP code — hash stays the only copy.
+        notificationService.logDirectNotification(company, NotificationChannelType.EMAIL, destination,
+                "Password reset OTP", "Password reset OTP (6-digit) sent to registered email.",
+                "EMAIL", null, result.status(),
+                result.status() != NotificationStatus.SENT ? result.providerResponse() : null, "system");
         if (result.status() != NotificationStatus.SENT) {
             passwordResetOtpRepository.delete(challenge);
             throw new BadRequestException("Unable to send OTP right now. Please try again later.");
@@ -263,6 +272,67 @@ public class PasswordResetService {
     private String generateOtp() {
         int number = secureRandom.nextInt(900000) + 100000;
         return String.valueOf(number);
+    }
+
+    /**
+     * Company footer for the OTP mail (forget-password scope only): name in
+     * bold plus one muted contact line composed from whatever the company
+     * profile has. Blank fields are skipped — no empty lines, no "null".
+     * Test mails, reminders and template sends are intentionally untouched.
+     */
+    private String companySignatureHtml(Company company) {
+        if (company == null) {
+            return "";
+        }
+        String name = blankOrNull(company.getName());
+        List<String> contactParts = new ArrayList<>();
+        addIfPresent(contactParts, company.getPhone());
+        addIfPresent(contactParts, company.getEmail());
+        List<String> addressParts = new ArrayList<>();
+        addIfPresent(addressParts, company.getAddressLine1());
+        addIfPresent(addressParts, company.getAddressLine2());
+        addIfPresent(addressParts, company.getCity());
+        addIfPresent(addressParts, company.getState());
+        addIfPresent(addressParts, company.getPincode());
+        addIfPresent(addressParts, company.getCountry());
+        StringBuilder footer = new StringBuilder("<hr><p>");
+        if (name != null) {
+            footer.append("<b>").append(escapeHtml(name)).append("</b>");
+        }
+        if (!contactParts.isEmpty()) {
+            if (name != null) {
+                footer.append("<br>");
+            }
+            footer.append("<small>").append(escapeHtml(String.join(" • ", contactParts))).append("</small>");
+        }
+        List<String> extraParts = new ArrayList<>();
+        addIfPresent(extraParts, company.getWebsiteUrl());
+        if (company.getGstin() != null && !company.getGstin().isBlank()) {
+            extraParts.add("GSTIN: " + company.getGstin().trim());
+        }
+        if (!addressParts.isEmpty()) {
+            extraParts.add(String.join(", ", addressParts));
+        }
+        if (!extraParts.isEmpty()) {
+            footer.append("<br><small>").append(escapeHtml(String.join(" • ", extraParts))).append("</small>");
+        }
+        footer.append("</p>");
+        String built = footer.toString();
+        return "<hr><p></p>".equals(built) ? "" : built;
+    }
+
+    private static void addIfPresent(List<String> parts, String value) {
+        if (value != null && !value.isBlank()) {
+            parts.add(value.trim());
+        }
+    }
+
+    private static String blankOrNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private static String escapeHtml(String value) {
+        return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
     private java.util.Optional<Company> resolveTenantCompany() {

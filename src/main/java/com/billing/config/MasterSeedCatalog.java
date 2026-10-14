@@ -64,7 +64,11 @@ public final class MasterSeedCatalog {
             new MenuSeed("Invoice Templates", "INVOICE_TEMPLATES", "ReceiptText", "/setup/invoice-templates", 30, "SETUP"),
             new MenuSeed("Payment Hierarchy", "PAYMENT_HIERARCHY", "CreditCard", "/reports/payment-hierarchy", 31, "REPORTS"),
             new MenuSeed("Sales Referrals", "SALES_REFERRALS", "TrendingUp", "/reports/sales-referrals", 32, "REPORTS"),
-            new MenuSeed("GST Summary", "GST_SUMMARY", "ReceiptIndianRupee", "/reports/gst-summary", 33, "REPORTS"));
+            new MenuSeed("GST Summary", "GST_SUMMARY", "ReceiptIndianRupee", "/reports/gst-summary", 33, "REPORTS"),
+            new MenuSeed("Communication History", "COMMUNICATION_HISTORY", "ScrollText", "/communication-history", 34, null),
+            new MenuSeed("Mail History", "MAIL_HISTORY", "Mail", "/communication-history/mail", 35, "COMMUNICATION_HISTORY"),
+            new MenuSeed("SMS History", "SMS_HISTORY", "MessageSquare", "/communication-history/sms", 36, "COMMUNICATION_HISTORY"),
+            new MenuSeed("WhatsApp History", "WHATSAPP_HISTORY", "MessageCircle", "/communication-history/whatsapp", 37, "COMMUNICATION_HISTORY"));
 
     public static final List<ActionSeed> ACTIONS = List.of(
             new ActionSeed("View", "VIEW"),
@@ -107,8 +111,8 @@ public final class MasterSeedCatalog {
 
     /** Role -> visible menu codes (permission policy, single copy). */
     public static final Map<String, Set<String>> VISIBLE_MENUS_BY_ROLE = Map.of(
-            "OWNER", Set.of("DASHBOARD", "CUSTOMERS", "INVENTORY", "PRODUCTS", "PURCHASES", "STOCK_LEDGER", "CREATE_INVOICE", "INVOICES", "PAYMENTS", "EXPENSES", "OUTSTANDING", "ANALYTICS", "DATA_PORT", "PRODUCT_DATAPORT", "REPORTS", "PROFIT_LOSS", "SETUP", "USERS", "PRODUCT_CATEGORY", "PRODUCT_SUB_CATEGORIES", "EXPENSE_CATEGORIES", "PAYMENT_MODES", "THEME_SETTINGS", "ABOUT_COMPANY", "EMAIL_TEMPLATES", "SMS_TEMPLATES", "COMMUNICATION", "ROLE_PERMISSIONS", "TAX_MASTER", "INVOICE_TEMPLATES", "PAYMENT_HIERARCHY", "SALES_REFERRALS", "GST_SUMMARY", "AI_ASSISTANT"),
-            "ADMIN", Set.of("DASHBOARD", "CUSTOMERS", "INVENTORY", "PRODUCTS", "PURCHASES", "STOCK_LEDGER", "CREATE_INVOICE", "INVOICES", "PAYMENTS", "EXPENSES", "OUTSTANDING", "ANALYTICS", "DATA_PORT", "PRODUCT_DATAPORT", "REPORTS", "PROFIT_LOSS", "SETUP", "PRODUCT_CATEGORY", "PRODUCT_SUB_CATEGORIES", "EXPENSE_CATEGORIES", "PAYMENT_MODES", "ABOUT_COMPANY", "EMAIL_TEMPLATES", "SMS_TEMPLATES", "COMMUNICATION", "TAX_MASTER", "INVOICE_TEMPLATES", "GST_SUMMARY", "AI_ASSISTANT"),
+            "OWNER", Set.of("DASHBOARD", "CUSTOMERS", "INVENTORY", "PRODUCTS", "PURCHASES", "STOCK_LEDGER", "CREATE_INVOICE", "INVOICES", "PAYMENTS", "EXPENSES", "OUTSTANDING", "ANALYTICS", "DATA_PORT", "PRODUCT_DATAPORT", "REPORTS", "PROFIT_LOSS", "SETUP", "USERS", "PRODUCT_CATEGORY", "PRODUCT_SUB_CATEGORIES", "EXPENSE_CATEGORIES", "PAYMENT_MODES", "THEME_SETTINGS", "ABOUT_COMPANY", "EMAIL_TEMPLATES", "SMS_TEMPLATES", "COMMUNICATION", "ROLE_PERMISSIONS", "TAX_MASTER", "INVOICE_TEMPLATES", "PAYMENT_HIERARCHY", "SALES_REFERRALS", "GST_SUMMARY", "AI_ASSISTANT", "COMMUNICATION_HISTORY", "MAIL_HISTORY", "SMS_HISTORY", "WHATSAPP_HISTORY"),
+            "ADMIN", Set.of("DASHBOARD", "CUSTOMERS", "INVENTORY", "PRODUCTS", "PURCHASES", "STOCK_LEDGER", "CREATE_INVOICE", "INVOICES", "PAYMENTS", "EXPENSES", "OUTSTANDING", "ANALYTICS", "DATA_PORT", "PRODUCT_DATAPORT", "REPORTS", "PROFIT_LOSS", "SETUP", "PRODUCT_CATEGORY", "PRODUCT_SUB_CATEGORIES", "EXPENSE_CATEGORIES", "PAYMENT_MODES", "ABOUT_COMPANY", "EMAIL_TEMPLATES", "SMS_TEMPLATES", "COMMUNICATION", "TAX_MASTER", "INVOICE_TEMPLATES", "GST_SUMMARY", "AI_ASSISTANT", "COMMUNICATION_HISTORY", "MAIL_HISTORY", "SMS_HISTORY", "WHATSAPP_HISTORY"),
             "USER", Set.of("DASHBOARD", "CUSTOMERS", "INVENTORY", "PRODUCTS", "STOCK_LEDGER", "CREATE_INVOICE", "INVOICES", "OUTSTANDING", "ANALYTICS", "ABOUT_COMPANY", "AI_ASSISTANT"));
 
     /** Role -> allowed action codes (permission policy, single copy). */

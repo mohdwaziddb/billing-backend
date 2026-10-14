@@ -1,6 +1,7 @@
 package com.billing.service;
 
 import com.billing.dto.notification.EmailProviderTestRequest;
+import com.billing.dto.notification.NotificationChannelType;
 import com.billing.dto.notification.NotificationStatus;
 import com.billing.dto.notification.ProviderSettingsRequest;
 import com.billing.dto.notification.ProviderSettingsResponse;
@@ -53,6 +54,7 @@ public class NotificationSettingsService {
     private final WhatsAppProviderFactory whatsAppProviderFactory;
     private final WhatsAppProviderConfigurationService whatsAppProviderConfigurationService;
     private final AuditLogService auditLogService;
+    private final NotificationService notificationService;
 
     @Transactional(readOnly = true)
     public List<WhatsAppProviderMetadataResponse> whatsAppProviderMetadata() {
@@ -173,6 +175,11 @@ public class NotificationSettingsService {
                 List.of(),
                 actorName
         );
+        // History (Mail): own transaction, recorded on success and failure alike.
+        notificationService.logDirectNotification(company, NotificationChannelType.EMAIL, recipient,
+                "Test email from " + company.getName(), "Test email from active email provider.",
+                activeProvider.getProviderName(), null, result.status(),
+                result.status() != NotificationStatus.SENT ? result.providerResponse() : null, actorName);
         if (result.status() != NotificationStatus.SENT) {
             throw new BadRequestException(friendlyTestEmailError(result.providerResponse()));
         }
@@ -299,6 +306,11 @@ public class NotificationSettingsService {
             throw new BadRequestException("Test mobile number is required");
         }
         SmsSendResult result = commonSmsService.testConnection(company, mobileNumber, "This is a test SMS from your active SMS provider.");
+        // History (SMS): own transaction, recorded on success and failure alike.
+        notificationService.logDirectNotification(company, NotificationChannelType.SMS, mobileNumber,
+                null, "Test SMS from active SMS provider.",
+                activeProvider.getProviderName(), null, result.status(),
+                result.status() != NotificationStatus.SENT ? result.providerResponse() : null, actorName);
         if (result.status() != NotificationStatus.SENT) {
             throw new BadRequestException("Test SMS failed: " + result.providerResponse());
         }
@@ -401,6 +413,11 @@ public class NotificationSettingsService {
                 ? "This is a test WhatsApp message from your active provider."
                 : request.getMessage().trim();
         WhatsAppSendResult result = commonWhatsAppService.testConnection(company, activeProvider, mobileNumber, message);
+        // History (WhatsApp): own transaction, recorded on success and failure alike.
+        notificationService.logDirectNotification(company, NotificationChannelType.WHATSAPP, mobileNumber,
+                null, message,
+                activeProvider.getProviderName(), result.messageId(), result.status(),
+                result.status() != NotificationStatus.SENT ? result.providerResponse() : null, actorName);
         if (result.status() != NotificationStatus.SENT) {
             throw new BadRequestException("Test WhatsApp message failed: " + result.providerResponse());
         }

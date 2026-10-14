@@ -23,6 +23,7 @@ import com.billing.util.DataTypeUtility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
@@ -186,6 +187,27 @@ public class NotificationService {
         Company company = accessControlService.getCurrentCompany(email);
         return com.billing.dto.PageResponse.from(notificationLogRepository.findByCompanyOrderBySentAtDescCreatedAtDesc(company, PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 100))))
                 .map(this::toResponse));
+    }
+
+    /**
+     * History write for flows that don't go through sendNotification (OTP mail,
+     * settings test sends). REQUIRES_NEW so the row survives even when the
+     * caller rolls back on failure — history must record failures too.
+     * Never stores OTP codes or secrets: message carries generic text only.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void logDirectNotification(Company company,
+                                      NotificationChannelType channel,
+                                      String recipient,
+                                      String subject,
+                                      String message,
+                                      String providerName,
+                                      String messageId,
+                                      NotificationStatus status,
+                                      String failureReason,
+                                      String sentBy) {
+        saveLog(company, channel, null, recipient, subject, message, providerName, messageId,
+                failureReason, failureReason != null ? failureReason : status.name(), status, sentBy, LocalDateTime.now());
     }
 
     private NotificationLog saveLog(Company company,
