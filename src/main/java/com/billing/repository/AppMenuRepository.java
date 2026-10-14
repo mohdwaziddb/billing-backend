@@ -8,6 +8,7 @@ import java.util.Optional;
 
 public interface AppMenuRepository extends JpaRepository<AppMenu, Long> {
     List<AppMenu> findByActiveTrueOrderByDisplayOrderAscIdAsc();
+    long countByActiveTrue();
     List<AppMenu> findByParentMenuIsNullAndActiveTrueOrderByDisplayOrderAscIdAsc();
     Optional<AppMenu> findByMenuCode(String menuCode);
 }

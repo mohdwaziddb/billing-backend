@@ -157,6 +157,10 @@ public class PermissionDataInitializer implements ApplicationRunner {
         seedActions();
     }
 
+    public long countActiveMenus() {
+        return appMenuRepository.countByActiveTrue();
+    }
+
     /**
      * Verification gate for provisioning: throws when the tenant is missing
      * base masters. Called inside the provisioning transaction so a failure

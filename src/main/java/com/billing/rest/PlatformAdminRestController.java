@@ -75,6 +75,13 @@ public class PlatformAdminRestController {
         return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", platformAdminService.repairCompanySeeds(companyCode)), HttpStatus.OK);
     }
 
+    @PostMapping("/maintenance/repair-all")
+    public ResponseEntity<?> repairAll() {
+        // One-call full sync (deploy backup): schema migrations first
+        // (new tables must exist before seeds), then seed sweep for all tenants.
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", platformAdminService.repairAll()), HttpStatus.OK);
+    }
+
     @PostMapping("/companies/{companyCode}/chatbot/enable")
     public ResponseEntity<?> enableCompanyChatbot(@PathVariable String companyCode) {
         companyCode = companyCode == null ? null : companyCode.trim();

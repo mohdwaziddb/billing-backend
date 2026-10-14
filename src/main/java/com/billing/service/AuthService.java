@@ -120,8 +120,15 @@ public class AuthService {
             throw new UnauthorizedException("Refresh token has expired");
         }
 
-        validateCompanyActiveForApi(token.getUser());
-        return buildAuthResponse(token.getUser());
+        User user = token.getUser();
+        validateCompanyActiveForApi(user);
+        // Rotate ONLY the presented token: sibling tabs/devices keep their own
+        // sessions. deleteByUser here used to kill every sibling session, so a
+        // second concurrent refresh (multi-tab, deploy-time 401 bursts) found
+        // its token deleted and logged the user out everywhere (shared storage).
+        refreshTokenRepository.delete(token);
+        refreshTokenRepository.deleteByUserAndExpiryDateBefore(user, LocalDateTime.now());
+        return issueTokens(user);
     }
 
     @Transactional
@@ -204,8 +211,12 @@ public class AuthService {
 
     private AuthResponse buildAuthResponse(User user) {
         validateCompanyActiveForApi(user);
+        // Fresh login keeps single-session behavior: old sessions invalidated.
         refreshTokenRepository.deleteByUser(user);
+        return issueTokens(user);
+    }
 
+    private AuthResponse issueTokens(User user) {
         // DATABASE-per-tenant: User.company is @Transient, so resolve tenant company
         // explicitly from the current tenant connection (TSM-like JWT claims).
         Company tenantCompany = resolveTenantCompany().orElse(null);

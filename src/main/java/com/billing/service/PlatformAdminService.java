@@ -30,6 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.billing.util.DataTypeUtility;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -47,6 +48,7 @@ public class PlatformAdminService {
     private final TaxMasterService taxMasterService;
     private final CompanyRegistryService companyRegistryService;
     private final RequestInterceptor requestInterceptor;
+    private final TenantSchemaMigrationService tenantSchemaMigrationService;
     @Qualifier("billingCommonJdbcTemplate")
     private final JdbcTemplate billingCommonJdbcTemplate;
 
@@ -172,6 +174,87 @@ public class PlatformAdminService {
         taxMasterService.createDefaultTaxesForCompany(company);
         verifyProvisionedTenant(company);
         return toCompanyResponse(company);
+    }
+
+    /**
+     * Deploy-time sweep: re-runs seed repair for every ACTIVE tenant so new
+     * menus/permissions from MasterSeedCatalog reach live databases without
+     * per-company manual calls. Per-tenant failures are collected, never thrown.
+     */
+    public List<Map<String, Object>> sweepSeedsForAllActiveTenants() {
+        List<Map<String, Object>> results = new ArrayList<>();
+        List<Map<String, Object>> tenants = new ArrayList<>();
+        try {
+            tenants = companyRegistryService.listTenants(null, "ACTIVE", 100000, 0);
+        } catch (Exception e) {
+            Map<String, Object> failure = new LinkedHashMap<>();
+            failure.put("status", "FAILED");
+            failure.put("detail", "Could not list registry tenants");
+            results.add(failure);
+            return results;
+        }
+        for (Map<String, Object> tenant : tenants) {
+            String code = tenant.get("company_code") == null ? "" : tenant.get("company_code").toString().trim();
+            String databaseName = tenant.get("database_name") == null ? "" : tenant.get("database_name").toString().trim();
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("companyCode", code.isEmpty() ? null : code.toUpperCase(Locale.ROOT));
+            result.put("databaseName", databaseName.isEmpty() ? null : databaseName);
+            if (code.isEmpty()) {
+                result.put("status", "SKIPPED");
+                result.put("detail", "Missing company_code");
+                results.add(result);
+                continue;
+            }
+            try {
+                long before = countActiveMenus(code);
+                withCompanyCodeDb(code, () -> self.repairCompanySeedsData(code));
+                long after = countActiveMenus(code);
+                result.put("status", "OK");
+                result.put("detail", "menusBefore=" + before + " menusAfter=" + after);
+            } catch (Exception e) {
+                result.put("status", "FAILED");
+                result.put("detail", e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
+            }
+            results.add(result);
+        }
+        return results;
+    }
+
+    /**
+     * One-call full sync (bulk backup for post-deploy): schema migrations
+     * first (new tables must exist before seeds), then seed sweep.
+     */
+    public Map<String, Object> repairAll() {
+        Map<String, Object> result = new LinkedHashMap<>();
+        List<Map<String, Object>> migrations = new ArrayList<>();
+        try {
+            migrations = tenantSchemaMigrationService.migrateAll();
+        } catch (Exception e) {
+            Map<String, Object> failure = new LinkedHashMap<>();
+            failure.put("status", "FAILED");
+            failure.put("detail", e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
+            migrations.add(failure);
+        }
+        result.put("migrations", migrations);
+        result.put("seeds", sweepSeedsForAllActiveTenants());
+        return result;
+    }
+
+    private long countActiveMenus(String companyCode) {
+        try {
+            return withCompanyCodeDb(companyCode, () -> self.countActiveMenusData());
+        } catch (Exception ignored) {
+            return -1;
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public long countActiveMenusData() {
+        try {
+            return permissionDataInitializer.countActiveMenus();
+        } catch (Exception ignored) {
+            return -1;
+        }
     }
 
     private void verifyProvisionedTenant(Company company) {

@@ -147,4 +147,17 @@ Long id = Long.parseLong(param.get("id").toString());
 
 ---
 
+## 6) Deploy-Time Auto-Sync (Migration + Seed Sweep) - MANDATORY
+
+- **Nayi Entity banayi to `db/migration/V<date>_<naam>.sql` file LIKHNA FARZ hai.** Runner SQL banata nahi, sirf chalata hai. File bhool gaye to live boot par Hibernate `validate` fail hoga (fail-loud, fail-safe).
+- **File routing:** pehli lines me `-- target: common` likho to `billing_common` par (ek baar), warna har ACTIVE tenant DB par (default). Marker nahi to `billing_common.` text wali file common par jayegi.
+- **Migration me sirf plain DDL/DML, `;` separated.** `DELIMITER` wali procedure/trigger file runner reject karega (WARN, apply nahi hogi) — aisi cheez haath se chalani padegi.
+- **Purani file EDIT mat karo** (version = filename; `schema_version` table hisaab rakhti hai). Galti sudharni ho to NAYI `V<date>_` file banao.
+- **Boot order:** `src/main/java/com/billing/config/TenantSeedSweepRunner.java:30` har restart par `TenantSchemaMigrationService.migrateAll()` (pehle) phir `PlatformAdminService.sweepSeedsForAllActiveTenants()` (baad me) chalata hai. Dono per-tenant try/catch me — 1 tenant fail to boot nahi rukega, WARN log aayega.
+- **INACTIVE tenant sweep me SKIP hota hai.** Activate karte waqt ek baar `POST /api/v1/platform-admin/maintenance/repair-all` maarna (bulk backup endpoint, `src/main/java/com/billing/rest/PlatformAdminRestController.java`).
+- **Band karna ho to:** `app.migration.enabled=false` / `app.seed-sweep.enabled=false` (default dono true).
+- **Naya menu/permission** sirf `MasterSeedCatalog.MENUS` me entry maangta hai — sweep khud pahuncha dega. Permission rows bhi banengi (ADMIN/USER ko menu dikhe, isliye zaroori).
+
+---
+
 **Is file ko har AI task se pehle padhna ZAROORI hai. Agar iska ullanghan hua to code review fail samjho.**

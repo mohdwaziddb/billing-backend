@@ -1,6 +1,7 @@
+-- target: common
 -- Platform DB Dump Manager: queued dump jobs (RDS-style, EC2 MySQL).
 -- Lives in billing_common (platform-level, like company_registry): no tenant switch needed.
--- NOTE: run manually (no Flyway wired). Files live on server disk (app.dump.dir), never web root.
+-- NOTE: auto-applied on boot by TenantSchemaMigrationService (schema_version tracked). Files live on server disk (app.dump.dir), never web root.
 CREATE TABLE IF NOT EXISTS billing_common.dump_requests (
     id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
     company_code VARCHAR(50) NULL COMMENT 'registry code when the DB belongs to a tenant, NULL for billing_common itself',

@@ -1,3 +1,4 @@
+-- target: common
 -- Billing common catalog for DATABASE-per-tenant (subdomain -> database_name mapping)
 -- Catalog holds ONLY: company_registry + platform_settings. All business tables live in tenant DBs.
 CREATE DATABASE IF NOT EXISTS billing_common;
