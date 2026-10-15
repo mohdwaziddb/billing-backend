@@ -3,13 +3,17 @@ package com.billing.service;
 import com.billing.dto.PageResponse;
 import com.billing.dto.paymentmode.PaymentModeRequest;
 import com.billing.dto.paymentmode.PaymentModeResponse;
+import com.billing.core.appconfig.ApplicationConstant;
 import com.billing.entity.Company;
 import com.billing.entity.PaymentModeMaster;
 import com.billing.exception.BadRequestException;
 import com.billing.exception.ResourceNotFoundException;
+import com.billing.multitenancy.TenantContextHolder;
 import com.billing.repository.PaymentModeMasterRepository;
 import com.billing.util.DataTypeUtility;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,24 +30,24 @@ public class PaymentModeMasterService {
 
     private static final List<String> DEFAULT_MODES = List.of("Cash", "UPI", "Card", "Bank Transfer", "Cheque", "Wallet", "Other");
 
+    private static final Logger log = LoggerFactory.getLogger(PaymentModeMasterService.class);
+
     private final PaymentModeMasterRepository paymentModeMasterRepository;
     private final AccessControlService accessControlService;
     private final AuditLogService auditLogService;
     private final AuditNameResolver auditNameResolver;
 
-    @Transactional
+    @Transactional(readOnly = true)
     public List<PaymentModeResponse> list(String email, String search, Boolean active) {
         Company company = accessControlService.getCurrentCompany(email);
-        ensureDefaults(company);
         return paymentModeMasterRepository.findAllByCompanyWithFilters(company, active, normalizeSearch(search)).stream()
                 .map(this::toResponse)
                 .toList();
     }
 
-    @Transactional
+    @Transactional(readOnly = true)
     public PageResponse<PaymentModeResponse> page(String email, String search, Boolean active, int page, int size) {
         Company company = accessControlService.getCurrentCompany(email);
-        ensureDefaults(company);
         return PageResponse.from(paymentModeMasterRepository.findPageByCompanyWithFilters(company, active, normalizeSearch(search), pageRequest(page, size))
                 .map(this::toResponse));
     }
@@ -137,6 +141,21 @@ public class PaymentModeMasterService {
 
     @Transactional
     public void ensureDefaults(Company company) {
+        // Live safety: GET requests run on the read-only READ pool (tenant key
+        // ends with "_read", Hikari readOnly=true). Spring kabhi read-write tx
+        // me setReadOnly(false) nahi karta, isliye read pool par INSERT hamesha
+        // "Connection is read-only" dega. Seed sirf WRITE pool par karo; read
+        // path se aaye to chup-chaap skip (caller GET tha, POST par seed hoga).
+        String tenant = null;
+        try {
+            tenant = TenantContextHolder.getTenant();
+        } catch (Exception ignored) {
+            tenant = null;
+        }
+        if (tenant != null && tenant.endsWith(ApplicationConstant.CONNECTION_READ_STRING)) {
+            log.warn("[PaymentMode] skipping default seed on read-only tenant '{}' — defaults seed on write paths", tenant);
+            return;
+        }
         for (String modeName : DEFAULT_MODES) {
             String modeCode = toCode(modeName);
             if (!paymentModeMasterRepository.existsByCompanyAndModeCodeIgnoreCase(company, modeCode)) {

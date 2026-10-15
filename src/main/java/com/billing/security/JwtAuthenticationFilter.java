@@ -68,6 +68,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             }
 
             if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+                if ("MFA_PENDING".equals(authType)) {
+                    // Second-step token: password is proven, TOTP is pending.
+                    // It must never open any business API — only /api/v1/auth/mfa/verify
+                    // (permitAll) validates it explicitly via JwtService.
+                    SecurityContextHolder.clearContext();
+                    filterChain.doFilter(request, response);
+                    return;
+                }
                 if ("PLATFORM_ADMIN".equals(authType)) {                    PlatformAdminPrincipal platformAdminPrincipal = new PlatformAdminPrincipal(username);
                     if (jwtService.isTokenValid(token, platformAdminPrincipal)) {
                         UsernamePasswordAuthenticationToken authenticationToken = new UsernamePasswordAuthenticationToken(

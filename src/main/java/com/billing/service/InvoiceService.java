@@ -74,6 +74,11 @@ public class InvoiceService {
     @Transactional
     public InvoiceResponse create(String email, InvoiceRequest request) {
         Company company = accessControlService.getCurrentCompany(email);
+        // POST = WRITE pool, isliye lazy seed yahi safe hai. Naye tenant me
+        // payment_modes empty hoti hai; paid=0 wale invoice par bhi defaults
+        // ban jayein taaki dropdown agli GET par bhara mile (GET read pool
+        // par seed karna "Connection is read-only" deta hai — live bug tha).
+        paymentModeMasterService.ensureDefaults(company);
         Customer customer = customerService.getCustomerOrThrow(company, request.getCustomerId());
         if (!customer.isActive()) {
             throw new BadRequestException("Inactive customer cannot be invoiced");

@@ -3,6 +3,7 @@ package com.billing.service;
 import com.billing.entity.Company;
 import com.billing.entity.RefreshToken;
 import com.billing.entity.User;
+import com.billing.entity.UserMfaDevice;
 import com.billing.entity.enums.RoleName;
 import com.billing.multitenancy.TenantContextHolder;
 import com.billing.dto.auth.AuthResponse;
@@ -14,6 +15,7 @@ import com.billing.exception.CompanyInactiveException;
 import com.billing.exception.UnauthorizedException;
 import com.billing.repository.CompanyRepository;
 import com.billing.repository.RefreshTokenRepository;
+import com.billing.repository.UserMfaDeviceRepository;
 import com.billing.repository.UserRepository;
 import com.billing.security.CustomUserDetails;
 import com.billing.security.JwtService;
@@ -39,9 +41,12 @@ public class AuthService {
     private final UserRepository userRepository;
     private final CompanyRepository companyRepository;
     private final RefreshTokenRepository refreshTokenRepository;
+    private final UserMfaDeviceRepository userMfaDeviceRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final UserMapper userMapper;
+    private final SecretEncryptionService secretEncryptionService;
+    private final TotpService totpService;
 
     @Value("${app.refresh-token-expiration}")
     private long refreshTokenExpiration;
@@ -58,6 +63,23 @@ public class AuthService {
         if (userOpt.isPresent()) {
             User user = userOpt.get();
             validateCompanyActiveForLogin(user);
+            java.util.Optional<Company> tenantCompanyOpt = resolveTenantCompany();
+            if (tenantCompanyOpt.isPresent() && tenantCompanyOpt.get().isApplyMfa()) {
+                List<UserMfaDevice> enabledDevices = enabledMfaDevices(user.getId());
+                if (!enabledDevices.isEmpty()) {
+                    return buildMfaChallenge(user, tenantCompanyOpt.get());
+                }
+                AuthResponse normalResponse = buildAuthResponse(user);
+                return AuthResponse.builder()
+                        .accessToken(normalResponse.getAccessToken())
+                        .refreshToken(normalResponse.getRefreshToken())
+                        .tokenType(normalResponse.getTokenType())
+                        .expiresIn(normalResponse.getExpiresIn())
+                        .user(normalResponse.getUser())
+                        .mfaRequired(false)
+                        .mfaEnrollAvailable(true)
+                        .build();
+            }
             return buildAuthResponse(user);
         }
         // Users first, super-admin fallback: credentials live on the tenant's
@@ -247,6 +269,135 @@ public class AuthService {
                 .expiresIn(jwtService.getAccessTokenExpiration())
                 .user(profileResponse)
                 .build();
+    }
+
+    @Transactional
+    public AuthResponse verifyMfa(Map<String, Object> param) {
+        String mfaToken = trimmedOrNull(param != null ? param.get("mfaToken") : null);
+        if (mfaToken == null || mfaToken.isBlank()) {
+            mfaToken = trimmedOrNull(param != null ? param.get("mfa_token") : null);
+        }
+        String code = trimmedOrNull(param != null ? param.get("code") : null);
+        if (code == null || code.isBlank()) {
+            code = trimmedOrNull(param != null ? param.get("otp") : null);
+        }
+        if (mfaToken == null || mfaToken.isBlank()) {
+            throw new BadRequestException("MFA session expired. Dobara login karo");
+        }
+        if (code == null || code.isBlank()) {
+            throw new BadRequestException("Verification code required");
+        }
+        Long tokenUserId;
+        try {
+            if (!jwtService.isMfaPendingToken(mfaToken)) {
+                throw new UnauthorizedException("MFA session expired. Dobara login karo");
+            }
+            tokenUserId = jwtService.extractUserId(mfaToken);
+        } catch (UnauthorizedException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new UnauthorizedException("MFA session expired. Dobara login karo");
+        }
+        if (tokenUserId == null) {
+            throw new UnauthorizedException("MFA session expired. Dobara login karo");
+        }
+        try {
+            String tokenDb = jwtService.extractDatabaseName(mfaToken);
+            String currentDb = resolveTenantDatabaseName();
+            if (tokenDb != null && !tokenDb.isBlank()
+                    && !tokenDb.trim().equalsIgnoreCase(currentDb.trim())) {
+                throw new UnauthorizedException("MFA session expired. Dobara login karo");
+            }
+        } catch (UnauthorizedException e) {
+            throw e;
+        } catch (Exception ignored) {
+            // Tenant resolve fail to neeche company check me handle hoga
+        }
+        User user = userRepository.findById(tokenUserId)
+                .orElseThrow(() -> new UnauthorizedException("MFA session expired. Dobara login karo"));
+        validateCompanyActiveForApi(user);
+        if (!user.isActive()) {
+            throw new UnauthorizedException("User is inactive. Please contact administrator.");
+        }
+        java.util.Optional<Company> tenantCompanyOpt = resolveTenantCompany();
+        if (tenantCompanyOpt.isEmpty() || !tenantCompanyOpt.get().isApplyMfa()) {
+            return buildAuthResponse(user);
+        }
+        List<UserMfaDevice> enabledDevices = enabledMfaDevices(user.getId());
+        if (enabledDevices.isEmpty()) {
+            throw new BadRequestException("MFA enabled nahi hai. Dobara login karo");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        for (UserMfaDevice device : enabledDevices) {
+            if (device.getLockedUntil() != null && device.getLockedUntil().isAfter(now)) {
+                throw new UnauthorizedException("Bahut galat attempts. 15 minute baad try karo");
+            }
+        }
+        UserMfaDevice matchedDevice = null;
+        for (UserMfaDevice device : enabledDevices) {
+            String secret = secretEncryptionService.decrypt(device.getSecretEncrypted());
+            if (secret == null || secret.isBlank()) {
+                continue;
+            }
+            if (totpService.verifyCode(secret, code.trim())) {
+                matchedDevice = device;
+                break;
+            }
+        }
+        if (matchedDevice != null) {
+            matchedDevice.setFailedAttempts(0);
+            matchedDevice.setLockedUntil(null);
+            matchedDevice.setLastUsedAt(now);
+            userMfaDeviceRepository.save(matchedDevice);
+            return buildAuthResponse(user);
+        }
+        int maxAttempts = 0;
+        for (UserMfaDevice device : enabledDevices) {
+            int attempts = device.getFailedAttempts() + 1;
+            device.setFailedAttempts(attempts);
+            if (attempts >= MfaService.MAX_FAILED_ATTEMPTS) {
+                device.setLockedUntil(now.plusMinutes(MfaService.LOCK_MINUTES));
+            }
+            if (attempts > maxAttempts) {
+                maxAttempts = attempts;
+            }
+            userMfaDeviceRepository.save(device);
+        }
+        int remaining = MfaService.MAX_FAILED_ATTEMPTS - maxAttempts;
+        if (remaining <= 0) {
+            throw new UnauthorizedException("Bahut galat attempts. 15 minute baad try karo");
+        }
+        throw new UnauthorizedException("Galat code. " + remaining + " attempts bache");
+    }
+
+    private AuthResponse buildMfaChallenge(User user, Company tenantCompany) {
+        String tenantDb = tenantCompany.getDatabaseName() != null && !tenantCompany.getDatabaseName().isBlank()
+                ? tenantCompany.getDatabaseName()
+                : resolveTenantDatabaseName();
+        String tenantCode = tenantCompany.getCode() != null && !tenantCompany.getCode().isBlank()
+                ? tenantCompany.getCode()
+                : tenantDb.toUpperCase(Locale.ROOT);
+        String mfaToken = jwtService.generateMfaPendingToken(user.getId(), tenantCode, tenantDb);
+        UserProfileResponse profileResponse = userMapper.toProfile(user, tenantCompany);
+        return AuthResponse.builder()
+                .tokenType("Bearer")
+                .expiresIn(300L)
+                .user(profileResponse)
+                .mfaRequired(true)
+                .mfaToken(mfaToken)
+                .build();
+    }
+
+    private List<UserMfaDevice> enabledMfaDevices(Long userId) {
+        Long normalizedId = DataTypeUtility.getForeignKeyValue(userId);
+        if (normalizedId == null) {
+            return new ArrayList<>();
+        }
+        try {
+            return userMfaDeviceRepository.findByUserIdAndEnabledTrue(normalizedId);
+        } catch (Exception ignored) {
+            return new ArrayList<>();
+        }
     }
 
     private String resolveTenantDatabaseName() {

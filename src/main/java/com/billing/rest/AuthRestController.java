@@ -22,7 +22,7 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class AuthRestController {
 
-    private static final Set<String> SENSITIVE_KEYS = Set.of("password", "newPassword", "refreshToken", "otp");
+    private static final Set<String> SENSITIVE_KEYS = Set.of("password", "newPassword", "refreshToken", "otp", "code", "mfaToken");
 
     private final AuthService authService;
     private final PasswordResetService passwordResetService;
@@ -32,6 +32,20 @@ public class AuthRestController {
         try {
             param = sanitizePreservingSecrets(param);
             return new ResponseEntity<>(new GeneralResponse<>(true, "Login successful", authService.login(param)), HttpStatus.OK);
+        } catch (UnauthorizedException e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new GeneralResponse<>(false, e.getMessage(), null));
+        } catch (BadRequestException e) {
+            return ResponseEntity.badRequest().body(new GeneralResponse<>(false, e.getMessage(), null));
+        } catch (CompanyInactiveException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(new GeneralResponse<>(false, e.getMessage(), null));
+        }
+    }
+
+    @PostMapping("/mfa/verify")
+    public ResponseEntity<?> verifyMfa(@RequestBody Map<String, Object> param, HttpServletRequest request) {
+        try {
+            param = sanitizePreservingSecrets(param);
+            return new ResponseEntity<>(new GeneralResponse<>(true, "Login successful", authService.verifyMfa(param)), HttpStatus.OK);
         } catch (UnauthorizedException e) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new GeneralResponse<>(false, e.getMessage(), null));
         } catch (BadRequestException e) {

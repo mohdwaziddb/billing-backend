@@ -42,4 +42,5 @@ public class CompanySummary {
     private String inventoryConsumptionMethod;
     private String inventoryPricingPolicy;
     private boolean chatbotEnabled;
+    private boolean applyMfa;
 }

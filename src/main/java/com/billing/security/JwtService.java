@@ -22,6 +22,8 @@ public class JwtService {
     private static final String AUTH_TYPE_USER = "USER";
     private static final String AUTH_TYPE_PLATFORM_ADMIN = "PLATFORM_ADMIN";
     private static final String AUTH_TYPE_SUPER_ADMIN = "SUPER_ADMIN";
+    private static final String AUTH_TYPE_MFA_PENDING = "MFA_PENDING";
+    private static final long MFA_TOKEN_EXPIRATION_MILLIS = 5 * 60 * 1000L;
 
     @Value("${app.jwt.secret}")
     private String jwtSecret;
@@ -82,6 +84,45 @@ public class JwtService {
                 .expiration(new Date(System.currentTimeMillis() + accessTokenExpiration))
                 .signWith(getSigningKey())
                 .compact();
+    }
+
+    public String generateMfaPendingToken(Long userId, String companyCode, String databaseName) {
+        Map<String, Object> claims = new HashMap<>();
+        claims.put(AUTH_TYPE_CLAIM, AUTH_TYPE_MFA_PENDING);
+        claims.put("companyCode", companyCode);
+        claims.put("databaseName", databaseName);
+        claims.put("userId", userId);
+
+        return Jwts.builder()
+                .claims(claims)
+                .subject(String.valueOf(userId))
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + MFA_TOKEN_EXPIRATION_MILLIS))
+                .signWith(getSigningKey())
+                .compact();
+    }
+
+    public boolean isMfaPendingToken(String token) {
+        try {
+            return AUTH_TYPE_MFA_PENDING.equals(extractAuthType(token));
+        } catch (Exception ex) {
+            return false;
+        }
+    }
+
+    public boolean isMfaPendingTokenValid(String token, Long expectedUserId) {
+        try {
+            if (!isMfaPendingToken(token)) {
+                return false;
+            }
+            Long tokenUserId = extractUserId(token);
+            if (tokenUserId == null || !tokenUserId.equals(expectedUserId)) {
+                return false;
+            }
+            return !isTokenExpired(token);
+        } catch (Exception ex) {
+            return false;
+        }
     }
 
     public boolean isTokenValid(String token, UserDetails userDetails) {

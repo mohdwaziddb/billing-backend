@@ -110,4 +110,18 @@ public class CompanyRestController {
         param = SanitizeData.sanitizeMapObj(param);
         return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", companyService.resetTheme(param, authentication.getName())), HttpStatus.OK);
     }
+
+    @GetMapping("/mfa")
+    @RequiresPermission(menu = "ABOUT_COMPANY", action = "VIEW")
+    public ResponseEntity<?> mfaSettings(@RequestParam(required = false) Map<String, Object> param, Authentication authentication, HttpServletRequest req) {
+        param = SanitizeData.sanitizeMapObj(param);
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", companyService.getMfaSettings(authentication.getName())), HttpStatus.OK);
+    }
+
+    @PutMapping("/mfa")
+    @RequiresPermission(menu = "ABOUT_COMPANY", action = "EDIT")
+    public ResponseEntity<?> updateMfa(@RequestBody Map<String, Object> param, Authentication authentication, HttpServletRequest request) {
+        param = SanitizeData.sanitizeMapObj(param);
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", companyService.updateApplyMfa(param, authentication.getName())), HttpStatus.OK);
+    }
 }

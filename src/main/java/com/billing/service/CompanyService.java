@@ -35,6 +35,7 @@ public class CompanyService {
     private final CompanyRepository companyRepository;
     private final CompanyThemeSettingRepository companyThemeSettingRepository;
     private final StateMasterService stateMasterService;
+    private final AuditLogService auditLogService;
     private static final Set<String> LOGO_CONTENT_TYPES = Set.of("image/jpeg", "image/png", "image/webp");
 
     @Value("${app.upload-dir:uploads}")
@@ -566,7 +567,45 @@ public class CompanyService {
                 .inventoryConsumptionMethod(company.getInventoryConsumptionMethod().name())
                 .inventoryPricingPolicy(company.getInventoryPricingPolicy().name())
                 .chatbotEnabled(company.isChatbotEnabled())
+                .applyMfa(company.isApplyMfa())
                 .build();
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, Object> getMfaSettings(String email) {
+        Company company = accessControlService.getCurrentCompany(email);
+        Map<String, Object> data = new java.util.LinkedHashMap<>();
+        data.put("applyMfa", company.isApplyMfa());
+        data.put("companyId", company.getId());
+        data.put("companyCode", company.getCode());
+        return data;
+    }
+
+    @Transactional
+    public Map<String, Object> updateApplyMfa(Map<String, Object> param, String email) {
+        Company company = accessControlService.requireOwnerCompany(email);
+        boolean applyMfa = DataTypeUtility.booleanValue(param != null ? param.get("isApplyMfa") : null);
+        if (param != null && param.containsKey("applyMfa") && !param.containsKey("isApplyMfa")) {
+            applyMfa = DataTypeUtility.booleanValue(param.get("applyMfa"));
+        }
+        if (param != null && param.containsKey("is_apply_mfa") && !param.containsKey("isApplyMfa") && !param.containsKey("applyMfa")) {
+            applyMfa = DataTypeUtility.booleanValue(param.get("is_apply_mfa"));
+        }
+        boolean oldValue = company.isApplyMfa();
+        company.setApplyMfa(applyMfa);
+        companyRepository.save(company);
+        Map<String, Object> data = new java.util.LinkedHashMap<>();
+        data.put("applyMfa", company.isApplyMfa());
+        data.put("companyId", company.getId());
+        if (oldValue != applyMfa) {
+            try {
+                java.util.Map<String, Object> oldData = Map.of("applyMfa", oldValue);
+                auditLogService.logUpdate(email, company, "COMPANY", "companies", company.getId(), oldData, Map.of("applyMfa", applyMfa));
+            } catch (Exception ignored) {
+                // Audit kabhi toggle block nahi karega
+            }
+        }
+        return data;
     }
 
     private String blankToNull(String value) {

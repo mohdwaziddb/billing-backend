@@ -12,4 +12,9 @@ public class AuthResponse {
     private String tokenType;
     private long expiresIn;
     private UserProfileResponse user;
+    @Builder.Default
+    private boolean mfaRequired = false;
+    private String mfaToken;
+    @Builder.Default
+    private boolean mfaEnrollAvailable = false;
 }

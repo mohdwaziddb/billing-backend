@@ -56,6 +56,7 @@ public class UserMapper {
                 .logoUrl(company.getLogoUrl())
                 .websiteUrl(company.getWebsiteUrl())
                 .chatbotEnabled(company.isChatbotEnabled())
+                .applyMfa(company.isApplyMfa())
                 .build();
     }
 }

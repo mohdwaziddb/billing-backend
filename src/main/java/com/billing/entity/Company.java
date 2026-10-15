@@ -140,6 +140,10 @@ public class Company extends BaseEntity {
     private boolean chatbotEnabled = true;
 
     @Builder.Default
+    @Column(name = "is_apply_mfa", nullable = false)
+    private boolean applyMfa = false;
+
+    @Builder.Default
     @Enumerated(EnumType.STRING)
     @Column(name = "inventory_consumption_method", nullable = false)
     private InventoryConsumptionMethod inventoryConsumptionMethod = InventoryConsumptionMethod.FIFO;
