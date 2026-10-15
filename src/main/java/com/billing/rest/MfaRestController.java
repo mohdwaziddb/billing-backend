@@ -47,7 +47,7 @@ public class MfaRestController {
                                         Authentication authentication, HttpServletRequest request) {
         try {
             param = sanitizePreservingSecrets(param);
-            return new ResponseEntity<>(new GeneralResponse<>(true, "QR ready. Authenticator me scan karo",
+            return new ResponseEntity<>(new GeneralResponse<>(true, "QR ready. Scan it with your authenticator app.",
                     mfaService.startSetup(param, authentication.getName())), HttpStatus.OK);
         } catch (BadRequestException e) {
             return ResponseEntity.badRequest().body(new GeneralResponse<>(false, e.getMessage(), null));
@@ -94,7 +94,7 @@ public class MfaRestController {
             if (userId == null) {
                 userId = DataTypeUtility.getForeignKeyValue(param.get("user_id"));
             }
-            return new ResponseEntity<>(new GeneralResponse<>(true, "MFA reset ho gaya. User dobara enroll kare",
+            return new ResponseEntity<>(new GeneralResponse<>(true, "MFA has been reset. The user needs to enroll again.",
                     mfaService.resetUserMfa(authentication.getName(), userId)), HttpStatus.OK);
         } catch (BadRequestException e) {
             return ResponseEntity.badRequest().body(new GeneralResponse<>(false, e.getMessage(), null));

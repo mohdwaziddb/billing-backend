@@ -46,6 +46,7 @@ public class PlatformAdminService {
     private final PasswordEncoder passwordEncoder;
     private final PermissionDataInitializer permissionDataInitializer;
     private final TaxMasterService taxMasterService;
+    private final PaymentModeMasterService paymentModeMasterService;
     private final CompanyRegistryService companyRegistryService;
     private final RequestInterceptor requestInterceptor;
     private final TenantSchemaMigrationService tenantSchemaMigrationService;
@@ -174,6 +175,7 @@ public class PlatformAdminService {
         permissionDataInitializer.seedThemeForCompany(company);
         permissionDataInitializer.seedDefaultNotificationChannels(company);
         taxMasterService.createDefaultTaxesForCompany(company);
+        paymentModeMasterService.ensureDefaults(company);
         verifyProvisionedTenant(company);
         return toCompanyResponse(company);
     }

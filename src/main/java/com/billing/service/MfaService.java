@@ -77,7 +77,7 @@ public class MfaService {
         }
         String code = DataTypeUtility.stringValue(param != null ? param.get("code") : null);
         if (!code.isEmpty()) {
-            throw new BadRequestException("Code start step me mat bhejo, pehle QR scan karo phir confirm par code bhejo");
+            throw new BadRequestException("Do not send the code in the start step. Scan the QR first, then send the code to confirm.");
         }
         return startSetup(email, deviceName);
     }
@@ -87,13 +87,13 @@ public class MfaService {
         User user = accessControlService.getCurrentUser(email);
         Company company = accessControlService.requireCompany(user);
         if (!company.isApplyMfa()) {
-            throw new BadRequestException("Company ne MFA enable nahi kiya hai. Admin se sampark kare");
+            throw new BadRequestException("MFA is not enabled for this company. Please contact your administrator.");
         }
         String normalizedDevice = normalizeDeviceName(deviceName);
         List<UserMfaDevice> existing = userMfaDeviceRepository.findByUserIdOrderByIdAsc(user.getId());
         long enabledCount = existing.stream().filter(UserMfaDevice::isEnabled).count();
         if (enabledCount >= MAX_DEVICES) {
-            throw new BadRequestException("Maximum " + MAX_DEVICES + " devices allowed. Pehle purana device hatao");
+            throw new BadRequestException("Maximum " + MAX_DEVICES + " devices allowed. Please remove an old device first.");
         }
         for (UserMfaDevice oldPending : existing) {
             if (!oldPending.isEnabled()
@@ -144,7 +144,7 @@ public class MfaService {
         User user = accessControlService.getCurrentUser(email);
         Company company = accessControlService.requireCompany(user);
         if (!company.isApplyMfa()) {
-            throw new BadRequestException("Company ne MFA enable nahi kiya hai. Admin se sampark kare");
+            throw new BadRequestException("MFA is not enabled for this company. Please contact your administrator.");
         }
         String normalizedDevice = normalizeDeviceName(deviceName);
         String normalizedCode = DataTypeUtility.stringValue(code).trim();
@@ -153,17 +153,17 @@ public class MfaService {
         }
         UserMfaDevice pending = userMfaDeviceRepository
                 .findFirstByUserIdAndDeviceNameIgnoreCaseOrderByIdDesc(user.getId(), normalizedDevice)
-                .orElseThrow(() -> new BadRequestException("Pehle Add dabakar QR nikalo, phir code dalo"));
+                .orElseThrow(() -> new BadRequestException("Please generate the QR first, then enter the code."));
         if (pending.isEnabled()) {
-            throw new BadRequestException("Ye device pehle se enabled hai");
+            throw new BadRequestException("This device is already enabled.");
         }
         String secret = secretEncryptionService.decrypt(pending.getSecretEncrypted());
         if (secret == null || secret.isBlank()) {
             userMfaDeviceRepository.delete(pending);
-            throw new BadRequestException("Setup expire ho gaya. Dobara QR nikalo");
+            throw new BadRequestException("Setup has expired. Please generate a new QR.");
         }
         if (!totpService.verifyCode(secret, normalizedCode)) {
-            throw new BadRequestException("Galat code. Authenticator me sahi 6-digit code dalo");
+            throw new BadRequestException("Incorrect code. Enter the 6-digit code from your authenticator app.");
         }
         pending.setEnabled(true);
         pending.setEnrolledAt(LocalDateTime.now());
@@ -182,14 +182,14 @@ public class MfaService {
     public void deleteDevice(String email, Long deviceId) {
         Long normalizedId = DataTypeUtility.getForeignKeyValue(deviceId);
         if (normalizedId == null) {
-            throw new BadRequestException("deviceId required");
+            throw new BadRequestException("Device ID is required.");
         }
         User user = accessControlService.getCurrentUser(email);
         Company company = accessControlService.requireCompany(user);
         UserMfaDevice device = userMfaDeviceRepository.findById(normalizedId)
                 .orElseThrow(() -> new ResourceNotFoundException("Device not found"));
         if (!device.getUserId().equals(user.getId())) {
-            throw new AccessDeniedException("Ye device aapka nahi hai");
+            throw new AccessDeniedException("This device does not belong to your account.");
         }
         userMfaDeviceRepository.delete(device);
         writeAudit(email, company, "DELETE", normalizedId, Map.of("deviceName", String.valueOf(device.getDeviceName())));
@@ -199,7 +199,7 @@ public class MfaService {
     public Map<String, Object> resetUserMfa(String adminEmail, Long targetUserId) {
         Long normalizedTarget = DataTypeUtility.getForeignKeyValue(targetUserId);
         if (normalizedTarget == null) {
-            throw new BadRequestException("userId required");
+            throw new BadRequestException("User ID is required.");
         }
         Company company = accessControlService.requireOwnerCompany(adminEmail);
         User target = userRepository.findById(normalizedTarget)
@@ -228,7 +228,7 @@ public class MfaService {
     private String normalizeDeviceName(String deviceName) {
         String normalized = DataTypeUtility.stringValue(deviceName).trim();
         if (normalized.isEmpty()) {
-            throw new BadRequestException("deviceName required (jaise Phone ya Desktop)");
+            throw new BadRequestException("Device name is required (e.g. Phone or Desktop).");
         }
         if (normalized.length() > 50) {
             normalized = normalized.substring(0, 50);

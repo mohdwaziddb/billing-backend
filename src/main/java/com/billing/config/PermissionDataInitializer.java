@@ -19,6 +19,7 @@ import com.billing.repository.PlatformSettingRepository;
 import com.billing.repository.RoleMenuActionPermissionRepository;
 import com.billing.repository.RoleMenuPermissionRepository;
 import com.billing.service.TaxMasterService;
+import com.billing.service.PaymentModeMasterService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -43,6 +44,7 @@ public class PermissionDataInitializer implements ApplicationRunner {
     private final RoleMenuActionPermissionRepository roleMenuActionPermissionRepository;
     private final PasswordEncoder passwordEncoder;
     private final TaxMasterService taxMasterService;
+    private final PaymentModeMasterService paymentModeMasterService;
 
     @Override
     @Transactional
@@ -56,6 +58,12 @@ public class PermissionDataInitializer implements ApplicationRunner {
             seedThemeForCompany(company);
             seedDefaultNotificationChannels(company);
             taxMasterService.createDefaultTaxesForCompany(company);
+            try {
+                paymentModeMasterService.ensureDefaults(company);
+            } catch (Exception e) {
+                System.err.println("[WARN] Payment mode defaults seed skipped for company "
+                        + (company == null ? "?" : company.getCode()) + ": " + e.getMessage());
+            }
         }
     }
 

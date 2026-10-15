@@ -282,31 +282,31 @@ public class AuthService {
             code = trimmedOrNull(param != null ? param.get("otp") : null);
         }
         if (mfaToken == null || mfaToken.isBlank()) {
-            throw new BadRequestException("MFA session expired. Dobara login karo");
+            throw new BadRequestException("MFA session expired. Please sign in again.");
         }
         if (code == null || code.isBlank()) {
-            throw new BadRequestException("Verification code required");
+            throw new BadRequestException("Verification code required.");
         }
         Long tokenUserId;
         try {
             if (!jwtService.isMfaPendingToken(mfaToken)) {
-                throw new UnauthorizedException("MFA session expired. Dobara login karo");
+                throw new UnauthorizedException("MFA session expired. Please sign in again.");
             }
             tokenUserId = jwtService.extractUserId(mfaToken);
         } catch (UnauthorizedException e) {
             throw e;
         } catch (Exception e) {
-            throw new UnauthorizedException("MFA session expired. Dobara login karo");
+            throw new UnauthorizedException("MFA session expired. Please sign in again.");
         }
         if (tokenUserId == null) {
-            throw new UnauthorizedException("MFA session expired. Dobara login karo");
+            throw new UnauthorizedException("MFA session expired. Please sign in again.");
         }
         try {
             String tokenDb = jwtService.extractDatabaseName(mfaToken);
             String currentDb = resolveTenantDatabaseName();
             if (tokenDb != null && !tokenDb.isBlank()
                     && !tokenDb.trim().equalsIgnoreCase(currentDb.trim())) {
-                throw new UnauthorizedException("MFA session expired. Dobara login karo");
+                throw new UnauthorizedException("MFA session expired. Please sign in again.");
             }
         } catch (UnauthorizedException e) {
             throw e;
@@ -314,7 +314,7 @@ public class AuthService {
             // Tenant resolve fail to neeche company check me handle hoga
         }
         User user = userRepository.findById(tokenUserId)
-                .orElseThrow(() -> new UnauthorizedException("MFA session expired. Dobara login karo"));
+                .orElseThrow(() -> new UnauthorizedException("MFA session expired. Please sign in again."));
         validateCompanyActiveForApi(user);
         if (!user.isActive()) {
             throw new UnauthorizedException("User is inactive. Please contact administrator.");
@@ -325,12 +325,12 @@ public class AuthService {
         }
         List<UserMfaDevice> enabledDevices = enabledMfaDevices(user.getId());
         if (enabledDevices.isEmpty()) {
-            throw new BadRequestException("MFA enabled nahi hai. Dobara login karo");
+            throw new BadRequestException("MFA is not enabled. Please sign in again.");
         }
         LocalDateTime now = LocalDateTime.now();
         for (UserMfaDevice device : enabledDevices) {
             if (device.getLockedUntil() != null && device.getLockedUntil().isAfter(now)) {
-                throw new UnauthorizedException("Bahut galat attempts. 15 minute baad try karo");
+                throw new UnauthorizedException("Too many incorrect attempts. Please try again in 15 minutes.");
             }
         }
         UserMfaDevice matchedDevice = null;
@@ -365,9 +365,9 @@ public class AuthService {
         }
         int remaining = MfaService.MAX_FAILED_ATTEMPTS - maxAttempts;
         if (remaining <= 0) {
-            throw new UnauthorizedException("Bahut galat attempts. 15 minute baad try karo");
+            throw new UnauthorizedException("Too many incorrect attempts. Please try again in 15 minutes.");
         }
-        throw new UnauthorizedException("Galat code. " + remaining + " attempts bache");
+        throw new UnauthorizedException("Incorrect code. " + remaining + (remaining == 1 ? " attempt" : " attempts") + " remaining.");
     }
 
     private AuthResponse buildMfaChallenge(User user, Company tenantCompany) {
