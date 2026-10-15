@@ -181,26 +181,8 @@ public class DashboardService {
 
     @Transactional(readOnly = true)
     public DashboardSummaryResponse summary(Map<String, Object> param, String email) {
-        LocalDate startDateValue = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "yyyy-MM-dd");
-        if (startDateValue == null) {
-            startDateValue = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "dd-MM-yyyy");
-        }
-        if (startDateValue == null) {
-            startDateValue = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("start_date")), "yyyy-MM-dd");
-        }
-        if (startDateValue == null) {
-            startDateValue = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("start_date")), "dd-MM-yyyy");
-        }
-        LocalDate endDateValue = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "yyyy-MM-dd");
-        if (endDateValue == null) {
-            endDateValue = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "dd-MM-yyyy");
-        }
-        if (endDateValue == null) {
-            endDateValue = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("end_date")), "yyyy-MM-dd");
-        }
-        if (endDateValue == null) {
-            endDateValue = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("end_date")), "dd-MM-yyyy");
-        }
+        LocalDate startDateValue = DataTypeUtility.parseFlexibleDate(param, "startDate", "start_date");
+        LocalDate endDateValue = DataTypeUtility.parseFlexibleDate(param, "endDate", "end_date");
         return summary(email, startDateValue, endDateValue);
     }
 
@@ -210,17 +192,11 @@ public class DashboardService {
         if (cardValue.length() == 0) {
             cardValue = DataTypeUtility.stringValue(param.get("cardType"));
         }
-        LocalDate startDateValue = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "yyyy-MM-dd");
-        if (startDateValue == null) {
-            startDateValue = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "dd-MM-yyyy");
-        }
+        LocalDate startDateValue = DataTypeUtility.parseFlexibleDate(param, "startDate");
         if (startDateValue == null) {
             startDateValue = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("start_date")), "yyyy-MM-dd");
         }
-        LocalDate endDateValue = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "yyyy-MM-dd");
-        if (endDateValue == null) {
-            endDateValue = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "dd-MM-yyyy");
-        }
+        LocalDate endDateValue = DataTypeUtility.parseFlexibleDate(param, "endDate");
         if (endDateValue == null) {
             endDateValue = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("end_date")), "yyyy-MM-dd");
         }

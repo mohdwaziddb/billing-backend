@@ -1,5 +1,7 @@
 package com.billing.config;
 
+import com.billing.core.Registry;
+
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -32,7 +34,7 @@ public class BillingCatalogConfig {
         // NOTE: no createDatabaseIfNotExist here on purpose. Databases are
         // created manually (sample.sql / registry docs). If billing_common
         // is missing, boot must FAIL LOUD so it gets created by hand.
-        config.setJdbcUrl("jdbc:mysql://" + extractHostPort(primaryUrl) + "/billing_common?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Kolkata");
+        config.setJdbcUrl("jdbc:mysql://" + Registry.extractHostPort(primaryUrl) + "/billing_common?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Kolkata");
         config.setUsername(username);
         config.setPassword(password);
         config.setDriverClassName("com.mysql.cj.jdbc.Driver");
@@ -48,19 +50,5 @@ public class BillingCatalogConfig {
     public JdbcTemplate billingCommonJdbcTemplate(
             @Qualifier("billingCommonDataSource") DataSource ds) {
         return new JdbcTemplate(ds);
-    }
-
-    private static String extractHostPort(String jdbcUrl) {
-        // jdbc:mysql://localhost:3306/billing?params -> localhost:3306
-        String tmp = jdbcUrl.replace("jdbc:mysql://", "");
-        int slash = tmp.indexOf('/');
-        if (slash > 0) {
-            tmp = tmp.substring(0, slash);
-        }
-        tmp = tmp.trim();
-        if (tmp.isEmpty()) {
-            return "localhost:3306";
-        }
-        return tmp;
     }
 }

@@ -16,7 +16,6 @@ import com.billing.entity.WhatsAppProviderSetting;
 import com.billing.entity.enums.SmsProviderType;
 import com.billing.entity.enums.WhatsAppProviderType;
 import com.billing.exception.BadRequestException;
-import com.billing.exception.ResourceNotFoundException;
 import com.billing.repository.EmailProviderSettingRepository;
 import com.billing.repository.SmsProviderSettingRepository;
 import com.billing.repository.WhatsAppProviderSettingRepository;

@@ -37,14 +37,8 @@ public class GstReportService {
 
     @Transactional(readOnly = true)
     public GstReportResponse summary(Map<String, Object> param, String email) {
-        LocalDate startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "yyyy-MM-dd");
-        if (startDate == null) {
-            startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "dd-MM-yyyy");
-        }
-        LocalDate endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "yyyy-MM-dd");
-        if (endDate == null) {
-            endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "dd-MM-yyyy");
-        }
+        LocalDate startDate = DataTypeUtility.parseFlexibleDate(param, "startDate");
+        LocalDate endDate = DataTypeUtility.parseFlexibleDate(param, "endDate");
         return summary(email, startDate, endDate);
     }
 

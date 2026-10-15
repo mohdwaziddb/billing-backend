@@ -176,11 +176,7 @@ public class CommunicationHistoryService {
     }
 
     private LocalDate parseDate(String value) {
-        LocalDate parsed = DataTypeUtility.parseLocalDate(value, "yyyy-MM-dd");
-        if (parsed == null) {
-            parsed = DataTypeUtility.parseLocalDate(value, "dd-MM-yyyy");
-        }
-        return parsed;
+        return DataTypeUtility.parseFlexibleDate(value);
     }
 
     private record HistoryFilter(int page, int size, String status, LocalDateTime from, LocalDateTime to, String search) {

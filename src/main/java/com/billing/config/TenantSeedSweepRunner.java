@@ -2,6 +2,7 @@ package com.billing.config;
 
 import com.billing.core.Registry;
 import com.billing.service.PlatformAdminService;
+import com.billing.service.TenantAutoDdlService;
 import com.billing.service.TenantSchemaMigrationService;
 import com.billing.service.TenantSchemaVerifier;
 import lombok.RequiredArgsConstructor;
@@ -34,6 +35,7 @@ public class TenantSeedSweepRunner implements ApplicationRunner {
     private final TenantSchemaMigrationService tenantSchemaMigrationService;
     private final PlatformAdminService platformAdminService;
     private final TenantSchemaVerifier tenantSchemaVerifier;
+    private final TenantAutoDdlService tenantAutoDdlService;
 
     @Value("${app.migration.enabled:true}")
     private boolean migrationEnabled;
@@ -41,8 +43,26 @@ public class TenantSeedSweepRunner implements ApplicationRunner {
     @Value("${app.seed-sweep.enabled:true}")
     private boolean seedSweepEnabled;
 
+    @Value("${app.auto-ddl.enabled:true}")
+    private boolean autoDdlEnabled;
+
     @Override
     public void run(ApplicationArguments args) {
+        if (autoDdlEnabled) {
+            try {
+                List<Map<String, Object>> autoDdl = tenantAutoDdlService.applyAdditiveUpdates();
+                long failed = autoDdl.stream()
+                        .filter(result -> "FAILED".equals(result.get("status")))
+                        .count();
+                System.out.println("[INFO] Boot auto-DDL done: databases=" + autoDdl.size()
+                        + " failed=" + failed);
+            } catch (Exception e) {
+                System.err.println("[WARN] Boot auto-DDL skipped: "
+                        + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
+            }
+        } else {
+            System.out.println("[INFO] Boot auto-DDL disabled (app.auto-ddl.enabled=false).");
+        }
         if (migrationEnabled) {
             try {
                 List<Map<String, Object>> migrations = tenantSchemaMigrationService.migrateAll();

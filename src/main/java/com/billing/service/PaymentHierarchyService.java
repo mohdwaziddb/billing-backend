@@ -169,18 +169,9 @@ public class PaymentHierarchyService {
         }
         Integer year = DataTypeUtility.integerNullValue(param.get("year"));
         Integer month = DataTypeUtility.integerNullValue(param.get("month"));
-        LocalDate day = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("day")), "yyyy-MM-dd");
-        if (day == null) {
-            day = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("day")), "dd-MM-yyyy");
-        }
-        LocalDate startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "yyyy-MM-dd");
-        if (startDate == null) {
-            startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "dd-MM-yyyy");
-        }
-        LocalDate endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "yyyy-MM-dd");
-        if (endDate == null) {
-            endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "dd-MM-yyyy");
-        }
+        LocalDate day = DataTypeUtility.parseFlexibleDate(param, "day");
+        LocalDate startDate = DataTypeUtility.parseFlexibleDate(param, "startDate");
+        LocalDate endDate = DataTypeUtility.parseFlexibleDate(param, "endDate");
         Integer financialYear = DataTypeUtility.integerNullValue(param.get("financialYear"));
         Long customerId = DataTypeUtility.getForeignKeyValue(param.get("customerId"));
         String collectedBy = DataTypeUtility.stringValue(param.get("collectedBy"));
@@ -192,14 +183,8 @@ public class PaymentHierarchyService {
 
     @Transactional(readOnly = true)
     public PaymentHierarchyResponse summary(Map<String, Object> param, String email) {
-        LocalDate startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "yyyy-MM-dd");
-        if (startDate == null) {
-            startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "dd-MM-yyyy");
-        }
-        LocalDate endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "yyyy-MM-dd");
-        if (endDate == null) {
-            endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "dd-MM-yyyy");
-        }
+        LocalDate startDate = DataTypeUtility.parseFlexibleDate(param, "startDate");
+        LocalDate endDate = DataTypeUtility.parseFlexibleDate(param, "endDate");
         Integer financialYear = DataTypeUtility.integerNullValue(param.get("financialYear"));
         String mode = DataTypeUtility.stringValue(param.get("mode"));
         if (mode.length() == 0) {

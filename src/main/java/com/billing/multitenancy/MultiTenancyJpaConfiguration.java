@@ -82,7 +82,7 @@ public class MultiTenancyJpaConfiguration {
         // phir env override (prod) loadDatabaseCredentials me lagta hai.
         // billing_common + tenant same server, isliye host:port primary URL se.
         if (primaryUrl != null && !primaryUrl.isBlank()) {
-            String hostPort = extractHostPort(primaryUrl);
+            String hostPort = Registry.extractHostPort(primaryUrl);
             Registry.dbmap.putIfAbsent("url", hostPort);
             Registry.dbmap.putIfAbsent("urlreader", hostPort);
         }
@@ -94,7 +94,7 @@ public class MultiTenancyJpaConfiguration {
         }
         MysqlDataSourceService.loadDatabaseCredentialsFromLocalHost();
         String springBase = (primaryUrl != null && !primaryUrl.isBlank())
-                ? "jdbc:mysql://" + extractHostPort(primaryUrl) + "/"
+                ? "jdbc:mysql://" + Registry.extractHostPort(primaryUrl) + "/"
                 : "jdbc:mysql://localhost:" + localDbPort + "/";
         String url = springBase;
         String readerUrl = springBase;
@@ -172,19 +172,6 @@ public class MultiTenancyJpaConfiguration {
 
         System.out.println("[INFO] Initialized DataSources for tenants: " + result.keySet());
         return result;
-    }
-
-    private static String extractHostPort(String jdbcUrl) {
-        String tmp = jdbcUrl.replace("jdbc:mysql://", "");
-        int slash = tmp.indexOf('/');
-        if (slash > 0) {
-            tmp = tmp.substring(0, slash);
-        }
-        tmp = tmp.trim();
-        if (tmp.isEmpty()) {
-            return "localhost:3306";
-        }
-        return tmp;
     }
 
     private static java.util.List<String> activeRegistryDatabases(JdbcTemplate billingCommonJdbcTemplate) {

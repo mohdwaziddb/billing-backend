@@ -7,7 +7,6 @@ import com.billing.dto.user.UserPreferenceResponse;
 import com.billing.entity.User;
 import com.billing.entity.UserPreference;
 import com.billing.exception.BadRequestException;
-import com.billing.exception.ResourceNotFoundException;
 import com.billing.repository.UserPreferenceRepository;
 import com.billing.repository.UserRepository;
 import com.billing.security.PlatformAdminPrincipal;

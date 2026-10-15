@@ -1,5 +1,8 @@
 -- Identify legacy email provider rows that can fail primitive boolean hydration.
-SELECT id, company_id, provider_name, sender_email, smtp_tls_enabled, is_active
+-- NOTE: no company_id column exists on this table (Company is @Transient in
+-- EmailProviderSetting; tenancy comes from DATABASE-per-tenant). Do NOT add
+-- company_id here — it breaks every database (fix 2026-10-14).
+SELECT id, provider_name, sender_email, smtp_tls_enabled, is_active
 FROM email_provider_settings
 WHERE smtp_tls_enabled IS NULL
    OR is_active IS NULL;

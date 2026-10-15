@@ -50,14 +50,8 @@ public class InventoryService {
     public PageResponse<InventoryLedgerEntryResponse> ledgerPage(Map<String, Object> param, String email) {
         Company company = accessControlService.getCurrentCompany(email);
         Long productId = DataTypeUtility.getForeignKeyValue(param.get("productId"));
-        LocalDate startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "yyyy-MM-dd");
-        if (startDate == null) {
-            startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "dd-MM-yyyy");
-        }
-        LocalDate endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "yyyy-MM-dd");
-        if (endDate == null) {
-            endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "dd-MM-yyyy");
-        }
+        LocalDate startDate = DataTypeUtility.parseFlexibleDate(param, "startDate");
+        LocalDate endDate = DataTypeUtility.parseFlexibleDate(param, "endDate");
         String search = DataTypeUtility.stringValue(param.get("search"));
         if (search.length() == 0) {
             search = null;

@@ -25,7 +25,6 @@ import com.billing.repository.UserPermissionRepository;
 import com.billing.repository.UserRepository;
 import com.billing.util.DataTypeUtility;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

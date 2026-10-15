@@ -15,17 +15,6 @@ public class SanitizeData {
      */
     private static final int MAX_DEPTH = 20;
 
-    public static Map<String, String> sanitizeMap(Map<String, String> map) {
-        Map<String, String> sanitizeMap = new HashMap<>();
-        if (map != null && map.size() > 0) {
-            map.forEach((paramName, input) -> {
-                String result = sanitizeData(paramName, input);
-                sanitizeMap.put(paramName, result);
-            });
-        }
-        return sanitizeMap;
-    }
-
     /**
      * Deep-sanitizes a request map WITHOUT destroying its structure.
      * Maps stay Maps, Lists stay Lists (any depth); only leaf values go

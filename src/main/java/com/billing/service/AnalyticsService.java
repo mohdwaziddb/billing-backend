@@ -122,14 +122,8 @@ public class AnalyticsService {
 
     @Transactional(readOnly = true)
     public AnalyticsSummaryResponse summary(Map<String, Object> param, String email) {
-        LocalDate startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "yyyy-MM-dd");
-        if (startDate == null) {
-            startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "dd-MM-yyyy");
-        }
-        LocalDate endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "yyyy-MM-dd");
-        if (endDate == null) {
-            endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "dd-MM-yyyy");
-        }
+        LocalDate startDate = DataTypeUtility.parseFlexibleDate(param, "startDate");
+        LocalDate endDate = DataTypeUtility.parseFlexibleDate(param, "endDate");
         return summary(email, startDate, endDate);
     }
 
@@ -160,14 +154,8 @@ public class AnalyticsService {
 
     @Transactional(readOnly = true)
     public PageResponse<TopSellingProductResponse> topSellingProducts(Map<String, Object> param, String email) {
-        LocalDate startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "yyyy-MM-dd");
-        if (startDate == null) {
-            startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "dd-MM-yyyy");
-        }
-        LocalDate endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "yyyy-MM-dd");
-        if (endDate == null) {
-            endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "dd-MM-yyyy");
-        }
+        LocalDate startDate = DataTypeUtility.parseFlexibleDate(param, "startDate");
+        LocalDate endDate = DataTypeUtility.parseFlexibleDate(param, "endDate");
         String search = DataTypeUtility.stringValue(param.get("search"));
         if (search.length() == 0) {
             search = null;
@@ -182,14 +170,8 @@ public class AnalyticsService {
 
     @Transactional(readOnly = true)
     public List<SalesByCategoryResponse> salesByCategory(Map<String, Object> param, String email) {
-        LocalDate startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "yyyy-MM-dd");
-        if (startDate == null) {
-            startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "dd-MM-yyyy");
-        }
-        LocalDate endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "yyyy-MM-dd");
-        if (endDate == null) {
-            endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "dd-MM-yyyy");
-        }
+        LocalDate startDate = DataTypeUtility.parseFlexibleDate(param, "startDate");
+        LocalDate endDate = DataTypeUtility.parseFlexibleDate(param, "endDate");
         int limit = DataTypeUtility.integerValue(param.get("limit"));
         if (limit == 0) {
             limit = 7;
@@ -199,14 +181,8 @@ public class AnalyticsService {
 
     @Transactional(readOnly = true)
     public PageResponse<SalesByCategoryResponse> salesByCategoryPage(Map<String, Object> param, String email) {
-        LocalDate startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "yyyy-MM-dd");
-        if (startDate == null) {
-            startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "dd-MM-yyyy");
-        }
-        LocalDate endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "yyyy-MM-dd");
-        if (endDate == null) {
-            endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "dd-MM-yyyy");
-        }
+        LocalDate startDate = DataTypeUtility.parseFlexibleDate(param, "startDate");
+        LocalDate endDate = DataTypeUtility.parseFlexibleDate(param, "endDate");
         String search = DataTypeUtility.stringValue(param.get("search"));
         if (search.length() == 0) {
             search = null;
@@ -245,14 +221,8 @@ public class AnalyticsService {
 
     @Transactional(readOnly = true)
     public OwnerAnalyticsResponse ownerOverview(Map<String, Object> param, String email) {
-        LocalDate startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "yyyy-MM-dd");
-        if (startDate == null) {
-            startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "dd-MM-yyyy");
-        }
-        LocalDate endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "yyyy-MM-dd");
-        if (endDate == null) {
-            endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "dd-MM-yyyy");
-        }
+        LocalDate startDate = DataTypeUtility.parseFlexibleDate(param, "startDate");
+        LocalDate endDate = DataTypeUtility.parseFlexibleDate(param, "endDate");
         return ownerOverview(email, startDate, endDate);
     }
 

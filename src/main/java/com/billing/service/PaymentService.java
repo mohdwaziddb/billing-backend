@@ -95,14 +95,8 @@ public class PaymentService {
         if (paymentStatus.length() == 0) {
             paymentStatus = null;
         }
-        LocalDate startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "yyyy-MM-dd");
-        if (startDate == null) {
-            startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "dd-MM-yyyy");
-        }
-        LocalDate endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "yyyy-MM-dd");
-        if (endDate == null) {
-            endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "dd-MM-yyyy");
-        }
+        LocalDate startDate = DataTypeUtility.parseFlexibleDate(param, "startDate");
+        LocalDate endDate = DataTypeUtility.parseFlexibleDate(param, "endDate");
         BigDecimal minAmount = DataTypeUtility.bigDecimalObjectValue(param.get("minAmount"));
         BigDecimal maxAmount = DataTypeUtility.bigDecimalObjectValue(param.get("maxAmount"));
         String mode = DataTypeUtility.stringValue(param.get("mode"));

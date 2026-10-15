@@ -10,8 +10,6 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.HashMap;
-import java.util.Properties;
-import java.io.InputStream;
 
 public class AwsDataSourceService extends AbstractDataSourceService {
 
@@ -81,8 +79,8 @@ public class AwsDataSourceService extends AbstractDataSourceService {
         String username = System.getenv("DB_USERNAME");
         String password = System.getenv("DB_PASSWORD");
         if (url != null && !url.isBlank()) {
-            Registry.dbmap.put("url", extractHostPort(url));
-            Registry.dbmap.put("urlreader", extractHostPort(url));
+            Registry.dbmap.put("url", Registry.extractHostPort(url));
+            Registry.dbmap.put("urlreader", Registry.extractHostPort(url));
         }
         if (username != null && !username.isBlank()) {
             Registry.dbmap.put("username", username);
@@ -93,18 +91,5 @@ public class AwsDataSourceService extends AbstractDataSourceService {
         Registry.dbmap.putIfAbsent("driverClassName", "com.mysql.cj.jdbc.Driver");
         Registry.dbmap.putIfAbsent("databasename", "billing_common");
         return Registry.dbmap;
-    }
-
-    private static String extractHostPort(String jdbcUrl) {
-        try {
-            String tmp = jdbcUrl.replace("jdbc:mysql://", "");
-            int slash = tmp.indexOf("/");
-            if (slash > 0) {
-                tmp = tmp.substring(0, slash);
-            }
-            return tmp;
-        } catch (Exception e) {
-            return jdbcUrl;
-        }
     }
 }

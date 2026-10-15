@@ -1,6 +1,5 @@
 package com.billing.service;
 
-import com.billing.dto.notification.NotificationAttachmentRequest;
 import com.billing.dto.notification.NotificationChannelType;
 import com.billing.dto.notification.NotificationLogResponse;
 import com.billing.dto.notification.NotificationSendRequest;

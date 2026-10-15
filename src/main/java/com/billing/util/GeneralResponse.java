@@ -17,12 +17,4 @@ public class GeneralResponse<T> {
         this.message = message;
         this.data = data;
     }
-
-    public static <T> GeneralResponse<T> success(String message, T data) {
-        return new GeneralResponse<>(true, message, data);
-    }
-
-    public static <T> GeneralResponse<T> error(String message) {
-        return new GeneralResponse<>(false, message, null);
-    }
 }

@@ -107,6 +107,40 @@ public class TenantSchemaVerifier {
         return results;
     }
 
+    /**
+     * Tenant-scope missing objects for one database/connection, or null when
+     * the check itself cannot run (pool/privilege failure). Used by the
+     * auto-DDL service for before/after diffing. Never throws.
+     */
+    public List<String> missingForDatabase(String databaseName, DataSource dataSource) {
+        try {
+            Map<String, java.util.Set<String>> expected = expectedColumnsFor(expectedSchema(), false);
+            if (expected.isEmpty()) {
+                return null;
+            }
+            JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+            jdbcTemplate.setQueryTimeout(60);
+            Map<String, java.util.Set<String>> actual = actualSchema(jdbcTemplate, databaseName);
+            List<String> missing = new ArrayList<>();
+            for (Map.Entry<String, java.util.Set<String>> entry : expected.entrySet()) {
+                java.util.Set<String> actualColumns = actual.get(entry.getKey());
+                if (actualColumns == null) {
+                    missing.add(entry.getKey());
+                    continue;
+                }
+                for (String column : entry.getValue()) {
+                    if (!actualColumns.contains(column)) {
+                        missing.add(entry.getKey() + "." + column);
+                    }
+                }
+            }
+            return missing;
+        } catch (Exception e) {
+            log.warn("[Verify] missing-check failed db='{}': {}", databaseName, safeMessage(e));
+            return null;
+        }
+    }
+
     private Map<String, Object> verifyTenantDatabase(String databaseName, String dbHost,
                                                       Map<String, java.util.Set<String>> expected) {
         Map<String, Object> result = new LinkedHashMap<>();

@@ -50,6 +50,7 @@ public class PlatformAdminService {
     private final RequestInterceptor requestInterceptor;
     private final TenantSchemaMigrationService tenantSchemaMigrationService;
     private final TenantSchemaVerifier tenantSchemaVerifier;
+    private final TenantAutoDdlService tenantAutoDdlService;
     @Qualifier("billingCommonJdbcTemplate")
     private final JdbcTemplate billingCommonJdbcTemplate;
 
@@ -222,12 +223,22 @@ public class PlatformAdminService {
     }
 
     /**
-     * One-call full sync (bulk backup for post-deploy): schema migrations
-     * first (new tables must exist before seeds), then seed sweep, then
-     * schema verification proving entity/DB match.
+     * One-call full sync (bulk backup for post-deploy): additive auto-DDL
+     * first (new tables/columns without files), then schema migrations,
+     * then seed sweep, then schema verification proving entity/DB match.
      */
     public Map<String, Object> repairAll() {
         Map<String, Object> result = new LinkedHashMap<>();
+        List<Map<String, Object>> autoDdl = new ArrayList<>();
+        try {
+            autoDdl = tenantAutoDdlService.applyAdditiveUpdates();
+        } catch (Exception e) {
+            Map<String, Object> failure = new LinkedHashMap<>();
+            failure.put("status", "FAILED");
+            failure.put("detail", e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
+            autoDdl.add(failure);
+        }
+        result.put("autoDdl", autoDdl);
         List<Map<String, Object>> migrations = new ArrayList<>();
         try {
             migrations = tenantSchemaMigrationService.migrateAll();

@@ -99,14 +99,8 @@ public class ExpenseService {
         Long categoryId = DataTypeUtility.getForeignKeyValue(param.get("categoryId"));
         Long customerId = DataTypeUtility.getForeignKeyValue(param.get("customerId"));
         Long invoiceId = DataTypeUtility.getForeignKeyValue(param.get("invoiceId"));
-        LocalDate startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "yyyy-MM-dd");
-        if (startDate == null) {
-            startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "dd-MM-yyyy");
-        }
-        LocalDate endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "yyyy-MM-dd");
-        if (endDate == null) {
-            endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "dd-MM-yyyy");
-        }
+        LocalDate startDate = DataTypeUtility.parseFlexibleDate(param, "startDate");
+        LocalDate endDate = DataTypeUtility.parseFlexibleDate(param, "endDate");
         RoleName createdByRole = null;
         String roleStr = DataTypeUtility.stringValue(param.get("createdByRole"));
         if (roleStr.length() > 0) {
@@ -175,14 +169,8 @@ public class ExpenseService {
 
     @Transactional(readOnly = true)
     public ProfitabilityResponse customerProfitability(Map<String, Object> param, String email, Long customerId) {
-        LocalDate startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "yyyy-MM-dd");
-        if (startDate == null) {
-            startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "dd-MM-yyyy");
-        }
-        LocalDate endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "yyyy-MM-dd");
-        if (endDate == null) {
-            endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "dd-MM-yyyy");
-        }
+        LocalDate startDate = DataTypeUtility.parseFlexibleDate(param, "startDate");
+        LocalDate endDate = DataTypeUtility.parseFlexibleDate(param, "endDate");
         return customerProfitability(email, customerId, startDate, endDate);
     }
 
@@ -229,14 +217,8 @@ public class ExpenseService {
         Long categoryId = DataTypeUtility.getForeignKeyValue(param.get("categoryId"));
         Long customerId = DataTypeUtility.getForeignKeyValue(param.get("customerId"));
         Long invoiceId = DataTypeUtility.getForeignKeyValue(param.get("invoiceId"));
-        LocalDate startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "yyyy-MM-dd");
-        if (startDate == null) {
-            startDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("startDate")), "dd-MM-yyyy");
-        }
-        LocalDate endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "yyyy-MM-dd");
-        if (endDate == null) {
-            endDate = DataTypeUtility.parseLocalDate(DataTypeUtility.stringValue(param.get("endDate")), "dd-MM-yyyy");
-        }
+        LocalDate startDate = DataTypeUtility.parseFlexibleDate(param, "startDate");
+        LocalDate endDate = DataTypeUtility.parseFlexibleDate(param, "endDate");
         RoleName createdByRole = null;
         String roleStr = DataTypeUtility.stringValue(param.get("createdByRole"));
         if (roleStr.length() > 0) {

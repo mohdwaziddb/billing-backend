@@ -9,7 +9,6 @@ import com.billing.entity.Company;
 import com.billing.entity.PasswordResetOtp;
 import com.billing.entity.User;
 import com.billing.exception.BadRequestException;
-import com.billing.exception.UnauthorizedException;
 import com.billing.multitenancy.TenantContextHolder;
 import com.billing.repository.CompanyRepository;
 import com.billing.repository.EmailProviderSettingRepository;

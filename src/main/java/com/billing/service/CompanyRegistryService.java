@@ -31,7 +31,7 @@ public class CompanyRegistryService {
         }
     }
 
-    public Map<String, Object> getCompanyInfo(String companyCode) {
+    private Map<String, Object> getCompanyInfo(String companyCode) {
         try {
             String sql = "SELECT company_code, company_name, database_name, db_host, status, domain FROM billing_common.company_registry WHERE company_code=? LIMIT 1";
             try {
@@ -126,10 +126,6 @@ public class CompanyRegistryService {
             // ignore
         }
         return "localhost:3306";
-    }
-
-    public boolean isValidCompanyCode(String companyCode) {
-        return resolveDbName(companyCode) != null;
     }
 
     /**
