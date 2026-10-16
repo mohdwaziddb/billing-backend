@@ -393,13 +393,13 @@ public class CompanyService {
     @Transactional
     public CompanySummary uploadLogo(String email, MultipartFile file) {
         Company company = accessControlService.requireOwnerCompany(email);
-        return saveImage(company, file, "company-logos", "company-" + company.getId() + "-", true);
+        return saveImage(company, file, "logo", true);
     }
 
     @Transactional
     public CompanySummary uploadSignature(String email, MultipartFile file) {
         Company company = accessControlService.requireOwnerCompany(email);
-        return saveImage(company, file, "company-signatures", "signature-" + company.getId() + "-", false);
+        return saveImage(company, file, "signature", false);
     }
 
     @Transactional
@@ -408,17 +408,21 @@ public class CompanyService {
         String oldDbValue = company.getSignatureUrl();
         company.setSignatureUrl(null);
         CompanySummary summary = toSummary(companyRepository.save(company));
-        deleteFile(oldDbValue, "company-signatures");
+        deleteFile(oldDbValue);
         return summary;
     }
 
     /**
-     * Stores the image (S3 tenant folder, or local disk when S3 is disabled) and
+     * Stores the image (flat tenant key: S3, or local disk when S3 is disabled) and
      * saves the FULL file JSON ({@code file_name, type, url, key, size, ...}) into
-     * the existing {@code logo_url} / {@code signature_url} column. The old file is
-     * deleted only after the new row is saved, so a failed upload never orphans data.
+     * the existing {@code logo_url} / {@code signature_url} column.
+     *
+     * Same naam dobara aaye to key identical hoti hai (in-place overwrite) — us
+     * case me purani delete SKIP hoti hai, warna abhi-upload ki file ud jayegi.
+     * Alag naam aaye to purani key delete hoti hai. Delete hamesha successful
+     * DB save ke BAAD, taaki failed upload kabhi data orphan na kare.
      */
-    private CompanySummary saveImage(Company company, MultipartFile file, String folderName, String prefix, boolean logo) {
+    private CompanySummary saveImage(Company company, MultipartFile file, String slot, boolean logo) {
         if (file == null || file.isEmpty()) {
             throw new BadRequestException((logo ? "Logo" : "Signature") + " file is required");
         }
@@ -426,7 +430,7 @@ public class CompanyService {
         if (!LOGO_CONTENT_TYPES.contains(contentType)) {
             throw new BadRequestException("Only JPG, PNG, and WEBP images are allowed");
         }
-        CompanyFileInfo meta = s3StorageService.store(company, folderName, prefix, file);
+        CompanyFileInfo meta = s3StorageService.store(company, slot, file);
         String oldDbValue = logo ? company.getLogoUrl() : company.getSignatureUrl();
         if (logo) {
             company.setLogoUrl(CompanyFileJson.toJson(meta));
@@ -434,7 +438,11 @@ public class CompanyService {
             company.setSignatureUrl(CompanyFileJson.toJson(meta));
         }
         CompanySummary summary = toSummary(companyRepository.save(company));
-        deleteFile(oldDbValue, folderName);
+        String newKey = DataTypeUtility.stringValue(meta.getKey());
+        String oldKey = DataTypeUtility.stringValue(CompanyFileJson.extractKey(oldDbValue));
+        if (!newKey.equals(oldKey)) {
+            deleteFile(oldDbValue);
+        }
         return summary;
     }
 
@@ -444,31 +452,33 @@ public class CompanyService {
         String oldDbValue = company.getLogoUrl();
         company.setLogoUrl(null);
         CompanySummary summary = toSummary(companyRepository.save(company));
-        deleteFile(oldDbValue, "company-logos");
+        deleteFile(oldDbValue);
         return summary;
     }
 
     /**
-     * Best-effort cleanup of a previously stored image. Understands both the new
-     * file-JSON values (S3 key delete, or local file delete when S3 is disabled)
-     * and legacy plain {@code /uploads/...} values. Never throws.
+     * Best-effort cleanup of a previously stored image. New JSON rows: S3 key
+     * delete (S3 on) ya local relative-path delete (S3 off). Legacy plain
+     * {@code /uploads/...} rows: URL se derived local path delete. Never throws.
      */
-    private void deleteFile(String dbValue, String folderName) {
+    private void deleteFile(String dbValue) {
         if (DataTypeUtility.stringValue(dbValue).length() == 0) {
             return;
         }
         try {
             String key = CompanyFileJson.extractKey(dbValue);
             if (key != null) {
-                s3StorageService.deleteByKey(key);
+                if (s3StorageService.isEnabled()) {
+                    s3StorageService.deleteByKey(key);
+                    return;
+                }
+                s3StorageService.deleteLocalPath(key);
                 return;
             }
-            String fileName = CompanyFileJson.extractFileName(dbValue);
-            if (fileName == null || fileName.isBlank()
-                    || fileName.contains("..") || fileName.contains("/") || fileName.contains("\\")) {
-                return;
+            String relativePath = CompanyFileJson.extractRelativePath(dbValue);
+            if (relativePath != null) {
+                s3StorageService.deleteLocalPath(relativePath);
             }
-            s3StorageService.deleteLocal(folderName, fileName);
         } catch (Exception ignored) {
             // Cleanup must never break the main flow.
         }

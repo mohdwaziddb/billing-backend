@@ -22,18 +22,22 @@ import java.nio.file.StandardOpenOption;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
-import java.util.UUID;
 
 /**
  * Generic tenant-scoped file storage for company branding images (logo, signature)
- * and any future images. Layout on S3:
+ * and any future images. FLAT layout — sirf database folder, usme sidha files:
  * <pre>
- * s3://&lt;bucket&gt;/&lt;database_name_lower&gt;/&lt;kind&gt;/&lt;fileName&gt;
+ * s3://&lt;bucket&gt;/&lt;database_name_lower&gt;/&lt;slot&gt;-&lt;original_name&gt;
  * </pre>
+ * Same naam dobara upload ho to same key banti hai, S3 in-place overwrite kar
+ * deta hai (nayi object nahi banti). Alag naam aaye to purani key DB JSON se
+ * delete hoti hai. Slot-prefix (logo-/signature-) taaki dono slot ka same naam
+ * takraye to bhi ek dusre ko overwrite na kare.
+ *
  * A single shared bucket + global IAM credentials (env vars) is used; tenants are
  * isolated by the {@code database_name} prefix. When {@code Registry.IS_AWS} is
- * false, files fall back to the local {@code uploads} directory so local
- * development works without AWS.
+ * false, files fall back to the local {@code uploads} directory (same flat
+ * layout) so local development works without AWS.
  */
 @Service
 public class S3StorageService {
@@ -79,12 +83,14 @@ public class S3StorageService {
 
     /**
      * Store an image and return its full metadata (caller serializes it to DB JSON).
+     * Key = {@code <tenant>/<slot>-<original_name>} — same naam dobara aaye to
+     * same key (S3/local dono overwrite), alag naam aaye to caller purani key
+     * (DB JSON me stored) delete karta hai.
      *
      * @param company tenant fallback when no request-scoped tenant is bound
-     * @param kind    storage folder, e.g. {@code company-logos}
-     * @param prefix  file-name prefix, e.g. {@code company-1-}
+     * @param slot    file slot/prefix, e.g. {@code logo} or {@code signature}
      */
-    public CompanyFileInfo store(Company company, String kind, String prefix, MultipartFile file) {
+    public CompanyFileInfo store(Company company, String slot, MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw new BadRequestException("Image file is required");
         }
@@ -101,9 +107,9 @@ public class S3StorageService {
         if (bytes.length > getMaxBytes()) {
             throw new BadRequestException("Image must be smaller than " + (getMaxBytes() / 1024) + " KB");
         }
-        String safeKind = sanitizeKind(kind);
+        String safeSlot = sanitizeSlot(slot);
         String tenant = resolveTenant(company);
-        String fileName = sanitizePrefix(prefix) + UUID.randomUUID() + extensionFor(contentType);
+        String fileName = buildFileName(safeSlot, file.getOriginalFilename(), contentType);
         String originalName = DataTypeUtility.stringNullValue(file.getOriginalFilename());
         String uploadedAt = OffsetDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
         String bucket = DataTypeUtility.stringValue(s3Bucket);
@@ -114,8 +120,9 @@ public class S3StorageService {
         if (isAws() && !isEnabled()) {
             throw new BadRequestException("S3 image storage is enabled but bucket/region is not configured");
         }
+        // Flat key: sirf database folder, usme sidha file (koi kind subfolder nahi).
+        String key = tenant + "/" + fileName;
         if (isEnabled()) {
-            String key = tenant + "/" + safeKind + "/" + fileName;
             try {
                 PutObjectRequest put = PutObjectRequest.builder()
                         .bucket(bucket)
@@ -139,19 +146,20 @@ public class S3StorageService {
                     .size((long) bytes.length)
                     .bucket(bucket)
                     .tenant(tenant)
-                    .kind(safeKind)
+                    .kind(safeSlot)
                     .uploadedAt(uploadedAt)
                     .build();
         }
 
-        // Local fallback (S3 disabled): same layout as before, nested per kind.
-        Path targetDir = Paths.get(uploadDir).toAbsolutePath().normalize().resolve(safeKind);
-        Path targetFile = targetDir.resolve(fileName).normalize();
-        if (!targetFile.startsWith(targetDir)) {
+        // Local fallback (S3 disabled): same flat layout under uploads/.
+        // Same key dobara aaye to TRUNCATE overwrite kar deta hai.
+        Path baseDir = Paths.get(uploadDir).toAbsolutePath().normalize();
+        Path targetFile = baseDir.resolve(key).normalize();
+        if (!targetFile.startsWith(baseDir)) {
             throw new BadRequestException("Invalid image path");
         }
         try {
-            Files.createDirectories(targetDir);
+            Files.createDirectories(targetFile.getParent());
             Files.write(targetFile, bytes, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
         } catch (Exception ex) {
             throw new BadRequestException("Unable to upload company image");
@@ -159,11 +167,12 @@ public class S3StorageService {
         return CompanyFileInfo.builder()
                 .fileName(fileName)
                 .originalName(originalName)
-                .url("/uploads/" + safeKind + "/" + fileName)
+                .key(key)
+                .url("/uploads/" + key)
                 .type(contentType)
                 .size((long) bytes.length)
                 .tenant(tenant)
-                .kind(safeKind)
+                .kind(safeSlot)
                 .uploadedAt(uploadedAt)
                 .build();
     }
@@ -184,16 +193,22 @@ public class S3StorageService {
         }
     }
 
-    /** Best-effort local-file delete for the S3-disabled fallback. Never throws. */
-    public void deleteLocal(String kind, String fileName) {
-        String cleanName = DataTypeUtility.stringValue(fileName);
-        if (cleanName.length() == 0) {
+    /**
+     * Best-effort local-file delete by relative path (e.g. {@code test/logo-x.png}).
+     * S3-disabled fallback ke liye. Never throws.
+     */
+    public void deleteLocalPath(String relativePath) {
+        String clean = DataTypeUtility.stringValue(relativePath).replace("\\", "/");
+        while (clean.startsWith("/")) {
+            clean = clean.substring(1);
+        }
+        if (clean.length() == 0 || clean.contains("..")) {
             return;
         }
         try {
-            Path targetDir = Paths.get(uploadDir).toAbsolutePath().normalize().resolve(sanitizeKind(kind));
-            Path targetFile = targetDir.resolve(cleanName).normalize();
-            if (!targetFile.startsWith(targetDir)) {
+            Path baseDir = Paths.get(uploadDir).toAbsolutePath().normalize();
+            Path targetFile = baseDir.resolve(clean).normalize();
+            if (!targetFile.startsWith(baseDir)) {
                 return;
             }
             Files.deleteIfExists(targetFile);
@@ -258,25 +273,51 @@ public class S3StorageService {
         return clean.isEmpty() ? "common" : clean;
     }
 
-    private String sanitizeKind(String kind) {
-        String clean = DataTypeUtility.stringValue(kind).toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9-]", "-").replaceAll("-{2,}", "-");
+    private String sanitizeSlot(String slot) {
+        String clean = DataTypeUtility.stringValue(slot).toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9-]", "-").replaceAll("-{2,}", "-");
         clean = clean.replaceAll("^-+|-+$", "");
-        if (clean.isEmpty() || clean.length() > 64) {
-            throw new BadRequestException("Invalid image folder");
+        if (clean.isEmpty() || clean.length() > 32) {
+            throw new BadRequestException("Invalid image slot");
         }
         return clean;
     }
 
-    private String sanitizePrefix(String prefix) {
-        String clean = DataTypeUtility.stringValue(prefix).toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9-]", "-");
-        return clean.length() > 32 ? clean.substring(0, 32) : clean;
-    }
-
-    private String extensionFor(String contentType) {
-        return switch (contentType) {
+    /**
+     * Deterministic file name: {@code <slot>-<original_name>}. Same file dobara
+     * aaye to same naam (S3/local overwrite). Extension content-type se verify:
+     * missing/bogus ho to sahi wali lagti hai.
+     */
+    private String buildFileName(String safeSlot, String originalName, String contentType) {
+        String base = DataTypeUtility.stringValue(originalName).replace("\\", "/");
+        int slash = base.lastIndexOf('/');
+        if (slash >= 0) {
+            base = base.substring(slash + 1);
+        }
+        base = base.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9._-]", "-").replaceAll("-{2,}", "-");
+        base = base.replaceAll("^[-.]+|[-.]+$", "");
+        String namePart = base;
+        String ext = "";
+        int dot = base.lastIndexOf('.');
+        if (dot > 0) {
+            namePart = base.substring(0, dot);
+            ext = base.substring(dot);
+        }
+        String validExt = switch (contentType) {
             case "image/png" -> ".png";
             case "image/webp" -> ".webp";
             default -> ".jpg";
         };
+        if (".jpeg".equals(ext)) {
+            ext = ".jpg";
+        } else if (!".png".equals(ext) && !".jpg".equals(ext) && !".webp".equals(ext)) {
+            ext = validExt;
+        }
+        if (namePart.isEmpty()) {
+            namePart = "file";
+        }
+        if (namePart.length() > 100) {
+            namePart = namePart.substring(0, 100);
+        }
+        return safeSlot + "-" + namePart + ext;
     }
 }

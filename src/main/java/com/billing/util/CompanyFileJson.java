@@ -80,7 +80,39 @@ public final class CompanyFileJson {
         return info == null ? null : info.getUrl();
     }
 
-    /** S3 object key for a DB column value, or {@code null} for legacy/local rows. */
+    /**
+     * Local relative path (under the uploads dir) for a DB column value.
+     * New rows: the stored {@code key} ({@code test/logo-x.png}). Legacy local
+     * rows ({@code /uploads/company-logos/x.png}): derived from the URL.
+     * Legacy absolute URLs: {@code null} (cannot map to a local file).
+     */
+    public static String extractRelativePath(String dbValue) {
+        String key = extractKey(dbValue);
+        if (key != null) {
+            return key;
+        }
+        CompanyFileInfo info = parse(dbValue);
+        if (info == null) {
+            return null;
+        }
+        String url = DataTypeUtility.stringValue(info.getUrl());
+        if (!url.startsWith("/")) {
+            return null;
+        }
+        String clean = url;
+        while (clean.startsWith("/")) {
+            clean = clean.substring(1);
+        }
+        if (clean.toLowerCase(Locale.ROOT).startsWith("uploads/")) {
+            clean = clean.substring("uploads/".length());
+        }
+        if (clean.length() == 0 || clean.contains("..")) {
+            return null;
+        }
+        return clean;
+    }
+
+    /** S3 object key (= local relative path) for a DB column value, or {@code null} for legacy rows. */
     public static String extractKey(String dbValue) {
         CompanyFileInfo info = parse(dbValue);
         if (info == null || DataTypeUtility.stringValue(info.getKey()).length() == 0) {
