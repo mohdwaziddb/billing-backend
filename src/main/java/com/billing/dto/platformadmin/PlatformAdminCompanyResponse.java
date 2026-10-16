@@ -15,7 +15,9 @@ public class PlatformAdminCompanyResponse {
     private String email;
     private String mobile;
     private boolean active;
-    private boolean chatbotEnabled;
+    // Nullable: tenant DB unreachable hone par fallback row me chatbot state
+    // UNKNOWN hoti hai — primitive false "OFF" ka jhootha badge dikhata tha.
+    private Boolean chatbotEnabled;
     private LocalDateTime createdAt;
     private long ownerCount;
     private long adminCount;

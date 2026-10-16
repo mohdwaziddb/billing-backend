@@ -83,6 +83,9 @@ public class CompanyService {
             map.put("phone", c.getPhone());
             map.put("logoUrl", c.getLogoUrl());
             map.put("active", c.isActive());
+            // Server-authoritative chatbot flag for the tenant widget: login-time
+            // session data goes stale when Platform Admin toggles mid-session.
+            map.put("chatbotEnabled", c.isChatbotEnabled());
             return map;
         } catch (Exception ignored) {
             return null;
@@ -119,6 +122,7 @@ public class CompanyService {
                 map.put("email", c.getEmail());
                 map.put("logoUrl", c.getLogoUrl());
                 map.put("active", c.isActive());
+                map.put("chatbotEnabled", c.isChatbotEnabled());
                 return map;
             }
         } catch (Exception ignored) {}

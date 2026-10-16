@@ -433,7 +433,9 @@ public class PermissionService {
         List<MenuPermissionResponse> roots = new ArrayList<>();
         for (MenuPermissionResponse menu : byId.values()) {
             List<MenuPermissionResponse> children = childrenByParent.getOrDefault(menu.getId(), List.of()).stream()
-                    .sorted(Comparator.comparing(MenuPermissionResponse::getDisplayOrder).thenComparing(MenuPermissionResponse::getId))
+                    .sorted(Comparator.comparing((MenuPermissionResponse m) -> isSetupMenu(m) ? 1 : 0)
+                            .thenComparing(MenuPermissionResponse::getDisplayOrder)
+                            .thenComparing(MenuPermissionResponse::getId))
                     .toList();
             MenuPermissionResponse withChildren = copyMenu(menu, children);
             if (menu.getParentMenuId() == null) {
@@ -443,8 +445,17 @@ public class PermissionService {
             }
         }
         return roots.stream()
-                .sorted(Comparator.comparing(MenuPermissionResponse::getDisplayOrder).thenComparing(MenuPermissionResponse::getId))
+                .sorted(Comparator.comparing((MenuPermissionResponse m) -> isSetupMenu(m) ? 1 : 0)
+                        .thenComparing(MenuPermissionResponse::getDisplayOrder)
+                        .thenComparing(MenuPermissionResponse::getId))
                 .toList();
+    }
+
+    /**
+     * Setup always renders last in the menu list, regardless of displayOrder.
+     */
+    private static boolean isSetupMenu(MenuPermissionResponse menu) {
+        return menu != null && "SETUP".equals(menu.getMenuCode());
     }
 
     private MenuPermissionResponse copyMenu(MenuPermissionResponse menu, List<MenuPermissionResponse> children) {

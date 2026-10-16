@@ -21,6 +21,8 @@ import com.billing.repository.AuditLogRepository;
 import com.billing.repository.CompanyRepository;
 import com.billing.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -39,6 +41,8 @@ import java.util.function.Supplier;
 @Service
 @RequiredArgsConstructor
 public class PlatformAdminService {
+
+    private static final Logger log = LoggerFactory.getLogger(PlatformAdminService.class);
 
     private final CompanyRepository companyRepository;
     private final UserRepository userRepository;
@@ -309,8 +313,10 @@ public class PlatformAdminService {
     public PlatformAdminCompanyResponse activateCompanyData(String companyCode) {
         Company company = requireCompany(companyCode);
         company.setActive(true);
-        company = companyRepository.save(company);
-        syncRegistryStatus(company);
+        // Flush first: DB errors must surface BEFORE the registry sync runs,
+        // otherwise a failed save leaves the two flags diverged.
+        company = companyRepository.saveAndFlush(company);
+        syncRegistryStatus(companyCode, true);
         return toCompanyResponse(company);
     }
 
@@ -322,9 +328,12 @@ public class PlatformAdminService {
     public PlatformAdminCompanyResponse deactivateCompanyData(String companyCode) {
         Company company = requireCompany(companyCode);
         company.setActive(false);
+        // Tenant save FIRST, registry sync second (same order as activate):
+        // if the save fails, the registry stays untouched — no divergence.
+        company = companyRepository.saveAndFlush(company);
         // Keep registry status in sync so routing/login follows company state.
-        syncRegistryStatus(company);
-        return toCompanyResponse(companyRepository.save(company));
+        syncRegistryStatus(companyCode, false);
+        return toCompanyResponse(company);
     }
 
     public PlatformAdminCompanyResponse setCompanyChatbotEnabled(String companyCode, boolean enabled) {
@@ -392,14 +401,41 @@ public class PlatformAdminService {
                 .build();
     }
 
-    private void syncRegistryStatus(Company company) {
+    /**
+     * Mirror the tenant companies.is_active flag into the registry status.
+     * Matches on the registry database_name column using the database name
+     * RESOLVED from the catalog for this company code — never on the tenant
+     * row's own database_name field, which can be NULL or a stale placeholder
+     * (that silent 0-row update once locked a super-admin out while the
+     * registry still said ACTIVE). A missed sync is logged loudly instead of
+     * being swallowed.
+     */
+    private void syncRegistryStatus(String companyCode, boolean active) {
+        String code = companyCode == null ? "" : companyCode.trim().toUpperCase(Locale.ROOT);
+        String status = active ? "ACTIVE" : "INACTIVE";
+        String databaseName = null;
         try {
-            String status = company.isActive() ? "ACTIVE" : "INACTIVE";
-            billingCommonJdbcTemplate.update(
+            databaseName = companyRegistryService.resolveDbNameByCodeAnyStatus(code);
+        } catch (Exception e) {
+            log.warn("[RegistrySync] could not resolve database for company_code={} (expected {}): {}",
+                    code, status, e.getMessage());
+        }
+        if (databaseName == null || databaseName.isBlank()) {
+            log.warn("[RegistrySync] no registry row for company_code={}; status NOT synced (expected {}). Add/fix the company_registry row.",
+                    code, status);
+            return;
+        }
+        try {
+            int rows = billingCommonJdbcTemplate.update(
                     "UPDATE billing_common.company_registry SET status=? WHERE database_name=?",
-                    status, company.getDatabaseName());
-        } catch (Exception ignored) {
-            // registry sync is best-effort; company state is authoritative in tenant DB
+                    status, databaseName.trim());
+            if (rows == 0) {
+                log.warn("[RegistrySync] UPDATE matched 0 rows for database_name={} (company_code={}, expected {}). Registry and tenant flags are DIVERGED — fix company_registry manually.",
+                        databaseName, code, status);
+            }
+        } catch (Exception e) {
+            log.warn("[RegistrySync] failed for company_code={} database_name={} (expected {}): {}",
+                    code, databaseName, status, e.getMessage());
         }
     }
 
