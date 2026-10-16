@@ -72,7 +72,10 @@ public class PlatformAdminService {
                 .build();
     }
 
-    @Transactional(readOnly = true)
+    // NOT transactional on purpose (NEVER-AGAIN RULE, see note below the class):
+    // each row's tenant switch + JPA read must open its own tx via the self
+    // proxy inside withTenantDb, otherwise the connection binds to the entry
+    // tenant and only that tenant's company enriches correctly.
     public PageResponse<PlatformAdminCompanyResponse> companies(int page, int size, String search, Boolean active) {
         int resolvedPage = Math.max(0, page);
         int resolvedSize = Math.max(1, Math.min(size, 100));
@@ -94,7 +97,6 @@ public class PlatformAdminService {
                 .build();
     }
 
-    @Transactional(readOnly = true)
     public PageResponse<PlatformAdminCompanyResponse> companies(Map<String, Object> param) {
         String search = DataTypeUtility.stringValue(param.get("search"));
         if (search.length() == 0) {
@@ -116,7 +118,6 @@ public class PlatformAdminService {
         return companies(page, size, search, active);
     }
 
-    @Transactional(readOnly = true)
     public PlatformAdminCompanyOverviewResponse companyOverview(String search, Boolean active) {
         String status = active == null ? null : (active ? "ACTIVE" : "INACTIVE");
         List<Map<String, Object>> rows = companyRegistryService.listTenants(normalizeSearch(search), status, 100000, 0);
@@ -137,7 +138,6 @@ public class PlatformAdminService {
                 .build();
     }
 
-    @Transactional(readOnly = true)
     public PlatformAdminCompanyOverviewResponse companyOverview(Map<String, Object> param) {
         String search = DataTypeUtility.stringValue(param.get("search"));
         if (search.length() == 0) {
@@ -545,63 +545,78 @@ public class PlatformAdminService {
     /**
      * Enrich a company_registry row with live data from its own tenant DB
      * (company entity + role counts). Falls back to registry columns only.
+     * The tenant switch happens here; the JPA read runs in
+     * enrichTenantRowData through the self proxy so its transaction starts
+     * inside the switched tenant, not the entry tenant.
      */
     private PlatformAdminCompanyResponse enrichTenantRow(Map<String, Object> row) {
         String db = registryString(row.get("database_name"));
-        String code = registryString(row.get("company_code"));
-        String status = registryString(row.get("status"));
-        boolean active = !"INACTIVE".equalsIgnoreCase(status);
         if (db == null || db.isBlank()) {
-            return PlatformAdminCompanyResponse.builder()
-                    .name(registryString(row.get("company_name")))
-                    .code(code)
-                    .active(active)
-                    .createdAt(null)
-                    .build();
+            return fallbackTenantRow(row);
         }
         return withTenantDb(db, registryString(row.get("db_host")), () -> {
-            Company company = null;
             try {
-                if (code != null) {
-                    company = companyRepository.findByCodeIgnoreCase(code).orElse(null);
-                }
-            } catch (Exception ignored) {
-                company = null;
+                return self.enrichTenantRowData(row);
+            } catch (Exception e) {
+                log.warn("[PlatformAdmin] tenant enrichment failed (company_code={}, db={}): {}",
+                        registryString(row.get("company_code")), db,
+                        e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
+                return fallbackTenantRow(row);
             }
-            if (company == null) {
-                return PlatformAdminCompanyResponse.builder()
-                        .name(registryString(row.get("company_name")))
-                        .code(code)
-                        .active(active)
-                        .build();
-            }
-            List<User> users = userRepository.findAllByOrderByCreatedAtDesc();
-            String ownerName = users.stream()
-                    .filter(user -> user.getRole() == RoleName.OWNER)
-                    .map(User::getFullName)
-                    .distinct()
-                    .sorted()
-                    .reduce((left, right) -> left + ", " + right)
-                    .orElse(null);
-            long ownerCount = users.stream().filter(user -> user.getRole() == RoleName.OWNER).count();
-            long adminCount = users.stream().filter(user -> user.getRole() == RoleName.ADMIN).count();
-            long userCount = users.stream().filter(user -> user.getRole() == RoleName.USER).count();
-            return PlatformAdminCompanyResponse.builder()
-                    .id(company.getId())
-                    .name(company.getName())
-                    .code(company.getCode())
-                    .ownerName(ownerName)
-                    .email(company.getEmail())
-                    .mobile(company.getPhone())
-                    .active(company.isActive())
-                    .chatbotEnabled(company.isChatbotEnabled())
-                    .createdAt(company.getCreatedAt())
-                    .ownerCount(ownerCount)
-                    .adminCount(adminCount)
-                    .userCount(userCount)
-                    .totalUsers(users.size())
-                    .build();
         });
+    }
+
+    /**
+     * JPA part of row enrichment. Enter only through the self proxy from
+     * inside withTenantDb: the transaction (and its connection) then starts
+     * AFTER the tenant switch — an outer @Transactional binds to the entry
+     * tenant and every other tenant shows the fallback row ("Unknown").
+     */
+    @Transactional(readOnly = true)
+    public PlatformAdminCompanyResponse enrichTenantRowData(Map<String, Object> row) {
+        String code = registryString(row.get("company_code"));
+        Company company = null;
+        if (code != null) {
+            company = companyRepository.findByCodeIgnoreCase(code).orElse(null);
+        }
+        if (company == null) {
+            return fallbackTenantRow(row);
+        }
+        List<User> users = userRepository.findAllByOrderByCreatedAtDesc();
+        String ownerName = users.stream()
+                .filter(user -> user.getRole() == RoleName.OWNER)
+                .map(User::getFullName)
+                .distinct()
+                .sorted()
+                .reduce((left, right) -> left + ", " + right)
+                .orElse(null);
+        long ownerCount = users.stream().filter(user -> user.getRole() == RoleName.OWNER).count();
+        long adminCount = users.stream().filter(user -> user.getRole() == RoleName.ADMIN).count();
+        long userCount = users.stream().filter(user -> user.getRole() == RoleName.USER).count();
+        return PlatformAdminCompanyResponse.builder()
+                .id(company.getId())
+                .name(company.getName())
+                .code(company.getCode())
+                .ownerName(ownerName)
+                .email(company.getEmail())
+                .mobile(company.getPhone())
+                .active(company.isActive())
+                .chatbotEnabled(company.isChatbotEnabled())
+                .createdAt(company.getCreatedAt())
+                .ownerCount(ownerCount)
+                .adminCount(adminCount)
+                .userCount(userCount)
+                .totalUsers(users.size())
+                .build();
+    }
+
+    private PlatformAdminCompanyResponse fallbackTenantRow(Map<String, Object> row) {
+        return PlatformAdminCompanyResponse.builder()
+                .name(registryString(row.get("company_name")))
+                .code(registryString(row.get("company_code")))
+                .active(!"INACTIVE".equalsIgnoreCase(registryString(row.get("status"))))
+                .createdAt(null)
+                .build();
     }
 
     private long[] countTenantUsers(Map<String, Object> row) {
@@ -610,18 +625,25 @@ public class PlatformAdminService {
             return new long[]{0, 0, 0};
         }
         return withTenantDb(db, registryString(row.get("db_host")), () -> {
-            List<User> users;
             try {
-                users = userRepository.findAllByOrderByCreatedAtDesc();
-            } catch (Exception ignored) {
+                return self.countTenantUsersData();
+            } catch (Exception e) {
+                log.warn("[PlatformAdmin] user count failed (db={}): {}", db,
+                        e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
                 return new long[]{0, 0, 0};
             }
-            return new long[]{
-                    users.stream().filter(user -> user.getRole() == RoleName.OWNER).count(),
-                    users.stream().filter(user -> user.getRole() == RoleName.ADMIN).count(),
-                    users.stream().filter(user -> user.getRole() == RoleName.USER).count()
-            };
         });
+    }
+
+    /** JPA user counts — entered via self proxy after the tenant switch. */
+    @Transactional(readOnly = true)
+    public long[] countTenantUsersData() {
+        List<User> users = userRepository.findAllByOrderByCreatedAtDesc();
+        return new long[]{
+                users.stream().filter(user -> user.getRole() == RoleName.OWNER).count(),
+                users.stream().filter(user -> user.getRole() == RoleName.ADMIN).count(),
+                users.stream().filter(user -> user.getRole() == RoleName.USER).count()
+        };
     }
 
     private PlatformAdminCompanyResponse toCompanyResponse(Company company) {

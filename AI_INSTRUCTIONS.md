@@ -165,4 +165,23 @@ Long id = Long.parseLong(param.get("id").toString());
 
 ---
 
+## 7) UI Performance Rules (Frontend bhi - Har page - MANDATORY)
+
+Ye rules isi AI instruction file me likhi hai (yahi ek "AI Instructions" file hai) — **frontend UI code pe bhi 100% applicable hain**. Kisi bhi page pe inka ullanghan = code review fail.
+
+- **Animated / lagatar-moving element pe `backdrop-blur` (`backdrop-filter`) KABHI NAHI.** Browser har animation frame me poora backdrop dobara blur karta hai → GPU/CPU 100% → low-end Windows machines pe **poora PC hang**. Case study: login page ke floating badges (`billing-frontend/src/components/login/AnalyticsShowcase.tsx`) — `backdrop-blur` + `.login-float` infinite animation = system hang bug tha. Solid `bg-white/95` ya halka solid background use karo, blur nahi.
+- **Bade decorative elements pe `filter: blur(...)` (`blur-xl/2xl/3xl`) mat lagao.** Low-end GPU pe paint spike + Chromium me GPU memory leak (page baar-baar kholne par). Iski jagah bina-filter `radial-gradient` circles use karo — dikhne me same soft glow, cost ~zero:
+  ```jsx
+  // Galat:
+  <div className="h-80 w-80 rounded-full bg-[#dbe7ff]/80 blur-3xl" />
+  // Sahi:
+  <div className="h-96 w-96 rounded-full bg-[radial-gradient(circle,#dbe7ff_0%,rgba(219,231,255,0.55)_45%,rgba(219,231,255,0)_72%)]" />
+  ```
+- **Infinite animations sirf compositor-friendly properties pe** (`transform`, `opacity`). Kisi bhi infinite animation ke liye: `@media (prefers-reduced-motion: reduce)` me animation off karo, aur `will-change` sirf usi property pe lagao jo actually animate ho rahi hai. Layout-affecting properties (width/height/top/left/box-shadow/filter) ko infinite animation me kabhi mat animate karo.
+- **Login page hamesha GPU-light rakho.** Ye sabse pehla page hai aur weakest client machine pe bhi chalna chahiye. Login page pe koi naya visual effect add karne se pehle: Chrome DevTools → Performance (10s record) ya `Shift+Esc` Task Manager me GPU/CPU spike check karo — spike dikhe to effect simplify karo.
+- **Redirect loops kabhi nahi:** `window.location.href = ...` set karne se pehle current path/target compare karo (guarded redirect). `setInterval`/`setTimeout` hamesha React effect cleanup me clear karo. Koi bhi auto-redirect aisa na ho jo wapas usi page pe loop kar jaye.
+- **Naya visual effect / animation add karte waqt checklist:** (1) koi `backdrop-filter` animated element pe nahi, (2) koi bade element pe `filter: blur` nahi, (3) infinite animation transform/opacity-only + reduced-motion me off, (4) login page pe extra GPU cost zero, (5) koi naya timer/redirect bina cleanup nahi.
+
+---
+
 **Is file ko har AI task se pehle padhna ZAROORI hai. Agar iska ullanghan hua to code review fail samjho.**
