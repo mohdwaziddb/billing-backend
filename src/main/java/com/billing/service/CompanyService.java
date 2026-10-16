@@ -2,6 +2,7 @@ package com.billing.service;
 
 import com.billing.entity.Company;
 import com.billing.entity.CompanyThemeSetting;
+import com.billing.dto.company.CompanyFileInfo;
 import com.billing.dto.company.CompanySettingsRequest;
 import com.billing.dto.company.CompanyThemeRequest;
 import com.billing.dto.company.CompanyThemeResponse;
@@ -10,22 +11,17 @@ import com.billing.exception.BadRequestException;
 import com.billing.multitenancy.TenantContextHolder;
 import com.billing.repository.CompanyRepository;
 import com.billing.repository.CompanyThemeSettingRepository;
+import com.billing.service.storage.S3StorageService;
+import com.billing.util.CompanyFileJson;
 import com.billing.util.DataTypeUtility;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -36,10 +32,8 @@ public class CompanyService {
     private final CompanyThemeSettingRepository companyThemeSettingRepository;
     private final StateMasterService stateMasterService;
     private final AuditLogService auditLogService;
+    private final S3StorageService s3StorageService;
     private static final Set<String> LOGO_CONTENT_TYPES = Set.of("image/jpeg", "image/png", "image/webp");
-
-    @Value("${app.upload-dir:uploads}")
-    private String uploadDir;
 
     /**
      * Current tenant's company for public surfaces (login page branding).
@@ -81,7 +75,7 @@ public class CompanyService {
             map.put("databaseName", c.getDatabaseName());
             map.put("email", c.getEmail());
             map.put("phone", c.getPhone());
-            map.put("logoUrl", c.getLogoUrl());
+            map.put("logoUrl", CompanyFileJson.extractUrl(c.getLogoUrl()));
             map.put("active", c.isActive());
             // Server-authoritative chatbot flag for the tenant widget: login-time
             // session data goes stale when Platform Admin toggles mid-session.
@@ -120,7 +114,7 @@ public class CompanyService {
                 map.put("code", c.getCode());
                 map.put("databaseName", c.getDatabaseName());
                 map.put("email", c.getEmail());
-                map.put("logoUrl", c.getLogoUrl());
+                map.put("logoUrl", CompanyFileJson.extractUrl(c.getLogoUrl()));
                 map.put("active", c.isActive());
                 map.put("chatbotEnabled", c.isChatbotEnabled());
                 return map;
@@ -411,72 +405,72 @@ public class CompanyService {
     @Transactional
     public CompanySummary deleteSignature(String email) {
         Company company = accessControlService.requireOwnerCompany(email);
-        deleteFile(company.getSignatureUrl(), "company-signatures");
+        String oldDbValue = company.getSignatureUrl();
         company.setSignatureUrl(null);
-        return toSummary(companyRepository.save(company));
+        CompanySummary summary = toSummary(companyRepository.save(company));
+        deleteFile(oldDbValue, "company-signatures");
+        return summary;
     }
 
+    /**
+     * Stores the image (S3 tenant folder, or local disk when S3 is disabled) and
+     * saves the FULL file JSON ({@code file_name, type, url, key, size, ...}) into
+     * the existing {@code logo_url} / {@code signature_url} column. The old file is
+     * deleted only after the new row is saved, so a failed upload never orphans data.
+     */
     private CompanySummary saveImage(Company company, MultipartFile file, String folderName, String prefix, boolean logo) {
         if (file == null || file.isEmpty()) {
             throw new BadRequestException((logo ? "Logo" : "Signature") + " file is required");
         }
-        String contentType = file.getContentType() == null ? "" : file.getContentType().toLowerCase(Locale.ROOT);
+        String contentType = DataTypeUtility.stringValue(file.getContentType()).toLowerCase(Locale.ROOT);
         if (!LOGO_CONTENT_TYPES.contains(contentType)) {
             throw new BadRequestException("Only JPG, PNG, and WEBP images are allowed");
         }
-        String extension = switch (contentType) {
-            case "image/png" -> ".png";
-            case "image/webp" -> ".webp";
-            default -> ".jpg";
-        };
-        String fileName = prefix + UUID.randomUUID() + extension;
-        Path targetDir = Paths.get(uploadDir).toAbsolutePath().normalize().resolve(folderName);
-        Path targetFile = targetDir.resolve(fileName).normalize();
-        if (!targetFile.startsWith(targetDir)) {
-            throw new BadRequestException("Invalid image path");
-        }
-
-        try {
-            Files.createDirectories(targetDir);
-            Files.copy(file.getInputStream(), targetFile, StandardCopyOption.REPLACE_EXISTING);
-        } catch (IOException ex) {
-            throw new BadRequestException("Unable to upload company image");
-        }
-
+        CompanyFileInfo meta = s3StorageService.store(company, folderName, prefix, file);
+        String oldDbValue = logo ? company.getLogoUrl() : company.getSignatureUrl();
         if (logo) {
-            deleteFile(company.getLogoUrl(), folderName);
-            company.setLogoUrl("/uploads/" + folderName + "/" + fileName);
+            company.setLogoUrl(CompanyFileJson.toJson(meta));
         } else {
-            deleteFile(company.getSignatureUrl(), folderName);
-            company.setSignatureUrl("/uploads/" + folderName + "/" + fileName);
+            company.setSignatureUrl(CompanyFileJson.toJson(meta));
         }
-        return toSummary(companyRepository.save(company));
+        CompanySummary summary = toSummary(companyRepository.save(company));
+        deleteFile(oldDbValue, folderName);
+        return summary;
     }
 
     @Transactional
     public CompanySummary deleteLogo(String email) {
         Company company = accessControlService.requireOwnerCompany(email);
-        deleteFile(company.getLogoUrl(), "company-logos");
+        String oldDbValue = company.getLogoUrl();
         company.setLogoUrl(null);
-        return toSummary(companyRepository.save(company));
+        CompanySummary summary = toSummary(companyRepository.save(company));
+        deleteFile(oldDbValue, "company-logos");
+        return summary;
     }
 
-    private void deleteFile(String fileUrl, String folderName) {
-        if (fileUrl == null || fileUrl.isBlank()) {
+    /**
+     * Best-effort cleanup of a previously stored image. Understands both the new
+     * file-JSON values (S3 key delete, or local file delete when S3 is disabled)
+     * and legacy plain {@code /uploads/...} values. Never throws.
+     */
+    private void deleteFile(String dbValue, String folderName) {
+        if (DataTypeUtility.stringValue(dbValue).length() == 0) {
             return;
         }
         try {
-            Path targetDir = Paths.get(uploadDir).toAbsolutePath().normalize().resolve(folderName);
-            Path fileName = Paths.get(fileUrl).getFileName();
-            if (fileName == null) {
+            String key = CompanyFileJson.extractKey(dbValue);
+            if (key != null) {
+                s3StorageService.deleteByKey(key);
                 return;
             }
-            Path logoFile = targetDir.resolve(fileName.toString()).normalize();
-            if (!logoFile.startsWith(targetDir)) {
+            String fileName = CompanyFileJson.extractFileName(dbValue);
+            if (fileName == null || fileName.isBlank()
+                    || fileName.contains("..") || fileName.contains("/") || fileName.contains("\\")) {
                 return;
             }
-            Files.deleteIfExists(logoFile);
-        } catch (IOException ignored) {
+            s3StorageService.deleteLocal(folderName, fileName);
+        } catch (Exception ignored) {
+            // Cleanup must never break the main flow.
         }
     }
 
@@ -557,7 +551,8 @@ public class CompanyService {
                 .compositionScheme(company.isCompositionScheme())
                 .panNumber(company.getPanNumber())
                 .cinNumber(company.getCinNumber())
-                .logoUrl(company.getLogoUrl())
+                .logoUrl(CompanyFileJson.extractUrl(company.getLogoUrl()))
+                .logoFile(CompanyFileJson.parse(company.getLogoUrl()))
                 .websiteUrl(company.getWebsiteUrl())
                 .bankName(company.getBankName())
                 .bankAccountName(company.getBankAccountName())
@@ -565,7 +560,8 @@ public class CompanyService {
                 .bankIfscCode(company.getBankIfscCode())
                 .bankBranch(company.getBankBranch())
                 .upiId(company.getUpiId())
-                .signatureUrl(company.getSignatureUrl())
+                .signatureUrl(CompanyFileJson.extractUrl(company.getSignatureUrl()))
+                .signatureFile(CompanyFileJson.parse(company.getSignatureUrl()))
                 .invoiceNotes(company.getInvoiceNotes())
                 .invoiceTerms(company.getInvoiceTerms())
                 .inventoryConsumptionMethod(company.getInventoryConsumptionMethod().name())

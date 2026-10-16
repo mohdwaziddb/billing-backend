@@ -5,6 +5,7 @@ import com.billing.entity.User;
 import com.billing.dto.user.CompanySummary;
 import com.billing.dto.user.UserProfileResponse;
 import com.billing.entity.enums.RoleName;
+import com.billing.util.CompanyFileJson;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -53,7 +54,8 @@ public class UserMapper {
                 .taxId(company.getTaxId())
                 .panNumber(company.getPanNumber())
                 .cinNumber(company.getCinNumber())
-                .logoUrl(company.getLogoUrl())
+                .logoUrl(CompanyFileJson.extractUrl(company.getLogoUrl()))
+                .logoFile(CompanyFileJson.parse(company.getLogoUrl()))
                 .websiteUrl(company.getWebsiteUrl())
                 .chatbotEnabled(company.isChatbotEnabled())
                 .applyMfa(company.isApplyMfa())

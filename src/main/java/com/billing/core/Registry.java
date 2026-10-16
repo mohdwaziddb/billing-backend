@@ -7,7 +7,7 @@ import java.util.Map;
 public class Registry {
 
     public static boolean IS_ONLINE = true;
-    public static boolean IS_AWS = false;
+    public static boolean IS_AWS = true;
 
     private static final Map<String, Object> registry = new HashMap<String, Object>();
     public static final HashMap<String, String> dbmap = new HashMap<>();

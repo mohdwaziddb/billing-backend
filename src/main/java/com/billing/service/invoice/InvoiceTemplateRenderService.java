@@ -9,6 +9,7 @@ import com.billing.entity.Invoice;
 import com.billing.entity.InvoiceItem;
 import com.billing.service.AccessControlService;
 import com.billing.service.InvoiceService;
+import com.billing.util.CompanyFileJson;
 import com.billing.util.DataTypeUtility;
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
 import com.google.zxing.BarcodeFormat;
@@ -27,9 +28,14 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -46,6 +52,8 @@ public class InvoiceTemplateRenderService {
 
     private static final DateTimeFormatter INDIAN_DATE_FORMAT = DateTimeFormatter.ofPattern("dd-MM-yyyy");
     private static final DateTimeFormatter INDIAN_DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("dd-MM-yyyy hh:mm a");
+    private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+    private static final long MAX_REMOTE_IMAGE_BYTES = 5L * 1024L * 1024L;
 
     private final AccessControlService accessControlService;
     private final InvoiceService invoiceService;
@@ -517,12 +525,18 @@ public class InvoiceTemplateRenderService {
     }
 
     private String fileUrlToDataUrl(String fileUrl) {
-        if (fileUrl == null || fileUrl.isBlank()) {
+        // DB columns now hold full file JSON; legacy plain URLs/paths still work.
+        String resolved = DataTypeUtility.stringValue(CompanyFileJson.extractUrl(fileUrl));
+        if (resolved.length() == 0) {
             return null;
+        }
+        String lower = resolved.toLowerCase(Locale.ROOT);
+        if (lower.startsWith("http://") || lower.startsWith("https://")) {
+            return remoteUrlToDataUrl(resolved);
         }
         try {
             Path baseDir = Paths.get(uploadDir).toAbsolutePath().normalize();
-            Path filePath = baseDir.resolve(fileUrl.replaceFirst("^/uploads/?", "")).normalize();
+            Path filePath = baseDir.resolve(resolved.replaceFirst("^/uploads/?", "")).normalize();
             if (!filePath.startsWith(baseDir) || !Files.exists(filePath)) {
                 return null;
             }
@@ -533,6 +547,31 @@ public class InvoiceTemplateRenderService {
             }
             return "data:" + mimeType + ";base64," + Base64.getEncoder().encodeToString(bytes);
         } catch (IOException ex) {
+            return null;
+        }
+    }
+
+    /** Fetch an S3 (or any https) image URL for invoice/PDF embedding. Never throws. */
+    private String remoteUrlToDataUrl(String url) {
+        try {
+            HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+                    .timeout(Duration.ofSeconds(10))
+                    .GET()
+                    .build();
+            HttpResponse<byte[]> response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                return null;
+            }
+            byte[] bytes = response.body();
+            if (bytes == null || bytes.length == 0 || bytes.length > MAX_REMOTE_IMAGE_BYTES) {
+                return null;
+            }
+            String mimeType = response.headers().firstValue("content-type")
+                    .map(value -> value.split(";")[0].trim().toLowerCase(Locale.ROOT))
+                    .filter(value -> value.startsWith("image/"))
+                    .orElse("image/png");
+            return "data:" + mimeType + ";base64," + Base64.getEncoder().encodeToString(bytes);
+        } catch (Exception ex) {
             return null;
         }
     }

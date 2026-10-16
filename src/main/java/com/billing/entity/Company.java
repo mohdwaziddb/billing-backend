@@ -92,7 +92,7 @@ public class Company extends BaseEntity {
     @Column(name = "cin_number")
     private String cinNumber;
 
-    @Column(name = "logo_url")
+    @Column(name = "logo_url", columnDefinition = "TEXT")
     private String logoUrl;
 
     @Column(name = "website_url")
@@ -116,7 +116,7 @@ public class Company extends BaseEntity {
     @Column(name = "upi_id")
     private String upiId;
 
-    @Column(name = "signature_url")
+    @Column(name = "signature_url", columnDefinition = "TEXT")
     private String signatureUrl;
 
     @Column(name = "super_admin_username")

@@ -1,5 +1,6 @@
 package com.billing.dto.user;
 
+import com.billing.dto.company.CompanyFileInfo;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -29,6 +30,8 @@ public class CompanySummary {
     private String panNumber;
     private String cinNumber;
     private String logoUrl;
+    /** Full file JSON (file_name, type, url, key, size, ...) parsed from the logo_url column. Null for legacy rows. */
+    private CompanyFileInfo logoFile;
     private String websiteUrl;
     private String bankName;
     private String bankAccountName;
@@ -37,6 +40,8 @@ public class CompanySummary {
     private String bankBranch;
     private String upiId;
     private String signatureUrl;
+    /** Full file JSON parsed from the signature_url column. Null for legacy rows. */
+    private CompanyFileInfo signatureFile;
     private String invoiceNotes;
     private String invoiceTerms;
     private String inventoryConsumptionMethod;
