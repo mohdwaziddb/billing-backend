@@ -22,6 +22,8 @@ import java.nio.file.StandardOpenOption;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Generic tenant-scoped file storage for company branding images (logo, signature)
@@ -60,6 +62,17 @@ public class S3StorageService {
     private long maxBytes;
 
     private volatile S3Client s3Client;
+
+    /**
+     * Best-effort S3 cleanup background me chalti hai taaki delete/upload API
+     * turant respond kare. Daemon single-thread — order preserve, app exit par
+     * gracefully mar jata hai.
+     */
+    private final ExecutorService cleanupExecutor = Executors.newSingleThreadExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "s3-cleanup");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     /**
      * Single AWS switch for file storage: project ka existing
@@ -177,20 +190,26 @@ public class S3StorageService {
                 .build();
     }
 
-    /** Best-effort S3 delete. Never throws (callers must not fail on cleanup). */
+    /**
+     * Best-effort S3 delete — background thread par queue hoti hai, caller ko
+     * kabhi block nahi karti aur throw bhi nahi karti. DB delete turant
+     * complete hota hai; S3 cleanup apne aap peeche ho jata hai.
+     */
     public void deleteByKey(String key) {
         String cleanKey = DataTypeUtility.stringValue(key);
         if (cleanKey.length() == 0 || !isEnabled()) {
             return;
         }
-        try {
-            client().deleteObject(DeleteObjectRequest.builder()
-                    .bucket(DataTypeUtility.stringValue(s3Bucket))
-                    .key(cleanKey)
-                    .build());
-        } catch (Exception ignored) {
-            // Cleanup must never break the main flow.
-        }
+        cleanupExecutor.submit(() -> {
+            try {
+                client().deleteObject(DeleteObjectRequest.builder()
+                        .bucket(DataTypeUtility.stringValue(s3Bucket))
+                        .key(cleanKey)
+                        .build());
+            } catch (Exception ignored) {
+                // Cleanup must never break the main flow.
+            }
+        });
     }
 
     /**
