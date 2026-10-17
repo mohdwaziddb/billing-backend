@@ -305,7 +305,7 @@ public class BillingAiToolService {
                     + ", customer=" + saved.getCustomerName()
                     + ", amount=" + money(saved.getAmount())
                     + ", mode=" + saved.getMode()
-                    + ", date=" + saved.getPaymentDate();
+                    + ", date=" + com.billing.core.AppDateTime.formatDate(saved.getPaymentDate());
         } catch (Exception ex) {
             return "Payment create failed: " + safeMessage(ex);
         }
@@ -331,7 +331,7 @@ public class BillingAiToolService {
                 InvoiceResponse inv = invoices.get(i);
                 sb.append("- id=").append(inv.getId())
                         .append(", invoiceNo=").append(inv.getInvoiceNo())
-                        .append(", date=").append(inv.getInvoiceDate())
+                        .append(", date=").append(com.billing.core.AppDateTime.formatDate(inv.getInvoiceDate()))
                         .append(", total=").append(money(inv.getTotalAmount()))
                         .append(", paid=").append(money(inv.getPaidAmount()))
                         .append(", balance=").append(money(inv.getBalanceAmount()))
@@ -358,7 +358,7 @@ public class BillingAiToolService {
             StringBuilder sb = new StringBuilder();
             sb.append("Invoice details:\n");
             sb.append("- Invoice no: ").append(inv.getInvoiceNo()).append("\n");
-            sb.append("- Date: ").append(inv.getInvoiceDate()).append("\n");
+            sb.append("- Date: ").append(com.billing.core.AppDateTime.formatDate(inv.getInvoiceDate())).append("\n");
             sb.append("- Customer: ").append(inv.getCustomerName()).append("\n");
             if (inv.getItems() != null) {
                 sb.append("Items:\n");
@@ -400,7 +400,7 @@ public class BillingAiToolService {
             }
             OwnerAnalyticsResponse report = analyticsService.ownerOverview("x", safeStart, safeEnd);
             StringBuilder sb = new StringBuilder();
-            sb.append("Business growth report (").append(safeStart).append(" to ").append(safeEnd).append("):\n");
+            sb.append("Business growth report (").append(com.billing.core.AppDateTime.formatDate(safeStart)).append(" to ").append(com.billing.core.AppDateTime.formatDate(safeEnd)).append("):\n");
             sb.append("- Sales: ").append(money(report.getTotalSales())).append("\n");
             sb.append("- Collection: ").append(money(report.getTotalCollection())).append("\n");
             sb.append("- Expenses: ").append(money(report.getTotalExpense())).append("\n");
@@ -484,7 +484,7 @@ public class BillingAiToolService {
                 return "No product sales found for this period.";
             }
             StringBuilder sb = new StringBuilder();
-            sb.append("Top selling products (").append(safeStart).append(" to ").append(safeEnd).append("):\n");
+            sb.append("Top selling products (").append(com.billing.core.AppDateTime.formatDate(safeStart)).append(" to ").append(com.billing.core.AppDateTime.formatDate(safeEnd)).append("):\n");
             for (TopSellingProductResponse product : topProducts.getRecords()) {
                 sb.append("- ").append(product.getProductName())
                         .append(", qty sold=").append(product.getTotalQtySold())

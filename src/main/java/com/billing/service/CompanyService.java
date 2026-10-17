@@ -2,6 +2,8 @@ package com.billing.service;
 
 import com.billing.entity.Company;
 import com.billing.entity.CompanyThemeSetting;
+import com.billing.entity.enums.InventoryConsumptionMethod;
+import com.billing.entity.enums.InventoryPricingPolicy;
 import com.billing.dto.company.CompanyFileInfo;
 import com.billing.dto.company.CompanySettingsRequest;
 import com.billing.dto.company.CompanyThemeRequest;
@@ -330,6 +332,22 @@ public class CompanyService {
             invoiceTermsValue = null;
         }
         companySettingsRequest.setInvoiceTerms(invoiceTermsValue);
+        String inventoryConsumptionMethodValue = DataTypeUtility.stringValue(param.get("inventoryConsumptionMethod"));
+        if (inventoryConsumptionMethodValue.length() == 0) {
+            inventoryConsumptionMethodValue = DataTypeUtility.stringValue(param.get("inventory_consumption_method"));
+        }
+        if (inventoryConsumptionMethodValue.length() == 0) {
+            inventoryConsumptionMethodValue = null;
+        }
+        companySettingsRequest.setInventoryConsumptionMethod(inventoryConsumptionMethodValue);
+        String inventoryPricingPolicyValue = DataTypeUtility.stringValue(param.get("inventoryPricingPolicy"));
+        if (inventoryPricingPolicyValue.length() == 0) {
+            inventoryPricingPolicyValue = DataTypeUtility.stringValue(param.get("inventory_pricing_policy"));
+        }
+        if (inventoryPricingPolicyValue.length() == 0) {
+            inventoryPricingPolicyValue = null;
+        }
+        companySettingsRequest.setInventoryPricingPolicy(inventoryPricingPolicyValue);
         return updateSettings(email, companySettingsRequest);
     }
 
@@ -386,6 +404,35 @@ public class CompanyService {
         company.setInvoiceNotes(blankToNull(request.getInvoiceNotes()));
         company.setInvoiceTerms(blankToNull(request.getInvoiceTerms()));
         // SECURITY: never update databaseName from client request (see above).
+
+        String consumptionMethodValue = blankToNull(request.getInventoryConsumptionMethod());
+        if (consumptionMethodValue != null) {
+            InventoryConsumptionMethod consumptionMethod;
+            try {
+                consumptionMethod = InventoryConsumptionMethod.valueOf(consumptionMethodValue.trim().toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException ex) {
+                throw new BadRequestException("Invalid stock consumption method: " + consumptionMethodValue);
+            }
+            if (consumptionMethod == InventoryConsumptionMethod.WEIGHTED_AVERAGE) {
+                throw new BadRequestException("Stock consumption method WEIGHTED_AVERAGE is not supported yet");
+            }
+            company.setInventoryConsumptionMethod(consumptionMethod);
+        }
+
+        String pricingPolicyValue = blankToNull(request.getInventoryPricingPolicy());
+        if (pricingPolicyValue != null) {
+            InventoryPricingPolicy pricingPolicy;
+            try {
+                pricingPolicy = InventoryPricingPolicy.valueOf(pricingPolicyValue.trim().toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException ex) {
+                throw new BadRequestException("Invalid default selling price policy: " + pricingPolicyValue);
+            }
+            if (pricingPolicy == InventoryPricingPolicy.PRODUCT_MASTER_SELLING_PRICE
+                    || pricingPolicy == InventoryPricingPolicy.PRICE_LIST) {
+                throw new BadRequestException("Default selling price policy " + pricingPolicy.name() + " is not supported yet");
+            }
+            company.setInventoryPricingPolicy(pricingPolicy);
+        }
 
         return toSummary(companyRepository.save(company));
     }
@@ -524,7 +571,11 @@ public class CompanyService {
         Company company = accessControlService.requireOwnerCompany(email);
         CompanyThemeSetting setting = companyThemeSettingRepository.findByCompany(company)
                 .orElseGet(() -> CompanyThemeSetting.builder().company(company).build());
-        setting.setThemeColor(request.getThemeColor().toUpperCase(Locale.ROOT));
+        String themeColorValue = DataTypeUtility.stringValue(request.getThemeColor()).trim().toUpperCase(Locale.ROOT);
+        if (!themeColorValue.matches("#[0-9A-F]{6}(,#[0-9A-F]{6})?")) {
+            throw new BadRequestException("Invalid theme color: " + themeColorValue);
+        }
+        setting.setThemeColor(themeColorValue);
         return toThemeResponse(companyThemeSettingRepository.save(setting));
     }
 

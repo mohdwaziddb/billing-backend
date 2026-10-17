@@ -75,4 +75,8 @@ public class CompanySettingsRequest {
     private String invoiceNotes;
 
     private String invoiceTerms;
+
+    private String inventoryConsumptionMethod;
+
+    private String inventoryPricingPolicy;
 }

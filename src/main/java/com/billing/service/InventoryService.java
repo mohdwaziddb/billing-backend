@@ -12,7 +12,9 @@ import com.billing.entity.Product;
 import com.billing.entity.ProductBatch;
 import com.billing.entity.Purchase;
 import com.billing.entity.PurchaseItem;
+import com.billing.entity.enums.InventoryConsumptionMethod;
 import com.billing.entity.enums.InventoryLedgerMovementType;
+import com.billing.entity.enums.InventoryPricingPolicy;
 import com.billing.entity.enums.ProductBatchSourceType;
 import com.billing.entity.enums.ProductBatchStatus;
 import com.billing.exception.BadRequestException;
@@ -99,6 +101,21 @@ public class InventoryService {
             ProductBatch latestBatch = productBatches.stream()
                     .max(Comparator.comparing(ProductBatch::getBatchDate).thenComparing(ProductBatch::getId))
                     .orElse(null);
+            // CURRENT_BATCH_SELLING_PRICE follows the batch that the next invoice will
+            // actually reduce: FIFO -> oldest in-stock batch, LIFO -> newest in-stock
+            // batch (list is batchDate asc, id asc). Falls back to the newest batch
+            // when nothing is in stock. LATEST/MANUAL keep the newest batch value.
+            ProductBatch pricingBatch = latestBatch;
+            if (company.getInventoryPricingPolicy() == InventoryPricingPolicy.CURRENT_BATCH_SELLING_PRICE) {
+                List<ProductBatch> availableBatches = productBatches.stream()
+                        .filter(batch -> batch.getRemainingQty() > 0)
+                        .toList();
+                if (!availableBatches.isEmpty()) {
+                    pricingBatch = company.getInventoryConsumptionMethod() == InventoryConsumptionMethod.LIFO
+                            ? availableBatches.get(availableBatches.size() - 1)
+                            : availableBatches.get(0);
+                }
+            }
             List<ProductBatchSummaryResponse> batchResponses = includeBatches
                     ? productBatches.stream()
                     .sorted(Comparator.comparing(ProductBatch::getBatchDate).reversed().thenComparing(ProductBatch::getId, Comparator.reverseOrder()))
@@ -108,7 +125,7 @@ public class InventoryService {
             response.put(product.getId(), ProductInventorySnapshot.builder()
                     .currentStock(currentStock)
                     .inventoryValue(scale(inventoryValue))
-                    .defaultSellingPrice(scale(latestBatch != null ? latestBatch.getSellingRate() : zero()))
+                    .defaultSellingPrice(scale(pricingBatch != null ? pricingBatch.getSellingRate() : zero()))
                     .batches(batchResponses)
                     .build());
         }
@@ -171,7 +188,10 @@ public class InventoryService {
         Map<Long, Integer> batchBalances = new HashMap<>();
 
         for (InvoiceItem item : invoice.getItems()) {
-            List<ProductBatch> fifoBatches = productBatchRepository.lockByCompanyAndProductOrderByBatchDateAscIdAsc(invoice.getCompany(), item.getProduct()).stream()
+            boolean lifo = invoice.getCompany().getInventoryConsumptionMethod() == InventoryConsumptionMethod.LIFO;
+            List<ProductBatch> fifoBatches = (lifo
+                    ? productBatchRepository.lockByCompanyAndProductOrderByBatchDateDescIdDesc(invoice.getCompany(), item.getProduct())
+                    : productBatchRepository.lockByCompanyAndProductOrderByBatchDateAscIdAsc(invoice.getCompany(), item.getProduct())).stream()
                     .filter(batch -> batch.getRemainingQty() > 0)
                     .toList();
             int pendingQty = item.getQty();
@@ -218,7 +238,7 @@ public class InventoryService {
                         .unitCost(scale(batch.getPurchaseRate()))
                         .unitPrice(scale(item.getPrice()))
                         .referenceNo(invoice.getInvoiceNo())
-                        .remarks("FIFO sale allocation")
+                        .remarks(lifo ? "LIFO sale allocation" : "FIFO sale allocation")
                         .build());
                 itemAllocations.add(allocation);
                 pendingQty -= allocatedQty;

@@ -340,7 +340,7 @@ public class ReminderService {
         variables.put("Company_Name", company.getName());
         variables.put("Company_Email", company.getEmail());
         variables.put("Company_Phone", company.getPhone());
-        variables.put("Current_Date", com.billing.core.AppDateTime.istToday().toString());
+        variables.put("Current_Date", com.billing.core.AppDateTime.formatDate(com.billing.core.AppDateTime.istToday()));
         return variables;
     }
 

@@ -59,6 +59,8 @@ public class UserMapper {
                 .websiteUrl(company.getWebsiteUrl())
                 .chatbotEnabled(company.isChatbotEnabled())
                 .applyMfa(company.isApplyMfa())
+                .inventoryConsumptionMethod(company.getInventoryConsumptionMethod().name())
+                .inventoryPricingPolicy(company.getInventoryPricingPolicy().name())
                 .build();
     }
 }

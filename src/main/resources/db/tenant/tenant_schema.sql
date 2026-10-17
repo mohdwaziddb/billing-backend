@@ -80,8 +80,8 @@ CREATE TABLE IF NOT EXISTS `companies` (
   `email` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
   `gst_registered` bit(1) NOT NULL,
   `gstin` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `inventory_consumption_method` enum('FIFO','LIFO','WEIGHTED_AVERAGE') COLLATE utf8mb4_unicode_ci NOT NULL,
-  `inventory_pricing_policy` enum('LATEST_BATCH_SELLING_PRICE','MANUAL_PRICE','PRICE_LIST','PRODUCT_MASTER_SELLING_PRICE') COLLATE utf8mb4_unicode_ci NOT NULL,
+  `inventory_consumption_method` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'FIFO',
+  `inventory_pricing_policy` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'LATEST_BATCH_SELLING_PRICE',
   `invoice_notes` text COLLATE utf8mb4_unicode_ci,
   `invoice_terms` text COLLATE utf8mb4_unicode_ci,
   `legal_name` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
@@ -133,7 +133,7 @@ CREATE TABLE IF NOT EXISTS `company_theme_settings` (
   `created_by` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `updated_at` datetime(6) NOT NULL,
   `updated_by` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `theme_color` varchar(7) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `theme_color` varchar(24) COLLATE utf8mb4_unicode_ci NOT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE IF NOT EXISTS `customers` (

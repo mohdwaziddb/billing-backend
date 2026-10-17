@@ -4,6 +4,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.Locale;
 
 /**
  * Single static place for "India time" decisions.
@@ -23,6 +25,14 @@ public final class AppDateTime {
     /** Display/business zone for the whole product. Change once, here. */
     public static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
+    /**
+     * The ONE display format for user-visible dates/times everywhere
+     * (emails, SMS, PDFs, AI answers): "17-10-2026" / "17-10-2026 03:45 PM".
+     * Frontend mirrors this in src/lib/format.ts (formatDate/formatDateTime).
+     */
+    public static final DateTimeFormatter DISPLAY_DATE = DateTimeFormatter.ofPattern("dd-MM-yyyy", Locale.ENGLISH);
+    public static final DateTimeFormatter DISPLAY_DATE_TIME = DateTimeFormatter.ofPattern("dd-MM-yyyy hh:mm a", Locale.ENGLISH);
+
     private AppDateTime() {
     }
 
@@ -34,6 +44,16 @@ public final class AppDateTime {
     /** Today in IST — calendar-day boundaries (Today/Week/Month filters). */
     public static LocalDate istToday() {
         return LocalDate.now(IST);
+    }
+
+    /** dd-MM-yyyy display text; null-safe ("--" when absent). */
+    public static String formatDate(LocalDate date) {
+        return date == null ? "--" : DISPLAY_DATE.format(date);
+    }
+
+    /** dd-MM-yyyy hh:mm a display text; null-safe ("--" when absent). */
+    public static String formatDateTime(LocalDateTime dateTime) {
+        return dateTime == null ? "--" : DISPLAY_DATE_TIME.format(dateTime);
     }
 
     /**

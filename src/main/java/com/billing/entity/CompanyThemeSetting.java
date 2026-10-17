@@ -28,6 +28,7 @@ public class CompanyThemeSetting extends BaseEntity {
     @Transient
     private Company company;
 
-    @Column(name = "theme_color", nullable = false, length = 7)
+    // Holds "#RRGGBB" (solid) or "#RRGGBB,#RRGGBB" (gradient primary,accent).
+    @Column(name = "theme_color", nullable = false, length = 24)
     private String themeColor;
 }

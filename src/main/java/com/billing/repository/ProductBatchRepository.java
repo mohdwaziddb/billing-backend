@@ -33,6 +33,14 @@ public interface ProductBatchRepository extends JpaRepository<ProductBatch, Long
     List<ProductBatch> lockByCompanyAndProductOrderByBatchDateAscIdAsc(@Param("company") Company company, @Param("product") Product product);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select b from ProductBatch b
+            where (:company is null or 1=1) and b.product = :product
+            order by b.batchDate desc, b.id desc
+            """)
+    List<ProductBatch> lockByCompanyAndProductOrderByBatchDateDescIdDesc(@Param("company") Company company, @Param("product") Product product);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select b from ProductBatch b where b.id = :id")
     Optional<ProductBatch> lockById(@Param("id") Long id);
 

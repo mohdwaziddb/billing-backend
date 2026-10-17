@@ -21,7 +21,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.YearMonth;
-import java.time.format.DateTimeFormatter;
 import java.time.format.TextStyle;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -34,7 +33,6 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class PaymentHierarchyService {
-    private static final DateTimeFormatter INDIAN_DATE_FORMATTER = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
     private final AccessControlService accessControlService;
     private final InvoiceRepository invoiceRepository;
@@ -1121,8 +1119,8 @@ public class PaymentHierarchyService {
         if (dates.isEmpty()) {
             return "--";
         }
-        String start = dates.get(0).format(INDIAN_DATE_FORMATTER);
-        String end = dates.get(dates.size() - 1).format(INDIAN_DATE_FORMATTER);
+        String start = com.billing.core.AppDateTime.formatDate(dates.get(0));
+        String end = com.billing.core.AppDateTime.formatDate(dates.get(dates.size() - 1));
         return start.equals(end) ? start : start + " - " + end;
     }
 
@@ -1137,7 +1135,7 @@ public class PaymentHierarchyService {
     }
 
     private String expenseRecordSubtitle(Expense expense) {
-        String date = expense.getExpenseDate() == null ? "--" : expense.getExpenseDate().format(INDIAN_DATE_FORMATTER);
+        String date = com.billing.core.AppDateTime.formatDate(expense.getExpenseDate());
         String description = expense.getDescription();
         return description == null || description.isBlank() ? date : date + " - " + description;
     }
@@ -1174,7 +1172,7 @@ public class PaymentHierarchyService {
             if (range.startDate().equals(today.minusDays(1))) {
                 return "Yesterday";
             }
-            return range.startDate().toString();
+            return com.billing.core.AppDateTime.formatDate(range.startDate());
         }
         if (isCurrentWeekRange(range)) {
             return "This Week";

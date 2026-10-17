@@ -32,15 +32,20 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class ExpenseService {
+
+    /** Compact period bucket label for charts/tables (e.g. "Oct 2026"), matching GstReportService. */
+    private static final DateTimeFormatter MONTH_LABEL_FORMAT = DateTimeFormatter.ofPattern("MMM yyyy", Locale.ENGLISH);
 
     private final AccessControlService accessControlService;
     private final CustomerService customerService;
@@ -278,7 +283,7 @@ public class ExpenseService {
                     BigDecimal monthCollection = collectionByMonth.getOrDefault(month, BigDecimal.ZERO);
                     BigDecimal monthExpense = expenseByMonth.getOrDefault(month, BigDecimal.ZERO);
                     return ProfitLossPointResponse.builder()
-                            .label(month.toString())
+                            .label(month.format(MONTH_LABEL_FORMAT))
                             .revenue(scale(monthRevenue))
                             .expense(scale(monthExpense))
                             .netRevenue(revenueCalculationService.netRevenue(monthCollection, monthExpense))
