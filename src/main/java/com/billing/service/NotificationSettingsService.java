@@ -1,5 +1,6 @@
 package com.billing.service;
 
+import com.billing.core.appconfig.ProviderMessages;
 import com.billing.dto.notification.EmailProviderTestRequest;
 import com.billing.dto.notification.NotificationChannelType;
 import com.billing.dto.notification.NotificationStatus;
@@ -154,7 +155,7 @@ public class NotificationSettingsService {
 
     private ProviderSettingsResponse sendTestEmailForCompany(Company company, EmailProviderTestRequest request, String actorName, boolean actorScopedAudit) {
         EmailProviderSetting activeProvider = emailProviderSettingRepository.findFirstByCompanyAndActiveTrueOrderByIdDesc(company)
-                .orElseThrow(() -> new BadRequestException("No active email provider configured"));
+                .orElseThrow(() -> new BadRequestException(ProviderMessages.EMAIL_NOT_CONFIGURED_ADMIN));
         String recipient = request == null || request.getRecipientEmail() == null || request.getRecipientEmail().isBlank()
                 ? company.getEmail()
                 : request.getRecipientEmail().trim();
@@ -213,8 +214,8 @@ public class NotificationSettingsService {
                 || lowered.contains("connect timed out") || lowered.contains("timed out")) {
             return "Could not reach the mail server. Check the SMTP host/port and internet connection, then try again.";
         }
-        if (lowered.contains("no active email provider")) {
-            return raw;
+        if (lowered.contains(ProviderMessages.EMAIL_NOT_CONFIGURED.toLowerCase(Locale.ROOT))) {
+            return ProviderMessages.EMAIL_NOT_CONFIGURED_ADMIN;
         }
         return raw.isBlank() ? "Test email failed. Please try again." : "Test email failed: " + raw;
     }
@@ -661,7 +662,7 @@ public class NotificationSettingsService {
         boolean useDraftSettings = request != null && request.getProviderType() != null && request.getConfigValues() != null && !request.getConfigValues().isEmpty();
         if (!useDraftSettings) {
             return smsProviderSettingRepository.findFirstByCompanyAndActiveTrueOrderByIdDesc(company)
-                    .orElseThrow(() -> new BadRequestException("No active SMS provider configured"));
+                    .orElseThrow(() -> new BadRequestException(ProviderMessages.SMS_NOT_CONFIGURED_ADMIN));
         }
         SmsProviderType providerType = normalizeSmsProviderType(request.getProviderType());
         ProviderSettingsRequest probeRequest = new ProviderSettingsRequest();
@@ -758,7 +759,7 @@ public class NotificationSettingsService {
         boolean useDraftSettings = request != null && request.getProviderType() != null && request.getConfigValues() != null && !request.getConfigValues().isEmpty();
         if (!useDraftSettings) {
             return whatsAppProviderSettingRepository.findFirstByCompanyAndActiveTrueOrderByIdDesc(company)
-                    .orElseThrow(() -> new BadRequestException("No active WhatsApp provider configured"));
+                    .orElseThrow(() -> new BadRequestException(ProviderMessages.WHATSAPP_NOT_CONFIGURED_ADMIN));
         }
         WhatsAppProviderType providerType = normalizeWhatsAppProviderType(request.getProviderType());
         ProviderSettingsRequest probeRequest = new ProviderSettingsRequest();

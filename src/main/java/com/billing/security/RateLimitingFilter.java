@@ -20,8 +20,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * filter runs exactly once inside the security chain and is not
  * double-registered as a servlet filter.
  *
- * Limits (per client IP, sliding window):
- * - /api/v1/auth/login, /api/v1/auth/mfa/verify, /api/v1/platform-admin/login: 10/min
+ * Limits (per client IP):
+ * - /api/v1/auth/login, /api/v1/auth/mfa/verify, /api/v1/platform-admin/login:
+ *   10 tries per 1-minute window, then a fixed 5-minute block (retries do not extend it)
  * - /api/v1/auth/forgot-password/*: 5/min
  * - /api/v1/auth/forgot-password/verify, /api/v1/auth/forgot-password/confirm: 10/min
  * - /api/v1/auth/refresh: 30/min
@@ -29,23 +30,27 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class RateLimitingFilter extends OncePerRequestFilter {
 
-    private record Rule(int maxRequests, long windowMillis) {}
+    private static final long ONE_MINUTE = 60_000L;
+    private static final long FIVE_MINUTES = 5 * ONE_MINUTE;
+
+    private record Rule(int maxRequests, long windowMillis, long blockMillis) {}
 
     private static final Map<String, Rule> RULES = Map.of(
-            "/api/v1/auth/login", new Rule(10, 60_000L),
-            "/api/v1/auth/mfa/verify", new Rule(10, 60_000L),
-            "/api/v1/platform-admin/login", new Rule(10, 60_000L),
-            "/api/v1/auth/forgot-password/request", new Rule(5, 60_000L),
-            "/api/v1/auth/forgot-password/verify", new Rule(10, 60_000L),
-            "/api/v1/auth/forgot-password/confirm", new Rule(10, 60_000L),
-            "/api/v1/auth/refresh", new Rule(30, 60_000L),
-            "/api/v1/bizio-console/query", new Rule(20, 60_000L));
+            "/api/v1/auth/login", new Rule(10, ONE_MINUTE, FIVE_MINUTES),
+            "/api/v1/auth/mfa/verify", new Rule(10, ONE_MINUTE, FIVE_MINUTES),
+            "/api/v1/platform-admin/login", new Rule(10, ONE_MINUTE, FIVE_MINUTES),
+            "/api/v1/auth/forgot-password/request", new Rule(5, ONE_MINUTE, ONE_MINUTE),
+            "/api/v1/auth/forgot-password/verify", new Rule(10, ONE_MINUTE, ONE_MINUTE),
+            "/api/v1/auth/forgot-password/confirm", new Rule(10, ONE_MINUTE, ONE_MINUTE),
+            "/api/v1/auth/refresh", new Rule(30, ONE_MINUTE, ONE_MINUTE),
+            "/api/v1/bizio-console/query", new Rule(20, ONE_MINUTE, ONE_MINUTE));
 
     private final ConcurrentHashMap<String, Window> windows = new ConcurrentHashMap<>();
 
     private static final class Window {
         long windowStart;
         int count;
+        long blockedUntil;
     }
 
     @Override
@@ -59,9 +64,11 @@ public class RateLimitingFilter extends OncePerRequestFilter {
         }
         String key = ruleKey(request, path);
         if (!allow(key, rule)) {
+            long minutes = Math.max(1L, rule.blockMillis() / ONE_MINUTE);
             response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
             response.setContentType("application/json");
-            response.getWriter().write("{\"success\":false,\"message\":\"Too many attempts. Please try again in a minute.\"}");
+            response.getWriter().write("{\"success\":false,\"message\":\"Too many attempts. Please try again in "
+                    + minutes + (minutes == 1L ? " minute." : " minutes.") + "\"}");
             return;
         }
         chain.doFilter(request, response);
@@ -89,13 +96,21 @@ public class RateLimitingFilter extends OncePerRequestFilter {
         long now = System.currentTimeMillis();
         Window window = windows.computeIfAbsent(key, k -> new Window());
         synchronized (window) {
+            if (window.blockedUntil > now) {
+                return false;
+            }
             if (now - window.windowStart >= rule.windowMillis()) {
                 window.windowStart = now;
                 window.count = 1;
+                window.blockedUntil = 0L;
                 return true;
             }
             window.count++;
-            return window.count <= rule.maxRequests();
+            if (window.count > rule.maxRequests()) {
+                window.blockedUntil = now + rule.blockMillis();
+                return false;
+            }
+            return true;
         }
     }
 }

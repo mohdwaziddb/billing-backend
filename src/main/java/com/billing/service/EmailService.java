@@ -1,5 +1,6 @@
 package com.billing.service;
 
+import com.billing.core.appconfig.ProviderMessages;
 import com.billing.dto.email.EmailLogResponse;
 import com.billing.dto.email.EmailSendRequest;
 import com.billing.dto.notification.NotificationAttachmentRequest;
@@ -108,7 +109,7 @@ public class EmailService {
                                          String sentBy) {
         EmailProviderSetting settings = emailProviderSettingRepository.findFirstByCompanyAndActiveTrueOrderByIdDesc(company).orElse(null);
         if (settings == null) {
-            return new EmailDeliveryResult(NotificationStatus.PENDING, "No active email provider configured", null);
+            return new EmailDeliveryResult(NotificationStatus.PENDING, ProviderMessages.EMAIL_NOT_CONFIGURED, null);
         }
         try {
             String providerName = normalizeProvider(settings.getProviderName());

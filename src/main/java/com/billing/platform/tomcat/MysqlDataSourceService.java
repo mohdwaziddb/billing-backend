@@ -123,7 +123,7 @@ public class MysqlDataSourceService extends AbstractDataSourceService {
         // else: password wahi rahega jo Spring (spring.datasource.password) se
         // MultiTenancyJpaConfiguration ne pehle set kiya — koi hardcoded fallback nahi.
         Registry.dbmap.putIfAbsent("driverClassName", "com.mysql.cj.jdbc.Driver");
-        Registry.dbmap.putIfAbsent("databasename", "sample");
+        Registry.dbmap.putIfAbsent("databasename", "test");
         return Registry.dbmap;
     }
 }

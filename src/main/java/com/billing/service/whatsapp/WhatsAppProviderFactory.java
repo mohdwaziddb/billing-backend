@@ -1,5 +1,6 @@
 package com.billing.service.whatsapp;
 
+import com.billing.core.appconfig.ProviderMessages;
 import com.billing.entity.WhatsAppProviderSetting;
 import com.billing.entity.enums.WhatsAppProviderType;
 import com.billing.exception.BadRequestException;
@@ -23,7 +24,7 @@ public class WhatsAppProviderFactory {
 
     public WhatsAppProvider getProvider(WhatsAppProviderSetting settings) {
         if (settings == null || settings.getProviderType() == null) {
-            throw new BadRequestException("No active WhatsApp provider configured");
+            throw new BadRequestException(ProviderMessages.WHATSAPP_NOT_CONFIGURED);
         }
         WhatsAppProvider provider = providersByType.get(settings.getProviderType());
         if (provider == null) {

@@ -10,7 +10,6 @@ import com.billing.dto.platformadmin.PlatformAdminSettingsRequest;
 import com.billing.dto.platformadmin.PlatformAdminSettingsResponse;
 import com.billing.dto.platformadmin.PlatformAdminUserResponse;
 import com.billing.entity.Company;
-import com.billing.entity.PlatformSetting;
 import com.billing.entity.User;
 import com.billing.entity.enums.RoleName;
 import com.billing.exception.BadRequestException;
@@ -690,15 +689,6 @@ public class PlatformAdminService {
                 .platformLogo(registryString(row.get("platform_logo")))
                 .platformTagline(registryString(row.get("platform_tagline")))
                 .username(registryString(row.get("username")))
-                .build();
-    }
-
-    private PlatformAdminSettingsResponse toSettingsResponse(PlatformSetting setting) {
-        return PlatformAdminSettingsResponse.builder()
-                .platformName(setting.getPlatformName())
-                .platformLogo(setting.getPlatformLogo())
-                .platformTagline(setting.getPlatformTagline())
-                .username(setting.getUsername())
                 .build();
     }
 

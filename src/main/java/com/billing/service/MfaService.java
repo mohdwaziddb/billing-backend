@@ -13,6 +13,7 @@ import com.billing.util.DataTypeUtility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
@@ -223,6 +224,29 @@ public class MfaService {
             return false;
         }
         return !userMfaDeviceRepository.findByUserIdAndEnabledTrue(normalizedId).isEmpty();
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public int recordFailedAttempts(Long userId) {
+        Long normalizedId = DataTypeUtility.getForeignKeyValue(userId);
+        if (normalizedId == null) {
+            return 0;
+        }
+        List<UserMfaDevice> devices = userMfaDeviceRepository.findByUserIdAndEnabledTrue(normalizedId);
+        LocalDateTime now = LocalDateTime.now();
+        int maxAttempts = 0;
+        for (UserMfaDevice device : devices) {
+            int attempts = device.getFailedAttempts() + 1;
+            device.setFailedAttempts(attempts);
+            if (attempts >= MAX_FAILED_ATTEMPTS) {
+                device.setLockedUntil(now.plusMinutes(LOCK_MINUTES));
+            }
+            if (attempts > maxAttempts) {
+                maxAttempts = attempts;
+            }
+            userMfaDeviceRepository.save(device);
+        }
+        return maxAttempts;
     }
 
     private String normalizeDeviceName(String deviceName) {

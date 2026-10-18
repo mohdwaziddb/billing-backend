@@ -5,7 +5,6 @@ import com.billing.entity.AppMenuAction;
 import com.billing.entity.Company;
 import com.billing.entity.CompanyThemeSetting;
 import com.billing.entity.NotificationChannel;
-import com.billing.entity.PlatformSetting;
 import com.billing.entity.RoleMaster;
 import com.billing.entity.RoleMenuActionPermission;
 import com.billing.entity.RoleMenuPermission;
@@ -15,7 +14,6 @@ import com.billing.repository.CompanyRepository;
 import com.billing.repository.RoleMasterRepository;
 import com.billing.repository.CompanyThemeSettingRepository;
 import com.billing.repository.NotificationChannelRepository;
-import com.billing.repository.PlatformSettingRepository;
 import com.billing.repository.RoleMenuActionPermissionRepository;
 import com.billing.repository.RoleMenuPermissionRepository;
 import com.billing.service.TaxMasterService;
@@ -23,7 +21,6 @@ import com.billing.service.PaymentModeMasterService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,11 +35,9 @@ public class PermissionDataInitializer implements ApplicationRunner {
     private final CompanyRepository companyRepository;
     private final CompanyThemeSettingRepository companyThemeSettingRepository;
     private final NotificationChannelRepository notificationChannelRepository;
-    private final PlatformSettingRepository platformSettingRepository;
     private final RoleMasterRepository roleMasterRepository;
     private final RoleMenuPermissionRepository roleMenuPermissionRepository;
     private final RoleMenuActionPermissionRepository roleMenuActionPermissionRepository;
-    private final PasswordEncoder passwordEncoder;
     private final TaxMasterService taxMasterService;
     private final PaymentModeMasterService paymentModeMasterService;
 
@@ -50,7 +45,6 @@ public class PermissionDataInitializer implements ApplicationRunner {
     @Transactional
     public void run(ApplicationArguments args) {
         seedRoles();
-        seedPlatformSettings();
         seedMenus();
         seedActions();
         for (Company company : companyRepository.findAll()) {
@@ -80,32 +74,6 @@ public class PermissionDataInitializer implements ApplicationRunner {
                         .roleCode(code)
                         .systemRole(true)
                         .build()));
-    }
-
-    private void seedPlatformSettings() {
-        PlatformSetting setting = platformSettingRepository.findTopByOrderByIdAsc()
-                .orElseGet(() -> platformSettingRepository.save(PlatformSetting.builder()
-                        .platformName("Bizio")
-                        .platformTagline("Empowering Businesses, Simplifying Growth")
-                        .username("mohdwaziddb")
-                        .password(passwordEncoder.encode("123456789"))
-                        .build()));
-
-        boolean updated = false;
-        if (setting.getUsername() == null || setting.getUsername().isBlank()) {
-            setting.setUsername("mohdwaziddb");
-            updated = true;
-        }
-        if (setting.getPassword() == null || setting.getPassword().isBlank()) {
-            setting.setPassword(passwordEncoder.encode("123456789"));
-            updated = true;
-        } else if (!isEncodedPassword(setting.getPassword())) {
-            setting.setPassword(passwordEncoder.encode(setting.getPassword().trim()));
-            updated = true;
-        }
-        if (updated) {
-            platformSettingRepository.save(setting);
-        }
     }
 
     private void seedMenus() {
@@ -273,11 +241,5 @@ public class PermissionDataInitializer implements ApplicationRunner {
                     .active(true)
                     .build());
         }
-    }
-
-    private boolean isEncodedPassword(String value) {
-        return value.startsWith("$2a$")
-                || value.startsWith("$2b$")
-                || value.startsWith("$2y$");
     }
 }

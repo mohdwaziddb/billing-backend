@@ -1,5 +1,6 @@
 package com.billing.service;
 
+import com.billing.core.appconfig.ProviderMessages;
 import com.billing.dto.auth.PasswordResetChallengeResponse;
 import com.billing.dto.auth.PasswordResetConfirmRequest;
 import com.billing.dto.auth.PasswordResetRequestRequest;
@@ -66,30 +67,59 @@ public class PasswordResetService {
 
     @Transactional
     public PasswordResetChallengeResponse requestOtp(Map<String, Object> param) {
-        return requestOtp(mapToRequest(param));
+        return requestOtp(mapToRequest(param), null);
+    }
+
+    @Transactional
+    public PasswordResetChallengeResponse requestOtp(Map<String, Object> param, Long authenticatedUserId) {
+        return requestOtp(mapToRequest(param), authenticatedUserId);
     }
 
     @Transactional
     public PasswordResetChallengeResponse requestOtp(PasswordResetRequestRequest request) {
-        String identifier = request.getIdentifier() == null ? "" : request.getIdentifier().trim();
-        if (identifier.isEmpty()) {
-            throw new BadRequestException("Email / Mobile / Username is required");
+        return requestOtp(request, null);
+    }
+
+    @Transactional
+    public PasswordResetChallengeResponse requestOtp(PasswordResetRequestRequest request, Long authenticatedUserId) {
+        User user;
+        if (authenticatedUserId != null) {
+            // Logged-in dashboard flow: the recipient is ALWAYS the
+            // authenticated account — the posted identifier is ignored
+            // entirely, so UI/DevTools tampering cannot redirect the OTP.
+            user = userRepository.findById(authenticatedUserId)
+                    .filter(User::isActive)
+                    .orElse(null);
+            if (user == null) {
+                // Generic success: mirrors the identifier flow's
+                // no-user-enumeration behaviour.
+                return PasswordResetChallengeResponse.builder().build();
+            }
+        } else {
+            String identifier = request.getIdentifier() == null ? "" : request.getIdentifier().trim();
+            if (identifier.isEmpty()) {
+                throw new BadRequestException("Email / Mobile / Username is required");
+            }
+            java.util.Optional<User> userOpt = findActiveUser(identifier);
+            if (userOpt.isEmpty()) {
+                // Generic success: never reveal whether the identifier exists.
+                return PasswordResetChallengeResponse.builder().build();
+            }
+            user = userOpt.get();
         }
-        java.util.Optional<User> userOpt = findActiveUser(identifier);
-        if (userOpt.isEmpty()) {
-            // Generic success: never reveal whether the identifier exists.
-            return PasswordResetChallengeResponse.builder().build();
-        }
-        User user = userOpt.get();
         Company company = resolveTenantCompany()
                 .orElseThrow(() -> new BadRequestException("Unable to resolve company for this request. Please contact administrator."));
         if (!company.isActive()) {
             return PasswordResetChallengeResponse.builder().build();
         }
-        String resolvedChannel = resolveChannel(user, company);
-        if (resolvedChannel == null) {
-            throw new BadRequestException("Password reset is not available. Please contact your administrator.");
+        if (!hasEmailProvider(company)) {
+            throw new BadRequestException(ProviderMessages.EMAIL_NOT_CONFIGURED_USER);
         }
+        if (user.getEmail() == null || user.getEmail().isBlank()) {
+            throw new BadRequestException("No registered email address on this account. Please contact your administrator.");
+        }
+        // EMAIL ONLY: OTP always goes to the registered email.
+        String resolvedChannel = "EMAIL";
         List<PasswordResetOtp> existing = passwordResetOtpRepository.findByUserIdOrderByIdDesc(user.getId());
         PasswordResetOtp latest = existing.isEmpty() ? null : existing.get(0);
         if (latest != null && !latest.isConsumed()
@@ -244,13 +274,6 @@ public class PasswordResetService {
 
     // EMAIL ONLY: the requested channel (old clients may still send one) is
     // intentionally ignored — OTP always goes to the registered email.
-    private String resolveChannel(User user, Company company) {
-        if (user.getEmail() != null && !user.getEmail().isBlank() && hasEmailProvider(company)) {
-            return "EMAIL";
-        }
-        return null;
-    }
-
     private boolean hasEmailProvider(Company company) {
         try {
             return emailProviderSettingRepository.findFirstByCompanyAndActiveTrueOrderByIdDesc(company).isPresent();

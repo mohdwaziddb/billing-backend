@@ -1,6 +1,7 @@
 package com.billing.service;
 
 import com.billing.core.Registry;
+import com.billing.entity.PlatformSetting;
 import com.billing.multitenancy.RequestInterceptor;
 import com.billing.util.DataTypeUtility;
 import jakarta.persistence.Entity;
@@ -71,6 +72,10 @@ public class TenantAutoDdlService {
         List<Class<?>> entityClasses;
         try {
             entityClasses = scanEntityClasses();
+            // platform_settings is a common-catalog table (billing_common only).
+            // Tenant DBs must never require or auto-create it: strip it from the
+            // update metadata so a drift fix cannot resurrect it in tenants.
+            entityClasses.removeIf(PlatformSetting.class::equals);
         } catch (Exception e) {
             Map<String, Object> failure = new LinkedHashMap<>();
             failure.put("scope", "ALL");

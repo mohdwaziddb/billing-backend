@@ -47,6 +47,7 @@ public class AuthService {
     private final UserMapper userMapper;
     private final SecretEncryptionService secretEncryptionService;
     private final TotpService totpService;
+    private final MfaService mfaService;
 
     @Value("${app.refresh-token-expiration}")
     private long refreshTokenExpiration;
@@ -351,18 +352,7 @@ public class AuthService {
             userMfaDeviceRepository.save(matchedDevice);
             return buildAuthResponse(user);
         }
-        int maxAttempts = 0;
-        for (UserMfaDevice device : enabledDevices) {
-            int attempts = device.getFailedAttempts() + 1;
-            device.setFailedAttempts(attempts);
-            if (attempts >= MfaService.MAX_FAILED_ATTEMPTS) {
-                device.setLockedUntil(now.plusMinutes(MfaService.LOCK_MINUTES));
-            }
-            if (attempts > maxAttempts) {
-                maxAttempts = attempts;
-            }
-            userMfaDeviceRepository.save(device);
-        }
+        int maxAttempts = mfaService.recordFailedAttempts(user.getId());
         int remaining = MfaService.MAX_FAILED_ATTEMPTS - maxAttempts;
         if (remaining <= 0) {
             throw new UnauthorizedException("Too many incorrect attempts. Please try again in 15 minutes.");

@@ -1,5 +1,6 @@
 package com.billing.service.sms;
 
+import com.billing.core.appconfig.ProviderMessages;
 import com.billing.entity.SmsProviderSetting;
 import com.billing.exception.BadRequestException;
 import org.springframework.stereotype.Component;
@@ -21,7 +22,7 @@ public class SmsProviderFactory {
 
     public SmsProviderService getProvider(SmsProviderSetting settings) {
         if (settings == null || settings.getProviderType() == null) {
-            throw new BadRequestException("No active SMS provider configured");
+            throw new BadRequestException(ProviderMessages.SMS_NOT_CONFIGURED);
         }
         SmsProviderService provider = providersByType.get(settings.getProviderType().name().toUpperCase());
         if (provider == null) {

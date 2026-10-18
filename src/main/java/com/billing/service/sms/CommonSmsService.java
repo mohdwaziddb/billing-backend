@@ -1,5 +1,6 @@
 package com.billing.service.sms;
 
+import com.billing.core.appconfig.ProviderMessages;
 import com.billing.dto.notification.NotificationStatus;
 import com.billing.entity.Company;
 import com.billing.entity.SmsProviderSetting;
@@ -23,7 +24,7 @@ public class CommonSmsService {
         SmsProviderSetting settings = smsProviderSettingRepository.findFirstByCompanyAndActiveTrueOrderByIdDesc(company).orElse(null);
         if (settings == null) {
             return validNumbers.stream()
-                    .map(number -> new SmsSendResult(number, NotificationStatus.PENDING, "No active SMS provider configured", null))
+                    .map(number -> new SmsSendResult(number, NotificationStatus.PENDING, ProviderMessages.SMS_NOT_CONFIGURED, null))
                     .toList();
         }
         return smsProviderFactory.getProvider(settings).sendSms(company, settings, validNumbers.stream().toList(), message);
@@ -33,7 +34,7 @@ public class CommonSmsService {
         SmsProviderSetting settings = smsProviderSettingRepository.findFirstByCompanyAndActiveTrueOrderByIdDesc(company).orElse(null);
         String normalized = normalizeNumber(mobileNumber);
         if (settings == null) {
-            return new SmsSendResult(normalized, NotificationStatus.PENDING, "No active SMS provider configured", null);
+            return new SmsSendResult(normalized, NotificationStatus.PENDING, ProviderMessages.SMS_NOT_CONFIGURED, null);
         }
         return smsProviderFactory.getProvider(settings).sendOtp(company, settings, normalized, message);
     }
@@ -42,7 +43,7 @@ public class CommonSmsService {
         SmsProviderSetting settings = smsProviderSettingRepository.findFirstByCompanyAndActiveTrueOrderByIdDesc(company).orElse(null);
         String normalized = normalizeNumber(mobileNumber);
         if (settings == null) {
-            return new SmsSendResult(normalized, NotificationStatus.PENDING, "No active SMS provider configured", null);
+            return new SmsSendResult(normalized, NotificationStatus.PENDING, ProviderMessages.SMS_NOT_CONFIGURED, null);
         }
         return smsProviderFactory.getProvider(settings).testConnection(company, settings, normalized, message);
     }

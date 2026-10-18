@@ -1,5 +1,6 @@
 package com.billing.service.whatsapp;
 
+import com.billing.core.appconfig.ProviderMessages;
 import com.billing.dto.notification.NotificationAttachmentRequest;
 import com.billing.dto.notification.NotificationStatus;
 import com.billing.entity.Company;
@@ -27,7 +28,7 @@ public class CommonWhatsAppService {
         Set<String> validNumbers = normalizeNumbers(mobileNumbers);
         WhatsAppProviderSetting settings = whatsAppProviderSettingRepository.findFirstByCompanyAndActiveTrueOrderByIdDesc(company).orElse(null);
         if (settings == null) {
-            return pending(validNumbers, "No active WhatsApp provider configured");
+            return pending(validNumbers, ProviderMessages.WHATSAPP_NOT_CONFIGURED);
         }
         WhatsAppResolvedSettings resolved = configurationService.resolved(settings);
         return whatsAppProviderFactory.getProvider(settings).sendMessage(company, resolved, validNumbers.stream().toList(), message);
@@ -37,7 +38,7 @@ public class CommonWhatsAppService {
         Set<String> validNumbers = normalizeNumbers(mobileNumbers);
         WhatsAppProviderSetting settings = whatsAppProviderSettingRepository.findFirstByCompanyAndActiveTrueOrderByIdDesc(company).orElse(null);
         if (settings == null) {
-            return pending(validNumbers, "No active WhatsApp provider configured");
+            return pending(validNumbers, ProviderMessages.WHATSAPP_NOT_CONFIGURED);
         }
         WhatsAppResolvedSettings resolved = configurationService.resolved(settings);
         return whatsAppProviderFactory.getProvider(settings).sendTemplate(company, resolved, validNumbers.stream().toList(), templateName, variables);
@@ -47,7 +48,7 @@ public class CommonWhatsAppService {
         Set<String> validNumbers = normalizeNumbers(mobileNumbers);
         WhatsAppProviderSetting settings = whatsAppProviderSettingRepository.findFirstByCompanyAndActiveTrueOrderByIdDesc(company).orElse(null);
         if (settings == null) {
-            return pending(validNumbers, "No active WhatsApp provider configured");
+            return pending(validNumbers, ProviderMessages.WHATSAPP_NOT_CONFIGURED);
         }
         WhatsAppResolvedSettings resolved = configurationService.resolved(settings);
         return whatsAppProviderFactory.getProvider(settings).sendMedia(company, resolved, validNumbers.stream().toList(), message, attachments);
@@ -57,7 +58,7 @@ public class CommonWhatsAppService {
         Set<String> validNumbers = normalizeNumbers(mobileNumbers);
         WhatsAppProviderSetting settings = whatsAppProviderSettingRepository.findFirstByCompanyAndActiveTrueOrderByIdDesc(company).orElse(null);
         if (settings == null) {
-            return pending(validNumbers, "No active WhatsApp provider configured");
+            return pending(validNumbers, ProviderMessages.WHATSAPP_NOT_CONFIGURED);
         }
         WhatsAppResolvedSettings resolved = configurationService.resolved(settings);
         return whatsAppProviderFactory.getProvider(settings).sendDocument(company, resolved, validNumbers.stream().toList(), message, attachments);
@@ -71,7 +72,7 @@ public class CommonWhatsAppService {
     public WhatsAppSendResult testConnection(Company company, WhatsAppProviderSetting settings, String mobileNumber, String message) {
         String normalized = normalizeNumber(mobileNumber);
         if (settings == null) {
-            return new WhatsAppSendResult(normalized, NotificationStatus.PENDING, null, null, "No active WhatsApp provider configured", "No active WhatsApp provider configured", null);
+            return new WhatsAppSendResult(normalized, NotificationStatus.PENDING, null, null, ProviderMessages.WHATSAPP_NOT_CONFIGURED, ProviderMessages.WHATSAPP_NOT_CONFIGURED, null);
         }
         WhatsAppResolvedSettings resolved = configurationService.resolved(settings);
         var health = whatsAppProviderFactory.getProvider(settings).healthCheck(company, resolved, normalized, message);
