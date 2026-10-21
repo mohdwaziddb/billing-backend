@@ -48,7 +48,7 @@ public final class MasterSeedCatalog {
             new MenuSeed("Product DataPort", "PRODUCT_DATAPORT", "Boxes", "/data-port/products", 14, "DATA_PORT"),
             new MenuSeed("Reports", "REPORTS", "BarChart3", "/reports", 15, null),
             new MenuSeed("Profit & Loss", "PROFIT_LOSS", "TrendingUp", "/reports/profit-loss", 16, "REPORTS"),
-            new MenuSeed("Setup", "SETUP", "Settings", "/setup", 17, null),
+            new MenuSeed("Setup", "SETUP", "Settings", "/setup", 999, null),
             new MenuSeed("Users", "USERS", "Users", "/setup/users", 18, "SETUP"),
             new MenuSeed("Product Categories", "PRODUCT_CATEGORY", "Tags", "/setup/product-categories", 19, "SETUP"),
             new MenuSeed("Product Sub Categories", "PRODUCT_SUB_CATEGORIES", "Tags", "/setup/product-sub-categories", 20, "SETUP"),
