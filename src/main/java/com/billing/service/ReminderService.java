@@ -273,19 +273,13 @@ public class ReminderService {
     }
 
     private java.util.Optional<OverdueCustomerResponse> toOverdueCustomerResponse(Company company, Customer customer, LocalDate today) {
-        List<Invoice> outstandingInvoices = invoiceRepository.findByCustomerOrderByInvoiceDateDescIdDesc( customer).stream()
-                .filter(invoice -> invoice.getPaymentStatus() != InvoiceStatus.PAID)
-                .filter(invoice -> invoice.getBalanceAmount().compareTo(BigDecimal.ZERO) > 0)
-                .toList();
-
-        if (outstandingInvoices.isEmpty()) {
+        java.util.Optional<Invoice> oldestInvoice = oldestOutstandingInvoice(customer);
+        if (oldestInvoice.isEmpty()) {
             return java.util.Optional.empty();
         }
 
-        LocalDate oldestOutstandingDate = outstandingInvoices.stream()
-                .map(Invoice::getInvoiceDate)
-                .min(LocalDate::compareTo)
-                .orElse(today);
+        Invoice invoice = oldestInvoice.get();
+        LocalDate oldestOutstandingDate = invoice.getInvoiceDate() != null ? invoice.getInvoiceDate() : today;
         int customerOverdueDays = (int) ChronoUnit.DAYS.between(oldestOutstandingDate, today);
 
         ReminderLog latestReminder = reminderLogRepository.findFirstByCompanyAndCustomerOrderByCreatedAtDesc(company, customer)
@@ -299,9 +293,18 @@ public class ReminderService {
                 .currentBalance(scale(customer.getCurrentBalance()))
                 .overdueDays(customerOverdueDays)
                 .oldestOutstandingInvoiceDate(oldestOutstandingDate)
+                .oldestOutstandingInvoiceNo(invoice.getInvoiceNo())
+                .oldestOutstandingInvoiceTotal(scale(invoice.getGrandTotal()))
                 .lastReminderAt(latestReminder != null ? latestReminder.getCreatedAt() : null)
                 .lastReminderStatus(latestReminder != null ? latestReminder.getStatus().name() : null)
                 .build());
+    }
+
+    private java.util.Optional<Invoice> oldestOutstandingInvoice(Customer customer) {
+        return invoiceRepository.findByCustomerOrderByInvoiceDateDescIdDesc(customer).stream()
+                .filter(invoice -> invoice.getPaymentStatus() != InvoiceStatus.PAID)
+                .filter(invoice -> invoice.getBalanceAmount().compareTo(BigDecimal.ZERO) > 0)
+                .min(Comparator.comparing(Invoice::getInvoiceDate, Comparator.nullsLast(LocalDate::compareTo)));
     }
 
     private ReminderStatus determineStatus(ReminderChannel channel) {
@@ -332,11 +335,16 @@ public class ReminderService {
     }
 
     private Map<String, Object> reminderVariables(Customer customer, Company company) {
+        Invoice oldestInvoice = oldestOutstandingInvoice(customer).orElse(null);
         Map<String, Object> variables = new LinkedHashMap<>();
         variables.put("Customer_Name", customer.getName());
         variables.put("Customer_Email", customer.getEmail());
         variables.put("Customer_Mobile", customer.getMobile());
         variables.put("Outstanding_Amount", scale(customer.getCurrentBalance()).toPlainString());
+        variables.put("Invoice_Number", oldestInvoice != null ? oldestInvoice.getInvoiceNo() : "");
+        variables.put("Invoice_Date", oldestInvoice != null ? com.billing.core.AppDateTime.formatDate(oldestInvoice.getInvoiceDate()) : "");
+        variables.put("Invoice_Total", oldestInvoice != null ? scale(oldestInvoice.getGrandTotal()).toPlainString() : "");
+        variables.put("Due_Date", oldestInvoice != null ? com.billing.core.AppDateTime.formatDate(oldestInvoice.getInvoiceDate()) : "");
         variables.put("Company_Name", company.getName());
         variables.put("Company_Email", company.getEmail());
         variables.put("Company_Phone", company.getPhone());

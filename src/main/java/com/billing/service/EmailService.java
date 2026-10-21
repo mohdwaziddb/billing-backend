@@ -356,32 +356,54 @@ public class EmailService {
     }
 
     private void addAttachments(MimeMessageHelper helper, List<NotificationAttachmentRequest> attachments) throws Exception {
-        if (attachments == null) {
-            return;
-        }
-        for (NotificationAttachmentRequest attachment : attachments) {
-            if (attachment.getFileName() == null || attachment.getFileName().isBlank() || attachment.getBase64Content() == null || attachment.getBase64Content().isBlank()) {
-                continue;
-            }
-            byte[] content = Base64.getDecoder().decode(attachment.getBase64Content());
-            helper.addAttachment(attachment.getFileName().trim(), new ByteArrayResource(content));
+        for (NotificationAttachmentRequest attachment : validAttachments(attachments)) {
+            helper.addAttachment(
+                    resolveFileName(attachment),
+                    new ByteArrayResource(decodeAttachment(attachment)),
+                    resolveContentType(attachment));
         }
     }
 
     private void addSendGridAttachments(Mail mail, List<NotificationAttachmentRequest> attachments) {
-        if (attachments == null) {
-            return;
-        }
-        for (NotificationAttachmentRequest attachment : attachments) {
-            if (attachment.getFileName() == null || attachment.getFileName().isBlank() || attachment.getBase64Content() == null || attachment.getBase64Content().isBlank()) {
-                continue;
-            }
+        for (NotificationAttachmentRequest attachment : validAttachments(attachments)) {
             Attachments sendGridAttachment = new Attachments();
-            sendGridAttachment.setFilename(attachment.getFileName().trim());
+            sendGridAttachment.setFilename(resolveFileName(attachment));
             sendGridAttachment.setContent(attachment.getBase64Content().trim());
             sendGridAttachment.setDisposition("attachment");
-            sendGridAttachment.setType(detectContentType(attachment.getFileName()));
+            sendGridAttachment.setType(resolveContentType(attachment));
             mail.addAttachments(sendGridAttachment);
+        }
+    }
+
+    private List<NotificationAttachmentRequest> validAttachments(List<NotificationAttachmentRequest> attachments) {
+        if (attachments == null) {
+            return List.of();
+        }
+        return attachments.stream()
+                .filter(attachment -> attachment != null
+                        && hasText(attachment.getFileName())
+                        && hasText(attachment.getBase64Content())
+                        && hasText(resolveFileName(attachment)))
+                .toList();
+    }
+
+    private String resolveFileName(NotificationAttachmentRequest attachment) {
+        return attachment.getFileName().replaceAll("[\\r\\n]", "").trim();
+    }
+
+    private String resolveContentType(NotificationAttachmentRequest attachment) {
+        String contentType = attachment.getContentType();
+        if (!hasText(contentType)) {
+            return detectContentType(attachment.getFileName());
+        }
+        return contentType.replaceAll("[\\r\\n]", "").trim();
+    }
+
+    private byte[] decodeAttachment(NotificationAttachmentRequest attachment) {
+        try {
+            return Base64.getDecoder().decode(attachment.getBase64Content().trim());
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalStateException("Attachment '" + resolveFileName(attachment) + "' has invalid base64 content", ex);
         }
     }
 

@@ -1,5 +1,6 @@
 package com.billing.service;
 
+import com.billing.dto.notification.NotificationAttachmentRequest;
 import com.billing.dto.notification.NotificationChannelType;
 import com.billing.dto.notification.NotificationLogResponse;
 import com.billing.dto.notification.NotificationSendRequest;
@@ -406,6 +407,36 @@ public class NotificationService {
             Map<String, Object> variablesMap = (Map<String, Object>) variablesObj;
             notificationSendRequest.setVariables(variablesMap);
         }
+        notificationSendRequest.setAttachments(mapAttachments(param.get("attachments")));
         return notificationSendRequest;
+    }
+
+    private List<NotificationAttachmentRequest> mapAttachments(Object attachmentsObj) {
+        List<NotificationAttachmentRequest> attachments = new ArrayList<>();
+        if (!(attachmentsObj instanceof List)) {
+            return attachments;
+        }
+        for (Object attachmentObj : (List<?>) attachmentsObj) {
+            if (!(attachmentObj instanceof Map)) {
+                continue;
+            }
+            Map<?, ?> attachmentMap = (Map<?, ?>) attachmentObj;
+            String fileName = DataTypeUtility.stringValue(attachmentMap.get("fileName"))
+                    .replaceAll("[\\r\\n]", "")
+                    .trim();
+            String base64Content = DataTypeUtility.stringValue(attachmentMap.get("base64Content")).trim();
+            if (fileName.isEmpty() || base64Content.isEmpty()) {
+                continue;
+            }
+            String contentType = DataTypeUtility.stringValue(attachmentMap.get("contentType"))
+                    .replaceAll("[\\r\\n]", "")
+                    .trim();
+            NotificationAttachmentRequest attachment = new NotificationAttachmentRequest();
+            attachment.setFileName(fileName);
+            attachment.setContentType(contentType.isEmpty() ? "application/octet-stream" : contentType);
+            attachment.setBase64Content(base64Content);
+            attachments.add(attachment);
+        }
+        return attachments;
     }
 }

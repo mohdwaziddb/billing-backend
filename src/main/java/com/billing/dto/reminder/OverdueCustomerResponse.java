@@ -17,6 +17,8 @@ public class OverdueCustomerResponse {
     private BigDecimal currentBalance;
     private Integer overdueDays;
     private LocalDate oldestOutstandingInvoiceDate;
+    private String oldestOutstandingInvoiceNo;
+    private BigDecimal oldestOutstandingInvoiceTotal;
     private LocalDateTime lastReminderAt;
     private String lastReminderStatus;
 }
