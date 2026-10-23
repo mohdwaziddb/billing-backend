@@ -28,7 +28,7 @@ public interface TaxMasterRepository extends JpaRepository<TaxMaster, Long> {
                     OR LOWER(t.taxCode) LIKE LOWER(CONCAT('%', :search, '%'))
                     OR LOWER(t.description) LIKE LOWER(CONCAT('%', :search, '%'))
                   )
-            ORDER BY t.taxName ASC
+            ORDER BY t.rate ASC, t.taxName ASC
             """)
     Page<TaxMaster> findPageByCompanyWithFilters(@Param("company") Company company,
                                                  @Param("active") Boolean active,
@@ -49,7 +49,7 @@ public interface TaxMasterRepository extends JpaRepository<TaxMaster, Long> {
                     OR LOWER(t.taxCode) LIKE LOWER(CONCAT('%', :search, '%'))
                     OR LOWER(t.description) LIKE LOWER(CONCAT('%', :search, '%'))
                   )
-            ORDER BY t.taxName ASC
+            ORDER BY t.rate ASC, t.taxName ASC
             """)
     List<TaxMaster> findAllByCompanyWithFilters(@Param("company") Company company,
                                                 @Param("active") Boolean active,
@@ -83,6 +83,6 @@ public interface TaxMasterRepository extends JpaRepository<TaxMaster, Long> {
     @Query("select t from TaxMaster t where (:company is null or 1=1) and t.defaultTax=true and t.deleted=false")
     Optional<TaxMaster> findByCompanyAndDefaultTaxTrueAndDeletedFalse(@Param("company") Company company);
 
-    @Query("select t from TaxMaster t where (:company is null or 1=1) and t.deleted=false order by t.taxName asc")
+    @Query("select t from TaxMaster t where (:company is null or 1=1) and t.deleted=false order by t.rate asc, t.taxName asc")
     List<TaxMaster> findByCompanyAndDeletedFalseOrderByTaxNameAsc(@Param("company") Company company);
 }

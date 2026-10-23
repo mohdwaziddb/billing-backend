@@ -282,11 +282,18 @@ public class ExpenseService {
                     BigDecimal monthRevenue = revenueByMonth.getOrDefault(month, BigDecimal.ZERO);
                     BigDecimal monthCollection = collectionByMonth.getOrDefault(month, BigDecimal.ZERO);
                     BigDecimal monthExpense = expenseByMonth.getOrDefault(month, BigDecimal.ZERO);
+                    // Chart ka "Net profit" cards jaisa hi ho: revenue − COGS − expense. Pehle yahan
+                    // collections − expense (cash) tha — card ₹70K, chart ₹2.83L dikhata tha.
+                    java.time.LocalDate monthStart = startDate != null && startDate.isAfter(month.atDay(1)) ? startDate : month.atDay(1);
+                    java.time.LocalDate monthEnd = endDate != null && endDate.isBefore(month.atEndOfMonth()) ? endDate : month.atEndOfMonth();
+                    BigDecimal monthCogs = scale(invoiceItemAllocationRepository.sumActiveCostFiltered(customerId, invoiceId, monthStart, monthEnd));
                     return ProfitLossPointResponse.builder()
                             .label(month.format(MONTH_LABEL_FORMAT))
                             .revenue(scale(monthRevenue))
                             .expense(scale(monthExpense))
                             .netRevenue(revenueCalculationService.netRevenue(monthCollection, monthExpense))
+                            .costOfGoodsSold(monthCogs)
+                            .netProfit(revenueCalculationService.netProfit(monthRevenue, monthCogs, monthExpense))
                             .build();
                 })
                 .toList();

@@ -63,6 +63,18 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
             """)
     List<Invoice> findActiveInRange(@Param("startDate") LocalDate startDate, @Param("endDate") LocalDate endDate);
 
+    // Sales referral report: sirf refer-by wale invoices, DB me hi date filter (items nahi chahiye).
+    @EntityGraph(attributePaths = {"customer", "referByUser"})
+    @Query("""
+            select i from Invoice i
+            where i.deleted = false
+              and i.referByUser is not null
+              and (:startDate is null or i.invoiceDate >= :startDate)
+              and (:endDate is null or i.invoiceDate <= :endDate)
+            order by i.invoiceDate desc, i.id desc
+            """)
+    List<Invoice> findActiveReferredInRange(@Param("startDate") LocalDate startDate, @Param("endDate") LocalDate endDate);
+
     // Payment apply/reverse: paidAmount read-modify-write ke dauraan row lock (lost update fix).
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select i from Invoice i where i.id = :id")

@@ -12,6 +12,8 @@ public class SalesReferralUserSummaryResponse {
     private Long userId;
     private String userName;
     private String username;
+    // "userName" aur "username" JSON me takra kar "username" gayab ho jaata tha — alag naam.
+    private String loginName;
     private long totalInvoices;
     private BigDecimal totalRevenue;
     private BigDecimal paidRevenue;

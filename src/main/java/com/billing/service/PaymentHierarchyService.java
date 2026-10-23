@@ -1221,12 +1221,15 @@ public class PaymentHierarchyService {
         return mode == null || mode.isBlank() ? null : mode.trim().toUpperCase(Locale.ENGLISH);
     }
 
+    private static final java.util.Set<String> MODE_ACRONYMS = java.util.Set.of("UPI", "NEFT", "RTGS", "IMPS");
+
     private String label(String mode) {
         if (mode == null || mode.isBlank()) {
             return "--";
         }
         return java.util.Arrays.stream(mode.trim().split("_"))
-                .map(part -> part.charAt(0) + part.substring(1).toLowerCase(Locale.ENGLISH))
+                // UPI/NEFT jaise acronyms "Upi" na banen.
+                .map(part -> MODE_ACRONYMS.contains(part.toUpperCase(Locale.ENGLISH)) ? part.toUpperCase(Locale.ENGLISH) : part.charAt(0) + part.substring(1).toLowerCase(Locale.ENGLISH))
                 .collect(Collectors.joining(" "));
     }
 

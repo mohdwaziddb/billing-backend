@@ -598,12 +598,14 @@ public class AnalyticsService {
         return monthEnd.isAfter(finalEndDate) ? finalEndDate : monthEnd;
     }
 
+    // "23 Oct" (daily) / "Oct 26" (monthly): akela "23" ya "Jan" chart par mahina/saal nahi batata,
+    // aur saal paar karti range me "Jan" do baar aa kar series mix kar deta tha.
     private String buildLabel(LocalDate periodStart, boolean useDailyBuckets) {
         if (useDailyBuckets) {
-            return String.valueOf(periodStart.getDayOfMonth());
+            return periodStart.getDayOfMonth() + " " + periodStart.getMonth().getDisplayName(TextStyle.SHORT, Locale.ENGLISH);
         }
         YearMonth month = YearMonth.from(periodStart);
-        return month.getMonth().getDisplayName(TextStyle.SHORT, Locale.ENGLISH);
+        return month.getMonth().getDisplayName(TextStyle.SHORT, Locale.ENGLISH) + " " + String.format(Locale.ENGLISH, "%02d", month.getYear() % 100);
     }
 
     private MetricPointResponse point(String label, int index, BigDecimal value) {

@@ -644,7 +644,9 @@ public class DashboardService {
             if (scaledCurrent.compareTo(BigDecimal.ZERO) == 0) {
                 return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
             }
-            return BigDecimal.valueOf(100).setScale(2, RoundingMode.HALF_UP);
+            // Pichhla period 0: % ka koi matlab nahi (pehle hamesha "+100%" dikhta tha).
+            // null = "no baseline" — UI "New" dikhata hai.
+            return null;
         }
         return scaledCurrent.subtract(scaledPrevious)
                 .divide(scaledPrevious, 4, RoundingMode.HALF_UP)

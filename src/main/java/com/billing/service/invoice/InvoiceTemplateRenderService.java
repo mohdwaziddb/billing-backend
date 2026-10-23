@@ -294,7 +294,8 @@ public class InvoiceTemplateRenderService {
                 "27ABCDE1234F1Z5",
                 itemRows,
                 "PARTIAL",
-                "69000.00",
+                // Subtotal = 6×4500 + 3×8200 + 18000 = 69600 (pehle 69000 tha: 69600 − 2100 discount = 67500 taxable).
+                "69600.00",
                 "2100.00",
                 "67500.00",
                 "4455.00",

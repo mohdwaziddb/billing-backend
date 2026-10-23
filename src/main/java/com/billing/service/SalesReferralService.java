@@ -3,7 +3,6 @@ package com.billing.service;
 import com.billing.dto.referral.SalesReferralInvoiceResponse;
 import com.billing.dto.referral.SalesReferralReportResponse;
 import com.billing.dto.referral.SalesReferralUserSummaryResponse;
-import com.billing.entity.Company;
 import com.billing.entity.Invoice;
 import com.billing.entity.User;
 import com.billing.repository.InvoiceRepository;
@@ -30,14 +29,13 @@ public class SalesReferralService {
 
     @Transactional(readOnly = true)
     public SalesReferralReportResponse report(String email, LocalDate startDate, LocalDate endDate) {
-        Company company = accessControlService.getCurrentCompany(email);
+        // Access check (tenant user hi report dekhe); data tenant DB se hi aata hai.
+        accessControlService.getCurrentCompany(email);
         DateRange range = normalizeRange(startDate, endDate);
         YearMonth thisMonth = YearMonth.now();
 
-        List<Invoice> referredInvoices = invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company).stream()
-                .filter(invoice -> invoice.getReferByUser() != null)
-                .filter(invoice -> isWithinRange(invoice.getInvoiceDate(), range.startDate(), range.endDate()))
-                .toList();
+        // Pehle saare invoices (items samet) load karke memory me filter hota tha.
+        List<Invoice> referredInvoices = invoiceRepository.findActiveReferredInRange(range.startDate(), range.endDate());
 
         Map<Long, List<Invoice>> invoicesByUser = referredInvoices.stream()
                 .collect(java.util.stream.Collectors.groupingBy(
@@ -114,6 +112,7 @@ public class SalesReferralService {
                 .userId(user.getId())
                 .userName(user.getFullName())
                 .username(user.getUsername())
+                .loginName(user.getUsername())
                 .totalInvoices(count)
                 .totalRevenue(totalRevenue)
                 .paidRevenue(sum(invoices, AmountKind.PAID))
@@ -135,13 +134,6 @@ public class SalesReferralService {
                 .paidAmount(scale(invoice.getPaidAmount()))
                 .outstandingAmount(scale(invoice.getBalanceAmount()))
                 .build();
-    }
-
-    private boolean isWithinRange(LocalDate value, LocalDate startDate, LocalDate endDate) {
-        if (startDate != null && value.isBefore(startDate)) {
-            return false;
-        }
-        return endDate == null || !value.isAfter(endDate);
     }
 
     private DateRange normalizeRange(LocalDate startDate, LocalDate endDate) {

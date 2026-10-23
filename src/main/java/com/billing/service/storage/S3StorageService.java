@@ -152,7 +152,10 @@ public class S3StorageService {
                         .key(key)
                         .contentType(contentType)
                         .contentLength((long) bytes.length)
-                        .cacheControl("public, max-age=31536000")
+                        // Same naam dobara upload = same key (in-place overwrite). 1 saal ka cache
+                        // purani photo/logo dikhata rehta; no-cache = browser har baar ETag se check
+                        // karta hai (file na badli ho to 304, download nahi).
+                        .cacheControl("no-cache")
                         .build();
                 client().putObject(put, RequestBody.fromBytes(bytes));
             } catch (BadRequestException ex) {
