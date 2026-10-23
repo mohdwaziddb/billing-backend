@@ -103,7 +103,7 @@ public class NotificationService {
             EmailTemplate template = emailTemplateRepository.findByIdAndCompanyAndActiveTrue(templateId, company)
                     .orElseThrow(() -> new ResourceNotFoundException("Active email template not found"));
             subject = variableService.render(template.getSubject(), company, request.getVariables());
-            body = variableService.render(template.getEmailBody(), company, request.getVariables());
+            body = variableService.renderHtml(template.getEmailBody(), company, request.getVariables());
         } else {
             subject = request.getSubject() == null || request.getSubject().isBlank()
                     ? "Notification from " + company.getName()

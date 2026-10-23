@@ -192,7 +192,7 @@ public class CustomerService {
                 .gstin(gstin)
                 .gstRegistered(gstRegistered)
                 .currentBalance(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP))
-                .active(Boolean.TRUE.equals(request.getActive()))
+                .active(request.getActive() == null || request.getActive())
                 .build();
 
         Customer saved = customerRepository.save(customer);
@@ -258,7 +258,10 @@ public class CustomerService {
         customer.setGstNo(gstin);
         customer.setGstin(gstin);
         customer.setGstRegistered(gstRegistered);
-        customer.setActive(Boolean.TRUE.equals(request.getActive()));
+        // active na bheja ho to purani value rahe (pehle chup-chaap inactive ho jata tha).
+        if (request.getActive() != null) {
+            customer.setActive(request.getActive());
+        }
 
         Customer saved = customerRepository.save(customer);
         auditLogService.logUpdate(email, company, "Customer", "Customer", saved.getId(), oldData, snapshot(saved));
@@ -644,8 +647,9 @@ public class CustomerService {
         return data;
     }
 
+    // 1000: invoice/payment/purchase forms ke dropdown size=1000 maangte hain (Invoice/Expense jaisa cap).
     private PageRequest pageRequest(int page, int size) {
-        return PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 100)));
+        return PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 1000)));
     }
 
     private Company companyScope(String email) {

@@ -7,12 +7,18 @@ import com.billing.entity.Purchase;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
 
 public interface InventoryLedgerRepository extends JpaRepository<InventoryLedgerEntry, Long> {
+
+    // Invoice edit: history entries invoice_id se jude rehte hain, sirf purane item ka link hatta hai.
+    @Modifying
+    @Query("update InventoryLedgerEntry l set l.invoiceItem = null where l.invoiceItem in :items")
+    int detachFromItems(@Param("items") java.util.List<com.billing.entity.InvoiceItem> items);
 
     @Query("""
             select l from InventoryLedgerEntry l

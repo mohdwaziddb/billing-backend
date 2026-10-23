@@ -10,6 +10,8 @@ import org.springframework.stereotype.Service;
 import jakarta.annotation.PostConstruct;
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
@@ -30,6 +32,11 @@ public class JwtService {
 
     @Value("${app.jwt.access-token-expiration}")
     private long accessTokenExpiration;
+
+    // Super-admin / platform-admin ke paas refresh token nahi hai, isliye inka
+    // access token alag (lamba) rakha hai; user tokens chhote + refresh se chalte hain.
+    @Value("${app.jwt.admin-access-token-expiration:28800000}")
+    private long adminAccessTokenExpiration;
 
     @PostConstruct
     public void validateJwtSecret() {
@@ -65,7 +72,7 @@ public class JwtService {
                 .claims(claims)
                 .subject(username)
                 .issuedAt(new Date())
-                .expiration(new Date(System.currentTimeMillis() + accessTokenExpiration))
+                .expiration(new Date(System.currentTimeMillis() + adminAccessTokenExpiration))
                 .signWith(getSigningKey())
                 .compact();
     }
@@ -81,7 +88,7 @@ public class JwtService {
                 .claims(claims)
                 .subject(username)
                 .issuedAt(new Date())
-                .expiration(new Date(System.currentTimeMillis() + accessTokenExpiration))
+                .expiration(new Date(System.currentTimeMillis() + adminAccessTokenExpiration))
                 .signWith(getSigningKey())
                 .compact();
     }
@@ -128,7 +135,10 @@ public class JwtService {
     public boolean isTokenValid(String token, UserDetails userDetails) {
         Long tokenUserId = extractUserId(token);
         if (tokenUserId != null && userDetails instanceof CustomUserDetails customUserDetails) {
-            return customUserDetails.getId().equals(tokenUserId) && !isTokenExpired(token);
+            // isEnabled = user.active: deactivate hote hi har request rukti hai.
+            return customUserDetails.getId().equals(tokenUserId) && !isTokenExpired(token)
+                    && customUserDetails.isEnabled()
+                    && !issuedBefore(token, customUserDetails.getTokensValidAfter());
         }
         String username = extractUsername(token);
         return username.equals(userDetails.getUsername()) && !isTokenExpired(token);
@@ -179,6 +189,23 @@ public class JwtService {
 
     public long getAccessTokenExpiration() {
         return accessTokenExpiration / 1000;
+    }
+
+    public long getAdminAccessTokenExpiration() {
+        return adminAccessTokenExpiration / 1000;
+    }
+
+    // JWT iat seconds me hota hai: cutoff ko bhi seconds tak truncate karke compare.
+    private boolean issuedBefore(String token, LocalDateTime cutoff) {
+        if (cutoff == null) {
+            return false;
+        }
+        Date issuedAt = extractClaim(token, Claims::getIssuedAt);
+        if (issuedAt == null) {
+            return true;
+        }
+        long cutoffSeconds = cutoff.atZone(ZoneId.systemDefault()).toEpochSecond();
+        return issuedAt.getTime() / 1000 < cutoffSeconds;
     }
 
     private SecretKey getSigningKey() {

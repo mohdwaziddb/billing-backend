@@ -133,6 +133,15 @@ public class AccessControlService {
         return authentication == null ? null : authentication.getPrincipal();
     }
 
+    /**
+     * Current tenant ki company bina logged-in user ke (gateway webhook /
+     * scheduled jobs jahan sirf TenantContextHolder set hota hai).
+     */
+    @Transactional(readOnly = true)
+    public Company getTenantCompany() {
+        return resolveTenantCompany();
+    }
+
     private Company resolveTenantCompany() {
         String tenant = TenantContextHolder.getTenant();
         String db = tenant == null ? null : tenant.replace("_read", "").replace("_write", "");

@@ -63,11 +63,14 @@ public class AnalyticsService {
     public AnalyticsSummaryResponse summary(String email, LocalDate startDate, LocalDate endDate) {
         User user = accessControlService.getCurrentUser(email);
         Company company = accessControlService.requireCompany(user);
-        List<Invoice> invoices = invoicesFor(company);
-        List<Payment> payments = paymentsFor(company);
+        LocalDate today = com.billing.core.AppDateTime.istToday();
+        // Totals ke liye items nahi chahiye, aur endDate/aaj ke baad ka data bhi nahi.
+        // Pehle har call par poori invoices table items samet memory me aati thi.
+        LocalDate loadUntil = endDate == null ? null : (endDate.isAfter(today) ? endDate : today);
+        List<Invoice> invoices = invoiceRepository.findActiveInRange(null, loadUntil);
+        List<Payment> payments = paymentRepository.findActiveInRange(null, loadUntil);
         List<Customer> customers = customersFor(company);
 
-        LocalDate today = com.billing.core.AppDateTime.istToday();
         LocalDate yesterday = today.minusDays(1);
         YearMonth thisMonth = YearMonth.from(today);
         YearMonth lastMonth = thisMonth.minusMonths(1);
@@ -84,8 +87,9 @@ public class AnalyticsService {
         BigDecimal thisMonthSales = sumInvoiceSalesForMonth(invoices, thisMonth);
         BigDecimal lastMonthSales = sumInvoiceSalesForMonth(invoices, lastMonth);
         BigDecimal outstanding = calculateOutstandingAsOf(customers, invoices, payments, endDate);
-        Map<Long, InventoryService.ProductInventorySnapshot> inventoryByProduct = inventoryService.summarize(company, productsFor(company), false);
-        long lowStockCount = productsFor(company).stream()
+        List<Product> products = productsFor(company);
+        Map<Long, InventoryService.ProductInventorySnapshot> inventoryByProduct = inventoryService.summarize(company, products, false);
+        long lowStockCount = products.stream()
                 .filter(Product::isActive)
                 .filter(product -> inventoryByProduct.getOrDefault(product.getId(), InventoryService.ProductInventorySnapshot.empty()).getCurrentStock() <= product.getMinStockQty())
                 .count();
@@ -228,8 +232,8 @@ public class AnalyticsService {
 
     @Transactional(readOnly = true)
     public List<SalesChartPointResponse> dayWiseSales(String email, int year, int month) {
-        List<Invoice> invoices = invoicesForCurrentUser(email);
         YearMonth selectedMonth = YearMonth.of(year, month);
+        List<Invoice> invoices = invoicesInRange(email, selectedMonth.atDay(1), selectedMonth.atEndOfMonth());
         List<SalesChartPointResponse> points = new ArrayList<>();
 
         for (int day = 1; day <= selectedMonth.lengthOfMonth(); day++) {
@@ -251,7 +255,7 @@ public class AnalyticsService {
 
     @Transactional(readOnly = true)
     public List<SalesChartPointResponse> monthWiseSales(String email, int year) {
-        List<Invoice> invoices = invoicesForCurrentUser(email);
+        List<Invoice> invoices = invoicesInRange(email, LocalDate.of(year, 1, 1), LocalDate.of(year, 12, 31));
         List<SalesChartPointResponse> points = new ArrayList<>();
 
         for (int month = 1; month <= 12; month++) {
@@ -273,9 +277,7 @@ public class AnalyticsService {
         Company company = accessControlService.requireCompany(user);
         Pageable pageable = pageRequest(page, size);
         String normalizedSearch = blankToNull(search);
-        List<Invoice> invoices = invoicesForCurrentUser(email).stream()
-                .filter(invoice -> isWithinRange(invoice.getInvoiceDate(), startDate, endDate))
-                .toList();
+        List<Invoice> invoices = invoiceRepository.findActiveInRangeWithItems(startDate, endDate);
         Map<Long, ProductSalesAggregate> aggregates = new HashMap<>();
 
         for (Invoice invoice : invoices) {
@@ -326,9 +328,7 @@ public class AnalyticsService {
         Company company = accessControlService.requireCompany(user);
         String normalizedSearch = blankToNull(search);
         List<ProductCategory> categories = categoriesFor(company);
-        List<Invoice> invoices = invoicesFor(company).stream()
-                .filter(invoice -> isWithinRange(invoice.getInvoiceDate(), startDate, endDate))
-                .toList();
+        List<Invoice> invoices = invoiceRepository.findActiveInRangeWithItems(startDate, endDate);
         Map<Long, CategorySalesAggregate> aggregates = new HashMap<>();
 
         for (ProductCategory category : categories) {
@@ -407,13 +407,14 @@ public class AnalyticsService {
     public OwnerAnalyticsResponse ownerOverview(String email, LocalDate startDate, LocalDate endDate) {
         User user = accessControlService.getCurrentUser(email);
         Company company = accessControlService.requireCompany(user);
-        List<Invoice> invoices = invoicesFor(company);
-        List<Payment> payments = paymentsFor(company);
-        List<Customer> customers = customersFor(company);
-        List<Expense> expenses = expensesFor(company);
-
         LocalDate safeEnd = endDate != null ? endDate : com.billing.core.AppDateTime.istToday();
         LocalDate safeStart = startDate != null ? startDate : safeEnd.minusDays(29);
+        // Opening/as-of outstanding aur 12-month trend ko safeEnd tak ki history
+        // chahiye (bina items); expenses sirf range ke. Pehle sab tables poori aati thi.
+        List<Invoice> invoices = invoiceRepository.findActiveInRange(null, safeEnd);
+        List<Payment> payments = paymentRepository.findActiveInRange(null, safeEnd);
+        List<Customer> customers = customersFor(company);
+        List<Expense> expenses = expenseRepository.findInRange(safeStart, safeEnd);
 
         List<Invoice> filteredInvoices = invoices.stream()
                 .filter(invoice -> isWithinRange(invoice.getInvoiceDate(), safeStart, safeEnd))
@@ -694,18 +695,10 @@ public class AnalyticsService {
         return value != null && value.toLowerCase(Locale.ENGLISH).contains(search.toLowerCase(Locale.ENGLISH));
     }
 
-    private List<Invoice> invoicesForCurrentUser(String email) {
-        User user = accessControlService.getCurrentUser(email);
-        Company company = accessControlService.requireCompany(user);
-        return invoicesFor(company);
-    }
-
-    private List<Invoice> invoicesFor(Company company) {
-        return invoiceRepository.findAllByOrderByInvoiceDateDescIdDesc();
-    }
-
-    private List<Payment> paymentsFor(Company company) {
-        return paymentRepository.findAllByOrderByPaymentDateDescIdDesc();
+    // Charts: sirf us mahine/saal ke invoices, bina items (sirf totals chahiye).
+    private List<Invoice> invoicesInRange(String email, LocalDate startDate, LocalDate endDate) {
+        accessControlService.requireCompany(accessControlService.getCurrentUser(email));
+        return invoiceRepository.findActiveInRange(startDate, endDate);
     }
 
     private List<Customer> customersFor(Company company) {
@@ -720,9 +713,6 @@ public class AnalyticsService {
         return productCategoryRepository.findAllByCompanyWithFilters(company, true, null);
     }
 
-    private List<Expense> expensesFor(Company company) {
-        return expenseRepository.findByCompanyOrderByExpenseDateDescIdDesc(company);
-    }
 
     private <T> PageResponse<T> page(List<T> allRecords, Pageable pageable) {
         int fromIndex = Math.min((int) pageable.getOffset(), allRecords.size());

@@ -21,6 +21,16 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long> {
     @Query("select e from Expense e where (:company is null or 1=1) order by e.expenseDate desc, e.id desc")
     List<Expense> findByCompanyOrderByExpenseDateDescIdDesc(@Param("company") Company company);
 
+    // Reports: date range DB me filter.
+    @EntityGraph(attributePaths = {"category", "customer", "invoice"})
+    @Query("""
+            select e from Expense e
+            where (:startDate is null or e.expenseDate >= :startDate)
+              and (:endDate is null or e.expenseDate <= :endDate)
+            order by e.expenseDate desc, e.id desc
+            """)
+    List<Expense> findInRange(@Param("startDate") java.time.LocalDate startDate, @Param("endDate") java.time.LocalDate endDate);
+
     @EntityGraph(attributePaths = {"category", "customer", "invoice"})
     List<Expense> findAllByOrderByExpenseDateDescIdDesc();
 

@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.Map;
 
@@ -32,6 +33,37 @@ public class UserRestController {
     @GetMapping("/me")
     public ResponseEntity<?> me(Authentication authentication, HttpServletRequest req) {
         return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", userService.getProfile(authentication.getName())), HttpStatus.OK);
+    }
+
+    // Apni profile: har logged-in user (koi menu permission nahi chahiye), sirf khud ka record.
+    @PutMapping("/me")
+    public ResponseEntity<?> updateMe(@RequestBody Map<String, Object> param, Authentication authentication) {
+        param = SanitizeData.sanitizeMapObj(param);
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", userService.updateOwnProfile(param, authentication.getName())), HttpStatus.OK);
+    }
+
+    @PutMapping("/me/photo")
+    public ResponseEntity<?> uploadMyPhoto(@RequestParam("photo") MultipartFile photo, Authentication authentication) {
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", userService.uploadOwnPhoto(authentication.getName(), photo)), HttpStatus.OK);
+    }
+
+    @DeleteMapping("/me/photo")
+    public ResponseEntity<?> deleteMyPhoto(Authentication authentication) {
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", userService.deleteOwnPhoto(authentication.getName())), HttpStatus.OK);
+    }
+
+    @PutMapping("/{userId}/photo")
+    @com.billing.security.RequiresPermission(menu = "USERS", action = "EDIT")
+    public ResponseEntity<?> uploadUserPhoto(@PathVariable Long userId, @RequestParam("photo") MultipartFile photo, Authentication authentication) {
+        userId = DataTypeUtility.getForeignKeyValue(userId);
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", userService.uploadUserPhoto(authentication.getName(), userId, photo)), HttpStatus.OK);
+    }
+
+    @DeleteMapping("/{userId}/photo")
+    @com.billing.security.RequiresPermission(menu = "USERS", action = "EDIT")
+    public ResponseEntity<?> deleteUserPhoto(@PathVariable Long userId, Authentication authentication) {
+        userId = DataTypeUtility.getForeignKeyValue(userId);
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", userService.deleteUserPhoto(authentication.getName(), userId)), HttpStatus.OK);
     }
 
     @GetMapping("/active-referrers")

@@ -49,6 +49,18 @@ public class Invoice extends BaseEntity {
     @JoinColumn(name = "customer_id", nullable = false)
     private Customer customer;
 
+    // Invoice banate waqt customer ki state/GSTIN ka snapshot. GST report isi se
+    // banta hai, taaki baad me customer edit karne se purane returns na badlein.
+    // Purane invoices (null) par report customer ki current value use karta hai.
+    @Column(name = "place_of_supply_state_id")
+    private Long placeOfSupplyStateId;
+
+    @Column(name = "place_of_supply_state")
+    private String placeOfSupplyState;
+
+    @Column(name = "customer_gstin")
+    private String customerGstin;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "refer_by_user_id")
     private User referByUser;

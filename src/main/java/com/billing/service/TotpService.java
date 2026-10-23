@@ -64,27 +64,34 @@ public class TotpService {
     }
 
     public boolean verifyCode(String secret, String code) {
+        return matchingStep(secret, code) >= 0;
+    }
+
+    /**
+     * Code jis TOTP time-step se match hua wo step (replay check ke liye), warna -1.
+     */
+    public long matchingStep(String secret, String code) {
         String normalizedCode = code == null ? "" : code.trim();
         if (normalizedCode.isEmpty() || !normalizedCode.chars().allMatch(Character::isDigit)) {
-            return false;
+            return -1;
         }
         if (normalizedCode.length() != CODE_DIGITS) {
-            return false;
+            return -1;
         }
         byte[] key;
         try {
             key = base32Decode(secret);
         } catch (Exception ex) {
-            return false;
+            return -1;
         }
         long step = System.currentTimeMillis() / 1000L / TIME_STEP_SECONDS;
         for (long offset = -WINDOW_STEPS; offset <= WINDOW_STEPS; offset++) {
             String candidate = generateTotp(key, step + offset);
             if (candidate.equals(normalizedCode)) {
-                return true;
+                return step + offset;
             }
         }
-        return false;
+        return -1;
     }
 
     private String generateTotp(byte[] key, long step) {

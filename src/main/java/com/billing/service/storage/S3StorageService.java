@@ -13,7 +13,10 @@ import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -26,15 +29,17 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Generic tenant-scoped file storage for company branding images (logo, signature)
- * and any future images. FLAT layout — sirf database folder, usme sidha files:
+ * Generic tenant-scoped file storage for all images (company logo, signature,
+ * user photos, future images). FLAT layout — sirf database folder, usme sidha
+ * files, ACTUAL file name ke saath:
  * <pre>
- * s3://&lt;bucket&gt;/&lt;database_name_lower&gt;/&lt;slot&gt;-&lt;original_name&gt;
+ * s3://&lt;bucket&gt;/&lt;database_name_lower&gt;/&lt;original_name&gt;
  * </pre>
- * Same naam dobara upload ho to same key banti hai, S3 in-place overwrite kar
- * deta hai (nayi object nahi banti). Alag naam aaye to purani key DB JSON se
- * delete hoti hai. Slot-prefix (logo-/signature-) taaki dono slot ka same naam
- * takraye to bhi ek dusre ko overwrite na kare.
+ * Kis cheez ki file hai (logo / signature / user photo) wo DB me saved file
+ * JSON ({@code kind}, {@code key} ...) batata hai, naam me prefix nahi lagta.
+ * Same owner same naam dobara upload kare to same key (in-place overwrite).
+ * Naam kisi DOOSRI file ka ho (do users ki photo.jpg) to {@code photo-1.jpg},
+ * {@code photo-2.jpg} ... taaki kisi ki file overwrite na ho.
  *
  * A single shared bucket + global IAM credentials (env vars) is used; tenants are
  * isolated by the {@code database_name} prefix. When {@code Registry.IS_AWS} is
@@ -94,16 +99,21 @@ public class S3StorageService {
         return maxBytes > 0 ? Math.min(maxBytes, ABSOLUTE_MAX_BYTES) : ABSOLUTE_MAX_BYTES;
     }
 
+    public CompanyFileInfo store(Company company, String slot, MultipartFile file) {
+        return store(company, slot, file, null);
+    }
+
     /**
      * Store an image and return its full metadata (caller serializes it to DB JSON).
-     * Key = {@code <tenant>/<slot>-<original_name>} — same naam dobara aaye to
-     * same key (S3/local dono overwrite), alag naam aaye to caller purani key
-     * (DB JSON me stored) delete karta hai.
+     * Key = {@code <tenant>/<original_name>}; naam pehle se kisi aur file ka ho to
+     * {@code -1}, {@code -2} ... suffix. Caller purani file (DB JSON ki key) baad me
+     * delete karta hai agar key badli ho.
      *
-     * @param company tenant fallback when no request-scoped tenant is bound
-     * @param slot    file slot/prefix, e.g. {@code logo} or {@code signature}
+     * @param company     tenant fallback when no request-scoped tenant is bound
+     * @param slot        file kind for the JSON, e.g. {@code logo}, {@code signature}, {@code user-photo}
+     * @param reusableKey isi owner ki current key — ye key overwrite karna allowed hai (null = koi nahi)
      */
-    public CompanyFileInfo store(Company company, String slot, MultipartFile file) {
+    public CompanyFileInfo store(Company company, String slot, MultipartFile file, String reusableKey) {
         if (file == null || file.isEmpty()) {
             throw new BadRequestException("Image file is required");
         }
@@ -122,7 +132,6 @@ public class S3StorageService {
         }
         String safeSlot = sanitizeSlot(slot);
         String tenant = resolveTenant(company);
-        String fileName = buildFileName(safeSlot, file.getOriginalFilename(), contentType);
         String originalName = DataTypeUtility.stringNullValue(file.getOriginalFilename());
         String uploadedAt = OffsetDateTime.now().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
         String bucket = DataTypeUtility.stringValue(s3Bucket);
@@ -133,7 +142,8 @@ public class S3StorageService {
         if (isAws() && !isEnabled()) {
             throw new BadRequestException("S3 image storage is enabled but bucket/region is not configured");
         }
-        // Flat key: sirf database folder, usme sidha file (koi kind subfolder nahi).
+        // Flat key: sirf database folder, usme sidha actual naam wali file.
+        String fileName = availableFileName(tenant, buildFileName(file.getOriginalFilename(), contentType), reusableKey);
         String key = tenant + "/" + fileName;
         if (isEnabled()) {
             try {
@@ -287,6 +297,11 @@ public class S3StorageService {
     }
 
     private String sanitizeTenant(String tenant) {
+        return tenantFolder(tenant);
+    }
+
+    /** Tenant database name -> uploads folder name (upload guard bhi yahi use karta hai). */
+    public static String tenantFolder(String tenant) {
         String clean = DataTypeUtility.stringValue(tenant).toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9-]", "-").replaceAll("-{2,}", "-");
         clean = clean.replaceAll("^-+|-+$", "");
         return clean.isEmpty() ? "common" : clean;
@@ -302,25 +317,27 @@ public class S3StorageService {
     }
 
     /**
-     * Deterministic file name: {@code <slot>-<original_name>}. Same file dobara
-     * aaye to same naam (S3/local overwrite). Extension content-type se verify:
-     * missing/bogus ho to sahi wali lagti hai.
+     * Actual file name (S3/URL-safe): {@code My Logo.PNG} -> {@code My-Logo.png}.
+     * Case same rehta hai; space/special characters {@code -} ban jaate hain.
+     * Extension content-type se verify: missing/bogus ho to sahi wali lagti hai.
      */
-    private String buildFileName(String safeSlot, String originalName, String contentType) {
+    private String buildFileName(String originalName, String contentType) {
         String base = DataTypeUtility.stringValue(originalName).replace("\\", "/");
         int slash = base.lastIndexOf('/');
         if (slash >= 0) {
             base = base.substring(slash + 1);
         }
-        base = base.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9._-]", "-").replaceAll("-{2,}", "-");
+        base = base.replaceAll("[^A-Za-z0-9._-]", "-").replaceAll("-{2,}", "-");
         base = base.replaceAll("^[-.]+|[-.]+$", "");
         String namePart = base;
         String ext = "";
         int dot = base.lastIndexOf('.');
         if (dot > 0) {
             namePart = base.substring(0, dot);
-            ext = base.substring(dot);
+            ext = base.substring(dot).toLowerCase(Locale.ROOT);
         }
+        // "Logo (1).png" -> "Logo-1-" -> "Logo-1": extension se pehle latakta "-" / "." nahi.
+        namePart = namePart.replaceAll("[-.]+$", "");
         String validExt = switch (contentType) {
             case "image/png" -> ".png";
             case "image/webp" -> ".webp";
@@ -337,6 +354,51 @@ public class S3StorageService {
         if (namePart.length() > 100) {
             namePart = namePart.substring(0, 100);
         }
-        return safeSlot + "-" + namePart + ext;
+        return namePart + ext;
+    }
+
+    /**
+     * Pehla free naam: {@code photo.jpg}, warna {@code photo-1.jpg}, {@code photo-2.jpg} ...
+     * Owner ki apni current key ({@code reusableKey}) free maani jaati hai (in-place overwrite).
+     */
+    private String availableFileName(String tenant, String fileName, String reusableKey) {
+        String reusable = DataTypeUtility.stringValue(reusableKey);
+        int dot = fileName.lastIndexOf('.');
+        String namePart = dot > 0 ? fileName.substring(0, dot) : fileName;
+        String ext = dot > 0 ? fileName.substring(dot) : "";
+        for (int attempt = 0; attempt < 50; attempt++) {
+            String candidate = attempt == 0 ? fileName : namePart + "-" + attempt + ext;
+            String key = tenant + "/" + candidate;
+            if (key.equalsIgnoreCase(reusable) || !exists(key)) {
+                return candidate;
+            }
+        }
+        // Bahut saari same naam ki files: time suffix (unique, kabhi overwrite nahi).
+        return namePart + "-" + System.currentTimeMillis() + ext;
+    }
+
+    private boolean exists(String key) {
+        if (isEnabled()) {
+            try {
+                client().headObject(HeadObjectRequest.builder()
+                        .bucket(DataTypeUtility.stringValue(s3Bucket))
+                        .key(key)
+                        .build());
+                return true;
+            } catch (NoSuchKeyException ex) {
+                return false;
+            } catch (S3Exception ex) {
+                if (ex.statusCode() == 404) {
+                    return false;
+                }
+                // Check na ho paye (permission/network) to "exists" maano: overwrite se behtar suffix.
+                return true;
+            } catch (Exception ex) {
+                return true;
+            }
+        }
+        Path baseDir = Paths.get(uploadDir).toAbsolutePath().normalize();
+        Path targetFile = baseDir.resolve(key).normalize();
+        return targetFile.startsWith(baseDir) && Files.exists(targetFile);
     }
 }

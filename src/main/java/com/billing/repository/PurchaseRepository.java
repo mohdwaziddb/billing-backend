@@ -46,8 +46,9 @@ public interface PurchaseRepository extends JpaRepository<Purchase, Long> {
                           @Param("endDate") LocalDate endDate,
                           Pageable pageable);
 
-    @Query("select count(p) from Purchase p where (:company is null or 1=1) and p.purchaseDate = current_date")
-    long countTodayByCompany(@Param("company") Company company);
+    // Number-length pehle, taaki 99999 ke baad 100000 bhi "max" mile.
+    @Query("select p.purchaseNo from Purchase p where p.purchaseNo like concat(:prefix, '%') order by length(p.purchaseNo) desc, p.purchaseNo desc")
+    List<String> findLatestNumbersWithPrefix(@Param("prefix") String prefix, Pageable pageable);
 
     @Query("select p from Purchase p where (:company is null or 1=1) order by p.purchaseDate desc, p.id desc")
     List<Purchase> findByCompanyOrderByPurchaseDateDescIdDesc(@Param("company") Company company);

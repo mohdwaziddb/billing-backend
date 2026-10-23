@@ -29,4 +29,6 @@ public class PaymentRequest {
     private String mode;
 
     private String remarks;
+
+    private String referenceNo;
 }

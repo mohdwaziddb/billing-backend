@@ -1,5 +1,6 @@
 package com.billing.dto.user;
 
+import com.billing.dto.company.CompanyFileInfo;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -19,4 +20,8 @@ public class UserProfileResponse {
     private CompanySummary company;
     /** True only for tenant super-admin sessions (additive; defaults false). */
     private boolean superAdmin;
+    /** Profile photo display URL (null = no photo). */
+    private String photoUrl;
+    /** Full stored file metadata (file_name, key, size, ...). */
+    private CompanyFileInfo photoFile;
 }

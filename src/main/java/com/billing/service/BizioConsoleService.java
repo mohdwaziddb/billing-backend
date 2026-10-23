@@ -18,10 +18,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import javax.sql.DataSource;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -40,7 +42,6 @@ public class BizioConsoleService {
     private static final int MAX_SQL_LENGTH = 10000;
 
     private static final Pattern FIRST_WORD = Pattern.compile("^\\s*(\\w+)\\b", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
-    private static final Pattern QUALIFIED_NAME = Pattern.compile("[`\"\\[]?([A-Za-z0-9_]+)[`\"\\]]?\\s*\\.\\s*[`\"\\[]?[A-Za-z0-9_]+[`\"\\]]?");
     private static final Pattern LIMIT_CLAUSE = Pattern.compile("\\bLIMIT\\b", Pattern.CASE_INSENSITIVE);
 
     private static final String[] BANNED_KEYWORDS = {
@@ -48,8 +49,18 @@ public class BizioConsoleService {
             "DROP", "ALTER", "TRUNCATE", "CREATE",
             "GRANT", "REVOKE", "CALL", "EXEC", "EXECUTE",
             "HANDLER", "INSTALL", "UNINSTALL", "SHUTDOWN",
-            "OUTFILE", "DUMPFILE", "LOAD_FILE", "LOAD DATA"
+            "OUTFILE", "DUMPFILE", "LOAD_FILE", "LOAD DATA",
+            // Locking / server-hogging functions (read query ho kar bhi nuksaan).
+            "FOR UPDATE", "LOCK IN SHARE MODE", "FOR SHARE",
+            "SLEEP", "BENCHMARK", "GET_LOCK", "RELEASE_LOCK", "RELEASE_ALL_LOCKS"
     };
+
+    // SHOW ke sirf current-DB wale forms. SHOW DATABASES / PROCESSLIST / GRANTS /
+    // VARIABLES / ENGINE etc. doosre tenants ya server ki jaankari dete hain.
+    private static final Pattern ALLOWED_SHOW = Pattern.compile(
+            "^SHOW\\s+(FULL\\s+)?(TABLES|COLUMNS|FIELDS|INDEX|INDEXES|KEYS|TABLE\\s+STATUS|TRIGGERS|CREATE\\s+(TABLE|VIEW))\\b.*",
+            Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    private static final Pattern IDENTIFIER = Pattern.compile("[A-Za-z0-9_]+");
     // NOTE: REPLACE deliberately not banned (REPLACE() string function is
     // read-only; REPLACE INTO is already blocked by first-word + ";" checks).
 
@@ -78,8 +89,8 @@ public class BizioConsoleService {
             if (sql.length() > MAX_SQL_LENGTH) {
                 throw new BadRequestException("SQL query too long (max " + MAX_SQL_LENGTH + " chars)");
             }
-            String finalSql = validateAndFinalize(sql, currentDb);
             JdbcTemplate jdbcTemplate = tenantJdbcTemplate(currentDb);
+            String finalSql = validateAndFinalize(sql, currentDb, jdbcTemplate);
             long started = System.currentTimeMillis();
             List<Map<String, Object>> rows = jdbcTemplate.queryForList(finalSql);
             long executedInMs = System.currentTimeMillis() - started;
@@ -164,9 +175,10 @@ public class BizioConsoleService {
             log.warn("[BizioConsole] tenant pool map unavailable for db '{}'", currentDb);
             throw new BadRequestException("Tenant database is not available. Please contact administrator.");
         }
-        DataSource dataSource = dataSourcesMtApp.get(currentDb);
+        // Read-only pool pehle: console kabhi write connection par na chale.
+        DataSource dataSource = dataSourcesMtApp.get(currentDb + "_read");
         if (dataSource == null) {
-            dataSource = dataSourcesMtApp.get(currentDb + "_read");
+            dataSource = dataSourcesMtApp.get(currentDb);
         }
         if (dataSource == null) {
             // Lazy pools are created on first HTTP request; a restarted backend
@@ -183,9 +195,9 @@ public class BizioConsoleService {
             } catch (Exception e) {
                 log.warn("[BizioConsole] ensureTenant failed for db '{}': {}", currentDb, e.getMessage());
             }
-            dataSource = dataSourcesMtApp.get(currentDb);
+            dataSource = dataSourcesMtApp.get(currentDb + "_read");
             if (dataSource == null) {
-                dataSource = dataSourcesMtApp.get(currentDb + "_read");
+                dataSource = dataSourcesMtApp.get(currentDb);
             }
         }
         if (dataSource == null) {
@@ -198,7 +210,8 @@ public class BizioConsoleService {
         return jdbcTemplate;
     }
 
-    private String validateAndFinalize(String sql, String currentDb) {
+    // package-private: unit test (BizioConsoleServiceTest) ke liye.
+    String validateAndFinalize(String sql, String currentDb, JdbcTemplate jdbcTemplate) {
         String stripped = sql.trim();
         while (stripped.endsWith(";")) {
             stripped = stripped.substring(0, stripped.length() - 1).trim();
@@ -221,6 +234,9 @@ public class BizioConsoleService {
                 || "DESC".equals(first) || "EXPLAIN".equals(first))) {
             throw new BadRequestException("Only SELECT, SHOW, DESCRIBE and EXPLAIN queries are allowed");
         }
+        if ("SHOW".equals(first) && !ALLOWED_SHOW.matcher(stripped).matches()) {
+            throw new BadRequestException("Only SHOW TABLES / COLUMNS / INDEX / TABLE STATUS / TRIGGERS / CREATE TABLE|VIEW are allowed");
+        }
         String upper = stripped.toUpperCase(Locale.ROOT);
         for (String banned : BANNED_KEYWORDS) {
             if (containsWord(upper, banned)) {
@@ -238,23 +254,13 @@ public class BizioConsoleService {
                 throw new BadRequestException("Query is locked to the current database. Cross-database access is not allowed.");
             }
         }
-        Matcher qualifier = QUALIFIED_NAME.matcher(stripStringLiterals(stripped));
-        while (qualifier.find()) {
-            String qualifierDb = qualifier.group(1);
-            if (qualifierDb == null || qualifierDb.isBlank()
-                    || qualifierDb.equalsIgnoreCase(currentDb)) {
-                continue;
-            }
-            // Table aliases (u.name) and decimals (1.5) look identical to
-            // db.table — block ONLY when the qualifier is a real registered
-            // database. System schemas are already blocked above by substring.
-            boolean knownDb = false;
-            try {
-                knownDb = companyRegistryService.isValidDatabase(qualifierDb.trim());
-            } catch (Exception ignored) {
-                knownDb = false;
-            }
-            if (knownDb) {
+        // Pehle sirf registered tenant DBs block hote the; ab server par dikhne
+        // wala HAR doosra schema (purana billing DB, doosre apps) block hai —
+        // chahe db.table form me ho ya SHOW ... FROM/IN otherdb me.
+        Set<String> otherSchemas = otherVisibleSchemas(jdbcTemplate, currentDb);
+        Matcher identifier = IDENTIFIER.matcher(stripStringLiterals(stripped));
+        while (identifier.find()) {
+            if (otherSchemas.contains(identifier.group().toLowerCase(Locale.ROOT))) {
                 throw new BadRequestException("Query is locked to the current database (" + currentDb + "). Cross-database access is not allowed.");
             }
         }
@@ -262,6 +268,16 @@ public class BizioConsoleService {
             stripped = stripped + " LIMIT " + MAX_ROWS;
         }
         return stripped;
+    }
+
+    private Set<String> otherVisibleSchemas(JdbcTemplate jdbcTemplate, String currentDb) {
+        Set<String> schemas = new HashSet<>();
+        for (String schema : jdbcTemplate.queryForList("SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA", String.class)) {
+            if (schema != null && !schema.equalsIgnoreCase(currentDb)) {
+                schemas.add(schema.toLowerCase(Locale.ROOT));
+            }
+        }
+        return schemas;
     }
 
     private boolean containsWord(String upper, String keyword) {

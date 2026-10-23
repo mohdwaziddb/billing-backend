@@ -125,6 +125,9 @@ public class GlobalExceptionHandler {
         }
 
         if (normalized.contains("duplicate entry")) {
+            if (normalized.contains("uk_products_sku")) {
+                return "SKU already exists in your company.";
+            }
             if (normalized.contains("uk_users_company_email") || normalized.contains("email_id")) {
                 return "Email already exists in this company.";
             }

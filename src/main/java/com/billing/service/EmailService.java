@@ -53,7 +53,7 @@ public class EmailService {
 
     public EmailLogResponse sendTemplateEmail(String email, Company company, EmailTemplate template, EmailSendRequest request) {
         String subject = variableService.render(template.getSubject(), company, request.getVariables());
-        String body = variableService.render(template.getEmailBody(), company, request.getVariables());
+        String body = variableService.renderHtml(template.getEmailBody(), company, request.getVariables());
         EmailDeliveryResult result = sendEmail(company, subject, body, List.of(request.getRecipientEmail()), List.of(), List.of(), List.of(), email);
 
         EmailLog log = EmailLog.builder()

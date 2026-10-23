@@ -10,4 +10,5 @@ public class PlatformAdminSettingsRequest {
     private String platformTagline;
     private String username;
     private String password;
+    private String currentPassword;
 }

@@ -1,7 +1,10 @@
 package com.billing.entity;
 
+import com.billing.entity.enums.PaymentModeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -48,8 +51,22 @@ public class PaymentModeMaster extends BaseEntity {
     @Column(nullable = false)
     private boolean active = true;
 
+    // null (purani rows) = OFFLINE. ONLINE mode sirf gateway flow se record hota hai.
+    @Enumerated(EnumType.STRING)
+    @Column(name = "mode_type", length = 20)
+    private PaymentModeType modeType;
+
+    // true ho to form me optional "Reference No" (UTR / approval no.) field dikhta hai.
+    @Builder.Default
+    @Column(name = "requires_reference", nullable = false)
+    private boolean requiresReference = false;
+
     @Transient
     private Company company;
+
+    public PaymentModeType effectiveModeType() {
+        return modeType == null ? PaymentModeType.OFFLINE : modeType;
+    }
 
     @PrePersist
     @PreUpdate

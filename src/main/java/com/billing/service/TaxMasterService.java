@@ -129,7 +129,7 @@ public class TaxMasterService {
                 .rate(taxValidator.normalizeRate(request.getRate()))
                 .description(blankToNull(request.getDescription()))
                 .defaultTax(Boolean.TRUE.equals(request.getDefaultTax()))
-                .active(Boolean.TRUE.equals(request.getActive()))
+                .active(request.getActive() == null || request.getActive())
                 .deleted(false)
                 .build();
 
@@ -165,7 +165,10 @@ public class TaxMasterService {
         taxMaster.setRate(taxValidator.normalizeRate(request.getRate()));
         taxMaster.setDescription(blankToNull(request.getDescription()));
         taxMaster.setDefaultTax(Boolean.TRUE.equals(request.getDefaultTax()));
-        taxMaster.setActive(Boolean.TRUE.equals(request.getActive()));
+        // active na bheja ho to purani value rahe (pehle chup-chaap inactive ho jata tha).
+        if (request.getActive() != null) {
+            taxMaster.setActive(request.getActive());
+        }
 
         TaxMaster saved = taxMasterRepository.save(taxMaster);
         auditLogService.logUpdate(email, company, "Tax Master", "TaxMaster", saved.getId(), oldData, snapshot(saved));

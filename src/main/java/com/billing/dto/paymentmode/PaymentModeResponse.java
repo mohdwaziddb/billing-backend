@@ -13,6 +13,8 @@ public class PaymentModeResponse {
     private String modeCode;
     private String description;
     private boolean active;
+    private String modeType;
+    private boolean requiresReference;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private String createdBy;

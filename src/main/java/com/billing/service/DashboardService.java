@@ -50,19 +50,19 @@ public class DashboardService {
     public DashboardSummaryResponse summary(String email, LocalDate startDate, LocalDate endDate) {
         User user = accessControlService.getCurrentUser(email);
         Company company = accessControlService.requireCompany(user);
-        List<Invoice> allInvoices = invoicesFor(company);
-        List<Payment> allPayments = paymentsFor(company);
-        List<Customer> allCustomers = customersFor(company);
         LocalDate safeStart = startDate;
         LocalDate safeEnd = endDate;
-        BigDecimal totalExpense = expensesFor(company).stream()
-                .filter(expense -> isWithinRange(expense.getExpenseDate(), safeStart, safeEnd))
+        // History (outstanding as-of, first purchase) ke liye end date tak ke invoices
+        // bina items ke; items sirf selected range ke invoices ke saath. Pehle poori
+        // invoices table items samet har request par memory me aati thi.
+        List<Invoice> allInvoices = invoicesUpTo(safeEnd);
+        List<Payment> allPayments = paymentsUpTo(safeEnd);
+        List<Customer> allCustomers = customersFor(company);
+        BigDecimal totalExpense = expensesIn(safeStart, safeEnd).stream()
                 .map(com.billing.entity.Expense::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        List<Invoice> filteredInvoices = allInvoices.stream()
-                .filter(invoice -> isWithinRange(invoice.getInvoiceDate(), safeStart, safeEnd))
-                .toList();
+        List<Invoice> filteredInvoices = invoicesWithItemsIn(safeStart, safeEnd);
         List<Payment> filteredPayments = allPayments.stream()
                 .filter(payment -> isWithinRange(payment.getPaymentDate(), safeStart, safeEnd))
                 .toList();
@@ -104,7 +104,7 @@ public class DashboardService {
                 .map(Payment::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal totalGst = filteredInvoices.stream()
-                .map(Invoice::getTaxAmount)
+                .map(invoice -> invoice.getTaxAmount().subtract(GstReportService.nonGstTaxTotal(invoice)))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal cgstCollected = filteredInvoices.stream()
                 .map(Invoice::getCgstTotal)
@@ -113,7 +113,7 @@ public class DashboardService {
                 .map(Invoice::getSgstTotal)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal igstCollected = filteredInvoices.stream()
-                .map(Invoice::getIgstTotal)
+                .map(GstReportService::gstIgstTotal)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         BigDecimal outstanding = calculateOutstandingAsOf(allCustomers, allInvoices, allPayments, safeEnd);
@@ -238,18 +238,16 @@ public class DashboardService {
                                            String search) {
         User user = accessControlService.getCurrentUser(email);
         Company company = accessControlService.requireCompany(user);
-        List<Invoice> allInvoices = invoicesFor(company);
-        List<Payment> allPayments = paymentsFor(company);
+        List<Invoice> allInvoices = invoicesUpTo(endDate);
+        List<Payment> allPayments = paymentsUpTo(endDate);
         List<Customer> allCustomers = customersFor(company);
-        List<Expense> allExpenses = expensesFor(company);
+        List<Expense> allExpenses = expensesIn(startDate, endDate);
         Map<Long, Customer> customersById = allCustomers.stream()
                 .collect(Collectors.toMap(Customer::getId, Function.identity()));
         Map<Long, LocalDate> firstPurchaseDates = firstPurchaseDates(allInvoices);
         String normalizedCard = normalizeCard(card);
 
-        List<Invoice> filteredInvoices = allInvoices.stream()
-                .filter(invoice -> isWithinRange(invoice.getInvoiceDate(), startDate, endDate))
-                .toList();
+        List<Invoice> filteredInvoices = invoicesWithItemsIn(startDate, endDate);
         List<Payment> filteredPayments = allPayments.stream()
                 .filter(payment -> isWithinRange(payment.getPaymentDate(), startDate, endDate))
                 .toList();
@@ -302,20 +300,24 @@ public class DashboardService {
         return endDate == null || !value.isAfter(endDate);
     }
 
-    private List<Invoice> invoicesFor(Company company) {
-        return invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company);
+    private List<Invoice> invoicesUpTo(LocalDate endDate) {
+        return invoiceRepository.findActiveInRange(null, endDate);
     }
 
-    private List<Payment> paymentsFor(Company company) {
-        return paymentRepository.findByCompanyOrderByPaymentDateDescIdDesc(company);
+    private List<Invoice> invoicesWithItemsIn(LocalDate startDate, LocalDate endDate) {
+        return invoiceRepository.findActiveInRangeWithItems(startDate, endDate);
+    }
+
+    private List<Payment> paymentsUpTo(LocalDate endDate) {
+        return paymentRepository.findActiveInRange(null, endDate);
     }
 
     private List<Customer> customersFor(Company company) {
         return customerRepository.findAllByOrderByCreatedAtDesc();
     }
 
-    private List<Expense> expensesFor(Company company) {
-        return expenseRepository.findByCompanyOrderByExpenseDateDescIdDesc(company);
+    private List<Expense> expensesIn(LocalDate startDate, LocalDate endDate) {
+        return expenseRepository.findInRange(startDate, endDate);
     }
 
     private boolean isBeforeStart(LocalDate value, LocalDate startDate) {

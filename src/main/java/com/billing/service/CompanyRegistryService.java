@@ -129,6 +129,27 @@ public class CompanyRegistryService {
     }
 
     /**
+     * Registry company code for a tenant database (webhook URLs carry it so
+     * the callback lands on the right tenant). Null when not found.
+     */
+    public String resolveCompanyCodeByDatabase(String databaseName) {
+        if (databaseName == null || databaseName.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            String code = jdbcTemplate.queryForObject(
+                    "SELECT company_code FROM billing_common.company_registry WHERE database_name=? LIMIT 1",
+                    String.class, databaseName.trim());
+            if (code != null && !code.trim().isEmpty()) {
+                return code.trim();
+            }
+        } catch (Exception e) {
+            // ignore
+        }
+        return null;
+    }
+
+    /**
      * Raw status (ACTIVE/INACTIVE/...) for a company code, any status.
      * Null when no registry row exists.
      */
@@ -205,6 +226,17 @@ public class CompanyRegistryService {
             return count != null && count > 0;
         } catch (Exception e) {
             return false;
+        }
+    }
+
+    /** Saare registered tenant database names (status kuch bhi ho). Fail par empty. */
+    public java.util.List<String> allDatabaseNames() {
+        try {
+            return jdbcTemplate.queryForList(
+                    "SELECT database_name FROM billing_common.company_registry WHERE database_name IS NOT NULL",
+                    String.class);
+        } catch (Exception e) {
+            return java.util.List.of();
         }
     }
 

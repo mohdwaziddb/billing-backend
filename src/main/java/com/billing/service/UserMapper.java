@@ -27,6 +27,8 @@ public class UserMapper {
                 .createdAt(user.getCreatedAt())
                 .company(toCompanySummary(company))
                 .superAdmin(user.isSuperAdmin())
+                .photoUrl(CompanyFileJson.extractUrl(user.getPhotoUrl()))
+                .photoFile(CompanyFileJson.parse(user.getPhotoUrl()))
                 .build();
     }
 

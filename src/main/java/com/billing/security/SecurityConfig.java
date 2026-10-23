@@ -67,6 +67,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/company/current").permitAll()
                         .requestMatchers("/api/v1/platform-admin/login").permitAll()
                         .requestMatchers("/uploads/public/**").permitAll()
+                        // Payment gateway server-to-server callbacks: no JWT, authenticity = gateway signature.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/payment-gateway/webhook/**").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/actuator/health").permitAll()
                         // Error dispatches re-enter the security chain (JWT filter is skipped there),

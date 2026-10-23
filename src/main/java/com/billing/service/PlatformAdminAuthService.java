@@ -4,6 +4,7 @@ import com.billing.dto.auth.PlatformAdminAuthResponse;
 import com.billing.dto.auth.PlatformAdminLoginRequest;
 import com.billing.exception.UnauthorizedException;
 import com.billing.security.JwtService;
+import com.billing.security.LoginAttemptService;
 import com.billing.util.DataTypeUtility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -24,6 +25,7 @@ public class PlatformAdminAuthService {
     private final JdbcTemplate billingCommonJdbcTemplate;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final LoginAttemptService loginAttemptService;
 
     @Transactional(readOnly = true)
     public PlatformAdminAuthResponse login(Map<String, Object> param) {
@@ -33,19 +35,25 @@ public class PlatformAdminAuthService {
 
     @Transactional(readOnly = true)
     public PlatformAdminAuthResponse login(PlatformAdminLoginRequest request) {
+        // Ek hi platform admin account hai: lockout key fixed rakho, taaki
+        // username badal kar lockout bypass na ho.
+        String attemptKey = LoginAttemptService.key("platform-admin", "admin");
+        loginAttemptService.assertNotLocked(attemptKey);
         Map<String, Object> setting = loadPlatformSetting();
 
         if (!matchesUsername((String) setting.get("username"), request.getUsername())
                 || setting.get("password") == null
                 || !passwordEncoder.matches(request.getPassword(), (String) setting.get("password"))) {
+            loginAttemptService.recordFailure(attemptKey);
             throw new UnauthorizedException("Invalid platform admin credentials.");
         }
+        loginAttemptService.recordSuccess(attemptKey);
 
         String username = ((String) setting.get("username")).trim();
         return PlatformAdminAuthResponse.builder()
                 .accessToken(jwtService.generatePlatformAdminAccessToken(username))
                 .tokenType("Bearer")
-                .expiresIn(jwtService.getAccessTokenExpiration())
+                .expiresIn(jwtService.getAdminAccessTokenExpiration())
                 .username(username)
                 .build();
     }

@@ -2,6 +2,7 @@ package com.billing.service;
 
 import com.billing.entity.Company;
 import org.springframework.stereotype.Service;
+import org.springframework.web.util.HtmlUtils;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -33,7 +34,20 @@ public class EmailTemplateVariableService {
         return variables;
     }
 
+    /** Plain text (email subject, SMS, WhatsApp): keys waise hi replace. */
     public String render(String template, Company company, Map<String, Object> inputVariables) {
+        return render(template, company, inputVariables, false);
+    }
+
+    /**
+     * Email HTML body: values HTML-escape hote hain, taaki customer name jaise
+     * fields me daala gaya HTML/link company ke email me inject na ho.
+     */
+    public String renderHtml(String template, Company company, Map<String, Object> inputVariables) {
+        return render(template, company, inputVariables, true);
+    }
+
+    private String render(String template, Company company, Map<String, Object> inputVariables, boolean escapeHtml) {
         String rendered = template == null ? "" : template;
         Map<String, Object> variables = baseVariables(company);
         if (inputVariables != null) {
@@ -41,7 +55,8 @@ public class EmailTemplateVariableService {
         }
         for (Map.Entry<String, Object> entry : variables.entrySet()) {
             String placeholder = "{{" + entry.getKey() + "}}";
-            rendered = rendered.replace(placeholder, entry.getValue() == null ? "" : String.valueOf(entry.getValue()));
+            String value = entry.getValue() == null ? "" : String.valueOf(entry.getValue());
+            rendered = rendered.replace(placeholder, escapeHtml ? HtmlUtils.htmlEscape(value) : value);
         }
         return rendered;
     }

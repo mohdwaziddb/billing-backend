@@ -19,7 +19,10 @@ public class AiController {
 
     private final AiService aiService;
 
+    // Pehle koi check nahi tha: AI_ASSISTANT menu na ho tab bhi chat chalti thi.
+    // Har tool apni alag permission bhi check karta hai (BillingAiToolService).
     @PostMapping
+    @com.billing.security.RequiresPermission(menu = "AI_ASSISTANT", action = "VIEW")
     public ResponseEntity<ApiResponse<AiChatResponse>> chat(@Valid @RequestBody AiChatRequest request) {
         return ResponseEntity.ok(ApiResponse.success("AI response generated successfully", aiService.chat(request)));
     }

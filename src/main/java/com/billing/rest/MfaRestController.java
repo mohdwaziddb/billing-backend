@@ -70,10 +70,12 @@ public class MfaRestController {
 
     @DeleteMapping("/devices/{deviceId}")
     public ResponseEntity<?> deleteDevice(@PathVariable Long deviceId,
+                                          @RequestBody(required = false) Map<String, Object> param,
                                           Authentication authentication, HttpServletRequest req) {
         try {
             deviceId = DataTypeUtility.getForeignKeyValue(deviceId);
-            mfaService.deleteDevice(authentication.getName(), deviceId);
+            String code = param == null ? null : DataTypeUtility.stringValue(param.get("code"));
+            mfaService.deleteDevice(authentication.getName(), deviceId, code);
             return new ResponseEntity<>(new GeneralResponse<>(true, "Device removed", Map.of("status", "ok")), HttpStatus.OK);
         } catch (BadRequestException e) {
             return ResponseEntity.badRequest().body(new GeneralResponse<>(false, e.getMessage(), null));

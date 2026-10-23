@@ -15,6 +15,7 @@ import com.billing.exception.CompanyInactiveException;
 import com.billing.exception.UnauthorizedException;
 import com.billing.repository.CompanyRepository;
 import com.billing.repository.RefreshTokenRepository;
+import com.billing.security.LoginAttemptService;
 import com.billing.repository.UserMfaDeviceRepository;
 import com.billing.repository.UserRepository;
 import com.billing.security.CustomUserDetails;
@@ -48,6 +49,7 @@ public class AuthService {
     private final SecretEncryptionService secretEncryptionService;
     private final TotpService totpService;
     private final MfaService mfaService;
+    private final LoginAttemptService loginAttemptService;
 
     @Value("${app.refresh-token-expiration}")
     private long refreshTokenExpiration;
@@ -59,10 +61,35 @@ public class AuthService {
 
     @Transactional
     public AuthResponse login(LoginRequest request) {
+        String attemptKey = LoginAttemptService.key(currentTenantOrUnknown(), request.getLoginIdentifier());
+        loginAttemptService.assertNotLocked(attemptKey);
+        try {
+            AuthResponse response = authenticate(request);
+            loginAttemptService.recordSuccess(attemptKey);
+            return response;
+        } catch (UnauthorizedException e) {
+            loginAttemptService.recordFailure(attemptKey);
+            throw e;
+        }
+    }
+
+    private String currentTenantOrUnknown() {
+        try {
+            return resolveTenantDatabaseName();
+        } catch (Exception e) {
+            return "unknown";
+        }
+    }
+
+    private AuthResponse authenticate(LoginRequest request) {
         String loginIdentifier = request.getLoginIdentifier();
         java.util.Optional<User> userOpt = findAuthenticatedUser(loginIdentifier, request.getPassword());
         if (userOpt.isPresent()) {
             User user = userOpt.get();
+            // Deactivated user ka password sahi ho tab bhi login nahi (pehle ho jata tha).
+            if (!user.isActive()) {
+                throw new UnauthorizedException("User is inactive. Please contact administrator.");
+            }
             validateCompanyActiveForLogin(user);
             java.util.Optional<Company> tenantCompanyOpt = resolveTenantCompany();
             if (tenantCompanyOpt.isPresent() && tenantCompanyOpt.get().isApplyMfa()) {
@@ -123,7 +150,7 @@ public class AuthService {
         return AuthResponse.builder()
                 .accessToken(accessToken)
                 .tokenType("Bearer")
-                .expiresIn(jwtService.getAccessTokenExpiration())
+                .expiresIn(jwtService.getAdminAccessTokenExpiration())
                 .user(profileResponse)
                 .build();
     }
@@ -144,6 +171,10 @@ public class AuthService {
         }
 
         User user = token.getUser();
+        if (!user.isActive()) {
+            refreshTokenRepository.delete(token);
+            throw new UnauthorizedException("User is inactive. Please contact administrator.");
+        }
         validateCompanyActiveForApi(user);
         // Rotate ONLY the presented token: sibling tabs/devices keep their own
         // sessions. deleteByUser here used to kill every sibling session, so a
@@ -340,8 +371,11 @@ public class AuthService {
             if (secret == null || secret.isBlank()) {
                 continue;
             }
-            if (totpService.verifyCode(secret, code.trim())) {
+            long step = totpService.matchingStep(secret, code.trim());
+            // Pehle use ho chuka code (same 30s window) dobara nahi chalega.
+            if (step >= 0 && (device.getLastUsedStep() == null || step > device.getLastUsedStep())) {
                 matchedDevice = device;
+                matchedDevice.setLastUsedStep(step);
                 break;
             }
         }

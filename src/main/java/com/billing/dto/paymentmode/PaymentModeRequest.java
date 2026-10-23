@@ -19,4 +19,9 @@ public class PaymentModeRequest {
 
     @NotNull
     private Boolean active;
+
+    // OFFLINE / ONLINE; null = update par purani value rahe.
+    private String modeType;
+
+    private Boolean requiresReference;
 }

@@ -10,10 +10,13 @@ import com.billing.entity.Product;
 import com.billing.entity.ProductBatch;
 import com.billing.entity.Purchase;
 import com.billing.entity.PurchaseItem;
+import com.billing.entity.InventoryLedgerEntry;
+import com.billing.entity.enums.DocumentSequenceType;
+import com.billing.entity.enums.InventoryLedgerMovementType;
+import com.billing.entity.enums.ProductBatchStatus;
 import com.billing.entity.enums.ProductBatchSourceType;
 import com.billing.exception.BadRequestException;
 import com.billing.exception.ResourceNotFoundException;
-import com.billing.repository.InventoryLedgerRepository;
 import com.billing.repository.InvoiceItemAllocationRepository;
 import com.billing.repository.PurchaseItemRepository;
 import com.billing.repository.PurchaseRepository;
@@ -26,7 +29,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -39,13 +41,13 @@ public class PurchaseService {
     private final PurchaseRepository purchaseRepository;
     private final PurchaseItemRepository purchaseItemRepository;
     private final ProductBatchRepository productBatchRepository;
-    private final InventoryLedgerRepository inventoryLedgerRepository;
     private final InvoiceItemAllocationRepository invoiceItemAllocationRepository;
     private final AccessControlService accessControlService;
     private final ProductService productService;
     private final InventoryService inventoryService;
     private final AuditLogService auditLogService;
     private final AuditNameResolver auditNameResolver;
+    private final DocumentNumberService documentNumberService;
 
     @Transactional
     public PurchaseResponse create(String email, PurchaseRequest request) {
@@ -54,7 +56,7 @@ public class PurchaseService {
 
         Purchase purchase = Purchase.builder()
                 .company(company)
-                .purchaseNo(generatePurchaseNo(company, request.getPurchaseDate()))
+                .purchaseNo(documentNumberService.next(DocumentSequenceType.PURCHASE, request.getPurchaseDate()))
                 .purchaseDate(request.getPurchaseDate())
                 .supplierName(blankToNull(request.getSupplierName()))
                 .remarks(blankToNull(request.getRemarks()))
@@ -196,8 +198,35 @@ public class PurchaseService {
         }
 
         Map<String, Object> oldData = snapshot(purchase);
-        inventoryLedgerRepository.deleteAll(inventoryLedgerRepository.findByCompanyAndPurchaseOrderByEntryDateAscIdAsc(company, purchase));
-        productBatchRepository.deleteAll(batches);
+        // Pehle batches + ledger hard-delete hote the: (1) purane (released) invoice
+        // allocations/ledger rows unhe refer karte the to FK error, (2) stock history
+        // hamesha ke liye mit jaati thi. Ab batch ka bacha stock PURCHASE_RETURN
+        // entry se 0 hota hai; batch aur history dono rehte hain.
+        for (ProductBatch batch : batches) {
+            ProductBatch locked = productBatchRepository.lockById(batch.getId()).orElse(batch);
+            int remaining = locked.getRemainingQty() == null ? 0 : locked.getRemainingQty();
+            if (remaining > 0) {
+                inventoryService.createLedgerEntry(InventoryLedgerEntry.builder()
+                        .company(company)
+                        .product(locked.getProduct())
+                        .productBatch(locked)
+                        .purchase(purchase)
+                        .purchaseItem(locked.getPurchaseItem())
+                        .movementType(InventoryLedgerMovementType.PURCHASE_RETURN)
+                        .entryDate(com.billing.core.AppDateTime.istToday())
+                        .qtyIn(0)
+                        .qtyOut(remaining)
+                        .balanceAfter(0)
+                        .unitCost(scale(locked.getPurchaseRate()))
+                        .unitPrice(scale(locked.getSellingRate()))
+                        .referenceNo(purchase.getPurchaseNo())
+                        .remarks("Purchase deleted")
+                        .build());
+            }
+            locked.setRemainingQty(0);
+            locked.setBatchStatus(ProductBatchStatus.EXHAUSTED);
+            productBatchRepository.save(locked);
+        }
         purchase.setActive(false);
         purchaseRepository.save(purchase);
         auditLogService.logDelete(email, company, "Purchase", "Purchase", purchaseId, oldData);
@@ -313,14 +342,26 @@ public class PurchaseService {
         return batchesByPurchaseItemId;
     }
 
-    private String generatePurchaseNo(Company company, LocalDate purchaseDate) {
-        long sequence = purchaseRepository.countTodayByCompany(company) + 1;
-        return "PUR-" + purchaseDate.format(DateTimeFormatter.BASIC_ISO_DATE) + "-" + String.format("%03d", sequence);
-    }
-
     private void validateRequest(PurchaseRequest request) {
+        if (request.getPurchaseDate() == null) {
+            throw new BadRequestException("Purchase date is required");
+        }
         if (request.getItems() == null || request.getItems().isEmpty()) {
             throw new BadRequestException("Add at least one purchase item");
+        }
+        // Map endpoints par @Min/@DecimalMin nahi chalte: negative qty se batch ka
+        // stock negative ban jata tha.
+        for (PurchaseItemRequest item : request.getItems()) {
+            if (item.getProductId() == null) {
+                throw new BadRequestException("Product is required for every purchase item");
+            }
+            if (item.getQty() == null || item.getQty() < 1) {
+                throw new BadRequestException("Quantity must be at least 1 for every purchase item");
+            }
+            if (item.getPurchaseRate() == null || item.getPurchaseRate().compareTo(BigDecimal.ZERO) < 0
+                    || item.getSellingRate() == null || item.getSellingRate().compareTo(BigDecimal.ZERO) < 0) {
+                throw new BadRequestException("Purchase and selling rate cannot be empty or negative");
+            }
         }
     }
 

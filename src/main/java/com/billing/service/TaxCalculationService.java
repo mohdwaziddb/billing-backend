@@ -60,10 +60,10 @@ public class TaxCalculationService {
         BigDecimal igstTotal = money(BigDecimal.ZERO);
         BigDecimal grandTotal = money(BigDecimal.ZERO);
 
-        for (PreparedLine line : preparedLines) {
-            BigDecimal invoiceDiscountShare = afterProductDiscountSubtotal.compareTo(BigDecimal.ZERO) > 0
-                    ? money(invoiceDiscount.multiply(line.afterProductDiscount()).divide(afterProductDiscountSubtotal, 2, RoundingMode.HALF_UP))
-                    : money(BigDecimal.ZERO);
+        List<BigDecimal> invoiceDiscountShares = splitInvoiceDiscount(preparedLines, invoiceDiscount, afterProductDiscountSubtotal);
+        for (int index = 0; index < preparedLines.size(); index++) {
+            PreparedLine line = preparedLines.get(index);
+            BigDecimal invoiceDiscountShare = invoiceDiscountShares.get(index);
             BigDecimal lineTaxableAmount = money(line.afterProductDiscount().subtract(invoiceDiscountShare));
             TaxBreakup breakup = breakup(line.taxMaster(), line.product().isTaxable(), lineTaxableAmount, sameState);
             BigDecimal lineGrandTotal = money(lineTaxableAmount.add(breakup.cgstAmount()).add(breakup.sgstAmount()).add(breakup.igstAmount()));
@@ -160,9 +160,12 @@ public class TaxCalculationService {
         }
 
         if (sameState) {
+            // Display rate rounded (0.25% -> 0.13%), par AMOUNT full rate / 200 se,
+            // taaki cgst+sgst = asli tax rahe (frontend InvoiceCalculationService jaisa).
             BigDecimal halfRate = percent(rate.divide(BigDecimal.valueOf(2), 2, RoundingMode.HALF_UP));
-            BigDecimal cgstAmount = percentageAmount(safeTaxableAmount, halfRate);
-            BigDecimal sgstAmount = percentageAmount(safeTaxableAmount, halfRate);
+            BigDecimal halfAmount = money(safeTaxableAmount.multiply(rate).divide(BigDecimal.valueOf(200), 2, RoundingMode.HALF_UP));
+            BigDecimal cgstAmount = halfAmount;
+            BigDecimal sgstAmount = halfAmount;
             return new TaxBreakup(rate, halfRate, cgstAmount, halfRate, sgstAmount,
                     BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP),
                     BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
@@ -176,6 +179,46 @@ public class TaxCalculationService {
                 BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP),
                 rate,
                 igstAmount);
+    }
+
+    /**
+     * Largest-remainder split: har line ka share paise me floor, phir bache
+     * paise sabse bade fraction wali lines ko. Shares ka sum EXACTLY invoice
+     * discount hota hai (per-line HALF_UP me paise drift hote the) aur frontend
+     * InvoiceCalculationService.ts se match karta hai.
+     */
+    private List<BigDecimal> splitInvoiceDiscount(List<PreparedLine> lines,
+                                                  BigDecimal invoiceDiscount,
+                                                  BigDecimal afterProductDiscountSubtotal) {
+        List<BigDecimal> shares = new ArrayList<>();
+        if (afterProductDiscountSubtotal.compareTo(BigDecimal.ZERO) <= 0 || invoiceDiscount.compareTo(BigDecimal.ZERO) <= 0) {
+            for (int index = 0; index < lines.size(); index++) {
+                shares.add(money(BigDecimal.ZERO));
+            }
+            return shares;
+        }
+        List<BigDecimal> fractions = new ArrayList<>();
+        BigDecimal flooredTotal = BigDecimal.ZERO;
+        for (PreparedLine line : lines) {
+            BigDecimal raw = invoiceDiscount.multiply(line.afterProductDiscount())
+                    .divide(afterProductDiscountSubtotal, 10, RoundingMode.HALF_UP);
+            BigDecimal floored = raw.setScale(2, RoundingMode.FLOOR);
+            shares.add(floored);
+            fractions.add(raw.subtract(floored));
+            flooredTotal = flooredTotal.add(floored);
+        }
+        int remainderPaise = invoiceDiscount.subtract(flooredTotal).movePointRight(2).intValue();
+        List<Integer> order = new ArrayList<>();
+        for (int index = 0; index < lines.size(); index++) {
+            order.add(index);
+        }
+        // Stable sort: barabar fraction par pehli line ko pehle paisa (frontend jaisa).
+        order.sort((left, right) -> fractions.get(right).compareTo(fractions.get(left)));
+        for (int position = 0; position < order.size() && remainderPaise > 0; position++, remainderPaise--) {
+            int index = order.get(position);
+            shares.set(index, shares.get(index).add(new BigDecimal("0.01")));
+        }
+        return shares;
     }
 
     private BigDecimal discountAmount(BigDecimal base, String discountType, BigDecimal discountValue, BigDecimal discountPercent) {

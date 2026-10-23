@@ -8,7 +8,9 @@ import com.billing.entity.enums.RoleName;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -38,7 +40,46 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
     @EntityGraph(attributePaths = {"customer", "customer.stateMaster", "referByUser", "items", "items.product", "items.taxMaster"})
     @Query("select i from Invoice i where (:company is null or 1=1) and i.customer = :customer and i.deleted = false")
     Page<Invoice> findByCompanyAndCustomer(@Param("company") Company company, @Param("customer") Customer customer, Pageable pageable);
-    long countByInvoiceDate(LocalDate invoiceDate);
+    // Reports: date range DB me hi filter (pehle poori table memory me aati thi).
+    // Items ke saath: jahan line-level data chahiye (GST, sold products).
+    @EntityGraph(attributePaths = {"customer", "customer.stateMaster", "items", "items.product", "items.taxMaster"})
+    @Query("""
+            select i from Invoice i
+            where i.deleted = false
+              and (:startDate is null or i.invoiceDate >= :startDate)
+              and (:endDate is null or i.invoiceDate <= :endDate)
+            order by i.invoiceDate desc, i.id desc
+            """)
+    List<Invoice> findActiveInRangeWithItems(@Param("startDate") LocalDate startDate, @Param("endDate") LocalDate endDate);
+
+    // Light: sirf header + customer (totals/balances/history ke liye, items nahi).
+    @EntityGraph(attributePaths = {"customer"})
+    @Query("""
+            select i from Invoice i
+            where i.deleted = false
+              and (:startDate is null or i.invoiceDate >= :startDate)
+              and (:endDate is null or i.invoiceDate <= :endDate)
+            order by i.invoiceDate desc, i.id desc
+            """)
+    List<Invoice> findActiveInRange(@Param("startDate") LocalDate startDate, @Param("endDate") LocalDate endDate);
+
+    // Payment apply/reverse: paidAmount read-modify-write ke dauraan row lock (lost update fix).
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select i from Invoice i where i.id = :id")
+    Optional<Invoice> lockById(@Param("id") Long id);
+
+    // FIFO allocation ke liye customer ke open invoices (purane pehle), locked.
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select i from Invoice i
+            where i.customer = :customer and i.deleted = false and i.balanceAmount > 0
+            order by i.invoiceDate asc, i.id asc
+            """)
+    List<Invoice> lockOpenInvoicesOldestFirst(@Param("customer") Customer customer);
+
+    // Number-length pehle, taaki 99999 ke baad 100000 bhi "max" mile.
+    @Query("select i.invoiceNo from Invoice i where i.invoiceNo like concat(:prefix, '%') order by length(i.invoiceNo) desc, i.invoiceNo desc")
+    List<String> findLatestNumbersWithPrefix(@Param("prefix") String prefix, Pageable pageable);
     @Query("select count(i) from Invoice i where (:company is null or 1=1) and i.deleted = false")
     long countByCompanyAndDeletedFalse(@Param("company") Company company);
 

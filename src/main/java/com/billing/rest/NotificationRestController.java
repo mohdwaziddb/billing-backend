@@ -79,7 +79,7 @@ public class NotificationRestController {
     }
 
     @PostMapping("/email-settings/test")
-    @com.billing.security.RequiresPermission(menu = "COMMUNICATION", action = "VIEW")
+    @com.billing.security.RequiresPermission(menu = "COMMUNICATION", action = "EDIT")
     public ResponseEntity<?> sendTestEmail(@RequestBody(required = false) Map<String, Object> param, Authentication authentication, HttpServletRequest request) {
         param = SanitizeData.sanitizeMapObj(param);
         return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", notificationSettingsService.sendTestEmail(param, authentication.getName())), HttpStatus.OK);
@@ -113,7 +113,7 @@ public class NotificationRestController {
     }
 
     @PostMapping("/sms-settings/test")
-    @com.billing.security.RequiresPermission(menu = "COMMUNICATION", action = "VIEW")
+    @com.billing.security.RequiresPermission(menu = "COMMUNICATION", action = "EDIT")
     public ResponseEntity<?> sendTestSms(@RequestBody(required = false) Map<String, Object> param, Authentication authentication, HttpServletRequest request) {
         param = SanitizeData.sanitizeMapObj(param);
         return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", notificationSettingsService.sendTestSms(param, authentication.getName())), HttpStatus.OK);
@@ -147,7 +147,7 @@ public class NotificationRestController {
     }
 
     @PostMapping("/whatsapp-settings/test")
-    @com.billing.security.RequiresPermission(menu = "COMMUNICATION", action = "VIEW")
+    @com.billing.security.RequiresPermission(menu = "COMMUNICATION", action = "EDIT")
     public ResponseEntity<?> sendTestWhatsApp(@RequestBody(required = false) Map<String, Object> param, Authentication authentication, HttpServletRequest request) {
         param = SanitizeData.sanitizeMapObj(param);
         return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", notificationSettingsService.sendTestWhatsApp(param, authentication.getName())), HttpStatus.OK);

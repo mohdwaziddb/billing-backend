@@ -21,6 +21,10 @@ public class PaymentResponse {
     private LocalDate paymentDate;
     private String mode;
     private String remarks;
+    private String referenceNo;
+    private String source;
+    private String transactionRef;
+    private String gatewayType;
     private boolean deleted;
     private LocalDateTime createdAt;
     private String createdBy;

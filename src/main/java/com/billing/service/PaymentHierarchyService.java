@@ -56,9 +56,10 @@ public class PaymentHierarchyService {
                                              String collectedBy) {
         Company company = accessControlService.getCurrentCompany(email);
         DateRange range = resolveRange(startDate, endDate, financialYear);
-        List<Invoice> invoices = filterInvoices(invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company), range, customerId);
-        List<Payment> payments = filterPayments(paymentRepository.findByCompanyOrderByPaymentDateDescIdDesc(company), range, mode, customerId, collectedBy);
-        List<Expense> expenses = filterExpenses(expenseRepository.findByCompanyOrderByExpenseDateDescIdDesc(company), range, customerId);
+        // Date range DB me filter (pehle poori tables memory me aati thi).
+        List<Invoice> invoices = filterInvoices(invoiceRepository.findActiveInRange(range.startDate(), range.endDate()), range, customerId);
+        List<Payment> payments = filterPayments(paymentRepository.findActiveInRange(range.startDate(), range.endDate()), range, mode, customerId, collectedBy);
+        List<Expense> expenses = filterExpenses(expenseRepository.findInRange(range.startDate(), range.endDate()), range, customerId);
         Summary summary = summary(invoices, payments, expenses);
         String resolvedType = nodeType == null || nodeType.isBlank() ? "company" : nodeType.trim();
 
@@ -133,9 +134,10 @@ public class PaymentHierarchyService {
                                             String collectedBy) {
         Company company = accessControlService.getCurrentCompany(email);
         DateRange range = resolveRange(startDate, endDate, financialYear);
-        List<Invoice> invoices = filterInvoices(invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company), range, customerId);
-        List<Payment> payments = filterPayments(paymentRepository.findByCompanyOrderByPaymentDateDescIdDesc(company), range, mode, customerId, collectedBy);
-        List<Expense> expenses = filterExpenses(expenseRepository.findByCompanyOrderByExpenseDateDescIdDesc(company), range, customerId);
+        // Date range DB me filter (pehle poori tables memory me aati thi).
+        List<Invoice> invoices = filterInvoices(invoiceRepository.findActiveInRange(range.startDate(), range.endDate()), range, customerId);
+        List<Payment> payments = filterPayments(paymentRepository.findActiveInRange(range.startDate(), range.endDate()), range, mode, customerId, collectedBy);
+        List<Expense> expenses = filterExpenses(expenseRepository.findInRange(range.startDate(), range.endDate()), range, customerId);
         Summary summary = summary(invoices, payments, expenses);
         return PaymentHierarchyResponse.builder()
                 .nodeId("summary")
@@ -528,7 +530,7 @@ public class PaymentHierarchyService {
                             .toList();
                     BigDecimal total = sumInvoices(customerInvoices);
                     BigDecimal collected = sumPayments(customerPayments);
-                    BigDecimal outstanding = scale(total.subtract(collected));
+                    BigDecimal outstanding = sumOutstanding(customerInvoices, customerPayments);
                     return node("customer|" + parentId + "|" + customer.getId(), parentId, "customer", customer.getName(), customer.getMobile(), collected,
                             total, collected, outstanding, (long) customerInvoices.size(), customerInvoices.size(), 1L, customerPayments.size(), true, "customer");
                 })
@@ -542,7 +544,7 @@ public class PaymentHierarchyService {
                     List<Payment> invoicePayments = paymentsForInvoice(payments, invoice.getId());
                     BigDecimal total = scale(invoice.getTotalAmount());
                     BigDecimal collected = sumPayments(invoicePayments);
-                    BigDecimal outstanding = scale(total.subtract(collected));
+                    BigDecimal outstanding = invoiceOutstanding(invoice, invoicePayments);
                     return node("invoice|" + invoice.getId(), parentId, "invoice", invoice.getInvoiceNo(), invoice.getCustomer().getName(), total,
                             total, collected, outstanding, 0L, 1L, 1L, invoicePayments.size(), false, "record");
                 })
@@ -934,7 +936,10 @@ public class PaymentHierarchyService {
     private Summary summary(List<Invoice> invoices, List<Payment> payments, List<Expense> expenses) {
         BigDecimal receivable = sumInvoices(invoices);
         BigDecimal collected = sumPayments(payments);
-        BigDecimal outstanding = scale(receivable.subtract(collected));
+        // Outstanding = range ke invoices ka abhi baki balance. Pehle "receivable -
+        // collected" tha: collected me purane invoices ke / unlinked / mode-filtered
+        // payments bhi aate the, isliye negative ya galat aata tha.
+        BigDecimal outstanding = sumOutstanding(invoices, payments);
         BigDecimal expense = expenses.stream().map(Expense::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
         return new Summary(scale(receivable), scale(collected), scale(outstanding), scale(expense), revenueCalculationService.netRevenue(collected, expense), (long) invoices.size(), (long) payments.size(), invoices.stream().filter(invoice -> scale(invoice.getBalanceAmount()).compareTo(BigDecimal.ZERO) > 0).count(), (long) expenses.size());
     }

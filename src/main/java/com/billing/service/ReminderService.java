@@ -18,6 +18,8 @@ import com.billing.exception.BadRequestException;
 import com.billing.repository.CustomerRepository;
 import com.billing.repository.InvoiceRepository;
 import com.billing.repository.ReminderLogRepository;
+import com.billing.multitenancy.RequestInterceptor;
+import com.billing.multitenancy.TenantContextHolder;
 import com.billing.util.DataTypeUtility;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -55,6 +57,13 @@ public class ReminderService {
     private final NotificationService notificationService;
     private final EmailTemplateVariableService variableService;
     private final AuditNameResolver auditNameResolver;
+    private final CompanyRegistryService companyRegistryService;
+    private final RequestInterceptor requestInterceptor;
+
+    // Self proxy: tenant set karne ke BAAD @Transactional method chale (naya session us DB ka).
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private ReminderService self;
 
     @Value("${app.reminder.mock-mode:false}")
     private boolean reminderMockMode;
@@ -66,17 +75,8 @@ public class ReminderService {
         String normalizedSearch = normalizeSearch(search);
         BigDecimal scaledMinBalance = scaleNullable(minBalance);
 
-        if (overdueDays == null) {
-            Page<OverdueCustomerResponse> responsePage = customerRepository
-                    .findOutstandingPageByCompanyWithFilters(company, normalizedSearch, scaledMinBalance, pageable)
-                    .map(customer -> toOverdueCustomerResponse(company, customer, com.billing.core.AppDateTime.istToday()))
-                    .map(item -> item.orElse(null));
-            List<OverdueCustomerResponse> records = responsePage.getContent().stream()
-                    .filter(Objects::nonNull)
-                    .toList();
-            return PageResponse.from(new PageImpl<>(records, pageable, responsePage.getTotalElements()));
-        }
-
+        // Pehle DB page lekar baad me (bina outstanding invoice wale) customers hatate
+        // the: pages chhote aate aur total galat. Ab pehle filter, phir page.
         List<OverdueCustomerResponse> allRecords = buildOverdueCustomers(company, normalizedSearch, scaledMinBalance, overdueDays);
         int fromIndex = Math.min((int) pageable.getOffset(), allRecords.size());
         int toIndex = Math.min(fromIndex + pageable.getPageSize(), allRecords.size());
@@ -124,6 +124,18 @@ public class ReminderService {
 
         if (customer.getCurrentBalance().compareTo(BigDecimal.ZERO) <= 0) {
             throw new BadRequestException("Reminder can only be sent to customers with outstanding balance");
+        }
+
+        if (request.getChannel() == null) {
+            throw new BadRequestException("Reminder channel is required");
+        }
+        // Bina template EMAIL/SMS reminder PENDING save hota tha aur kabhi bheja nahi jata tha.
+        if ((request.getChannel() == ReminderChannel.EMAIL || request.getChannel() == ReminderChannel.SMS)
+                && request.getTemplateId() == null) {
+            throw new BadRequestException("Select a template to send an " + request.getChannel().name() + " reminder");
+        }
+        if (request.getChannel() == ReminderChannel.SMS && (customer.getMobile() == null || customer.getMobile().isBlank())) {
+            throw new BadRequestException("Customer mobile number is required to send SMS reminder");
         }
 
         String message = buildReminderMessage(customer, company);
@@ -222,13 +234,42 @@ public class ReminderService {
         return history(email, customerIdValue, pageNumber, pageSize);
     }
 
+    /**
+     * Scheduled job ke paas request nahi hota, isliye tenant set nahi tha aur ye
+     * sirf default DB dekhta tha. Ab har ACTIVE tenant DB me alag se chalta hai.
+     * (Abhi bhi sirf count log karta hai; automatic reminder bhejna channel/template
+     * ka product decision hai.)
+     */
     @Scheduled(cron = "0 0 8 * * *", zone = "Asia/Kolkata")
-    @Transactional(readOnly = true)
     public void prepareDailyDueCustomerList() {
-        long dueCustomerCount = customerRepository.findAll().stream()
-                .filter(customer -> customer.getCurrentBalance().compareTo(BigDecimal.ZERO) > 0)
-                .count();
-        log.info("Prepared {} due customers for reminder review", dueCustomerCount);
+        List<Map<String, Object>> tenants;
+        try {
+            tenants = companyRegistryService.listTenants(null, "ACTIVE", 100000, 0);
+        } catch (Exception e) {
+            log.warn("Reminder sweep skipped: could not list tenants: {}", e.getMessage());
+            return;
+        }
+        for (Map<String, Object> tenant : tenants) {
+            String databaseName = DataTypeUtility.stringValue(tenant.get("database_name"));
+            if (databaseName.isEmpty()) {
+                continue;
+            }
+            try {
+                requestInterceptor.ensureTenant(databaseName, companyRegistryService.resolveDbHostByDatabase(databaseName));
+                TenantContextHolder.setTenantId(databaseName);
+                long dueCustomerCount = self.countDueCustomers();
+                log.info("[{}] Prepared {} due customers for reminder review", databaseName, dueCustomerCount);
+            } catch (Exception e) {
+                log.warn("[{}] Reminder sweep failed: {}", databaseName, e.getMessage());
+            } finally {
+                TenantContextHolder.clear();
+            }
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public long countDueCustomers() {
+        return customerRepository.countByCurrentBalanceGreaterThan(BigDecimal.ZERO);
     }
 
     private ReminderSendRequest mapToReminderSendRequest(Map<String, Object> param) {

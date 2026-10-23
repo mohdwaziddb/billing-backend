@@ -7,7 +7,10 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+import com.billing.util.OutboundUrlGuard;
+
 import java.io.IOException;
+import java.net.InetAddress;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -32,6 +35,7 @@ public class RateLimitingFilter extends OncePerRequestFilter {
 
     private static final long ONE_MINUTE = 60_000L;
     private static final long FIVE_MINUTES = 5 * ONE_MINUTE;
+    private static final int MAX_TRACKED_KEYS = 10_000;
 
     private record Rule(int maxRequests, long windowMillis, long blockMillis) {}
 
@@ -79,21 +83,63 @@ public class RateLimitingFilter extends OncePerRequestFilter {
         return path + "|" + ip;
     }
 
-    private String clientIp(HttpServletRequest request) {
+    /**
+     * X-Forwarded-For client khud bhej sakta hai, isliye pehle wala "first
+     * entry" lena spoofable tha (har request naya fake IP = limit kabhi nahi).
+     * Ab header sirf tab maana jata hai jab request hamare reverse proxy
+     * (private/loopback address) se aayi ho, aur list ko RIGHT se padha jata
+     * hai: proxies jo IP append karte hain wo sach hai, left wala fake ho sakta hai.
+     */
+    static String clientIp(HttpServletRequest request) {
+        String remote = request.getRemoteAddr();
+        if (remote == null || remote.isBlank()) {
+            return "unknown";
+        }
+        if (!isTrustedProxy(remote)) {
+            return remote;
+        }
         String forwarded = request.getHeader("X-Forwarded-For");
         if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",")[0].trim();
+            String[] hops = forwarded.split(",");
+            for (int index = hops.length - 1; index >= 0; index--) {
+                String hop = hops[index].trim();
+                if (!hop.isEmpty() && !isTrustedProxy(hop)) {
+                    return hop;
+                }
+            }
         }
         String real = request.getHeader("X-Real-IP");
         if (real != null && !real.isBlank()) {
             return real.trim();
         }
-        String remote = request.getRemoteAddr();
-        return remote != null ? remote : "unknown";
+        return remote;
+    }
+
+    // Literal IP hi check hota hai (DNS lookup nahi): header me hostname aaye to untrusted.
+    private static boolean isTrustedProxy(String ip) {
+        if (!ip.matches("[0-9a-fA-F:.]+")) {
+            return false;
+        }
+        try {
+            InetAddress address = InetAddress.getByName(ip);
+            return address.isLoopbackAddress() || address.isSiteLocalAddress() || address.isLinkLocalAddress()
+                    || OutboundUrlGuard.isInternalAddress(address);
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private boolean allow(String key, Rule rule) {
         long now = System.currentTimeMillis();
+        if (windows.size() > MAX_TRACKED_KEYS) {
+            // Spoofed/rotating IPs se map unbounded na badhe: purani windows hatao.
+            windows.entrySet().removeIf(entry -> {
+                Window value = entry.getValue();
+                synchronized (value) {
+                    return value.blockedUntil <= now && now - value.windowStart >= FIVE_MINUTES;
+                }
+            });
+        }
         Window window = windows.computeIfAbsent(key, k -> new Window());
         synchronized (window) {
             if (window.blockedUntil > now) {

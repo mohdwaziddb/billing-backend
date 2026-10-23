@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import com.billing.util.OutboundUrlGuard;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -51,7 +52,7 @@ public class PinnacleClient {
                                         List<NotificationAttachmentRequest> attachments,
                                         Map<String, Object> variables) {
         try {
-            HttpRequest request = HttpRequest.newBuilder(URI.create(settings.required("apiUrl", "Pinnacle API URL is required")))
+            HttpRequest request = HttpRequest.newBuilder(OutboundUrlGuard.requirePublicUrl(settings.required("apiUrl", "Pinnacle API URL is required")))
                     .timeout(Duration.ofSeconds(20))
                     .header("Content-Type", "application/json")
                     .header("X-API-KEY", settings.required("apiKey", "Pinnacle API key is required"))

@@ -163,9 +163,12 @@ public class MfaService {
             userMfaDeviceRepository.delete(pending);
             throw new BadRequestException("Setup has expired. Please generate a new QR.");
         }
-        if (!totpService.verifyCode(secret, normalizedCode)) {
+        long step = totpService.matchingStep(secret, normalizedCode);
+        if (step < 0) {
             throw new BadRequestException("Incorrect code. Enter the 6-digit code from your authenticator app.");
         }
+        // Setup wala code login par dobara use na ho.
+        pending.setLastUsedStep(step);
         pending.setEnabled(true);
         pending.setEnrolledAt(LocalDateTime.now());
         pending.setFailedAttempts(0);
@@ -179,8 +182,9 @@ public class MfaService {
         return data;
     }
 
-    @Transactional
-    public void deleteDevice(String email, Long deviceId) {
+    // noRollbackFor: galat code par failed-attempt count save rahe (lockout kaam kare).
+    @Transactional(noRollbackFor = BadRequestException.class)
+    public void deleteDevice(String email, Long deviceId, String code) {
         Long normalizedId = DataTypeUtility.getForeignKeyValue(deviceId);
         if (normalizedId == null) {
             throw new BadRequestException("Device ID is required.");
@@ -192,8 +196,41 @@ public class MfaService {
         if (!device.getUserId().equals(user.getId())) {
             throw new AccessDeniedException("This device does not belong to your account.");
         }
+        if (device.isEnabled()) {
+            // Chori hua session/token akela MFA hata na sake: authenticator ka code chahiye.
+            requireCurrentCode(user.getId(), code);
+        }
         userMfaDeviceRepository.delete(device);
         writeAudit(email, company, "DELETE", normalizedId, Map.of("deviceName", String.valueOf(device.getDeviceName())));
+    }
+
+    private void requireCurrentCode(Long userId, String code) {
+        String normalizedCode = DataTypeUtility.stringValue(code).trim();
+        if (normalizedCode.isEmpty()) {
+            throw new BadRequestException("Enter the 6-digit code from your authenticator app to remove this device.");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        List<UserMfaDevice> devices = userMfaDeviceRepository.findByUserIdAndEnabledTrue(userId);
+        for (UserMfaDevice device : devices) {
+            if (device.getLockedUntil() != null && device.getLockedUntil().isAfter(now)) {
+                throw new BadRequestException("Too many incorrect attempts. Please try again in 15 minutes.");
+            }
+        }
+        for (UserMfaDevice device : devices) {
+            String secret = secretEncryptionService.decrypt(device.getSecretEncrypted());
+            if (secret == null || secret.isBlank()) {
+                continue;
+            }
+            long step = totpService.matchingStep(secret, normalizedCode);
+            if (step >= 0 && (device.getLastUsedStep() == null || step > device.getLastUsedStep())) {
+                device.setLastUsedStep(step);
+                device.setFailedAttempts(0);
+                userMfaDeviceRepository.save(device);
+                return;
+            }
+        }
+        recordFailedAttempts(userId);
+        throw new BadRequestException("Incorrect code. Enter the 6-digit code from your authenticator app.");
     }
 
     @Transactional

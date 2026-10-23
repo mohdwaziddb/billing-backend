@@ -163,7 +163,7 @@ public class EmailTemplateService {
         Map<String, Object> variables = request == null ? null : request.getVariables();
         return EmailPreviewResponse.builder()
                 .subject(variableService.render(template.getSubject(), company, variables))
-                .emailBody(variableService.render(template.getEmailBody(), company, variables))
+                .emailBody(variableService.renderHtml(template.getEmailBody(), company, variables))
                 .build();
     }
 

@@ -55,7 +55,7 @@ public class ProductService {
                 .minStockQty(normalizeCount(request.getMinStockQty()))
                 .taxMaster(taxMaster)
                 .taxable(taxable)
-                .active(Boolean.TRUE.equals(request.getActive()))
+                .active(request.getActive() == null || request.getActive())
                 .build();
 
         Product saved = productRepository.save(product);
@@ -140,7 +140,10 @@ public class ProductService {
         product.setMinStockQty(normalizeCount(request.getMinStockQty()));
         product.setTaxMaster(taxMaster);
         product.setTaxable(taxable);
-        product.setActive(Boolean.TRUE.equals(request.getActive()));
+        // active na bheja ho to purani value rahe (pehle chup-chaap inactive ho jata tha).
+        if (request.getActive() != null) {
+            product.setActive(request.getActive());
+        }
 
         Product saved = productRepository.save(product);
         auditLogService.logUpdate(email, company, "Product", "Product", saved.getId(), oldData, snapshot(saved));
@@ -232,6 +235,9 @@ public class ProductService {
     }
 
     private void validateProduct(Company company, ProductRequest request, Long productId) {
+        if (request.getSku() == null || request.getSku().isBlank()) {
+            throw new BadRequestException("SKU is required");
+        }
         if (productId == null) {
             if (productRepository.existsByCompanyAndSkuIgnoreCase(company, request.getSku())) {
                 throw new BadRequestException("SKU already exists in your company");
@@ -315,8 +321,9 @@ public class ProductService {
         return data;
     }
 
+    // 1000: invoice/payment/purchase forms ke dropdown size=1000 maangte hain (Invoice/Expense jaisa cap).
     private PageRequest pageRequest(int page, int size) {
-        return PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 100)));
+        return PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 1000)));
     }
 
     private Company companyScope(String email) {

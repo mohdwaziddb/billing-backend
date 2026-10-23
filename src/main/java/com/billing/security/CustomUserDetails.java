@@ -7,6 +7,7 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 
@@ -21,6 +22,7 @@ public class CustomUserDetails implements UserDetails {
     private final String role;
     private final String companyCode;
     private final String databaseName;
+    private final LocalDateTime tokensValidAfter;
 
     public CustomUserDetails(User user) {
         this(user, null, null);
@@ -31,6 +33,7 @@ public class CustomUserDetails implements UserDetails {
         this.email = user.getEmail();
         this.password = user.getPassword();
         this.active = user.isActive();
+        this.tokensValidAfter = user.getTokensValidAfter();
         boolean companyActiveValue = true;
         if (user.getCompany() != null) {
             try {

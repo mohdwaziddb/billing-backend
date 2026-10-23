@@ -28,6 +28,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import com.billing.util.OutboundUrlGuard;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -554,7 +555,8 @@ public class InvoiceTemplateRenderService {
     /** Fetch an S3 (or any https) image URL for invoice/PDF embedding. Never throws. */
     private String remoteUrlToDataUrl(String url) {
         try {
-            HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+            // Logo URL tenant set kar sakta hai: internal address par fetch nahi (SSRF).
+            HttpRequest request = HttpRequest.newBuilder(OutboundUrlGuard.requirePublicUrl(url))
                     .timeout(Duration.ofSeconds(10))
                     .GET()
                     .build();

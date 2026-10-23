@@ -9,6 +9,7 @@ import com.billing.dto.gst.GstTaxWiseRowResponse;
 import com.billing.entity.Company;
 import com.billing.entity.Invoice;
 import com.billing.entity.InvoiceItem;
+import com.billing.entity.enums.TaxType;
 import com.billing.entity.User;
 import com.billing.repository.InvoiceRepository;
 import com.billing.util.DataTypeUtility;
@@ -47,10 +48,8 @@ public class GstReportService {
         User user = accessControlService.getCurrentUser(email);
         Company company = accessControlService.requireCompany(user);
 
-        List<Invoice> invoices = invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company).stream()
-                .filter(invoice -> !invoice.isDeleted())
-                .filter(invoice -> inRange(invoice.getInvoiceDate(), startDate, endDate))
-                .toList();
+        // Date range DB me filter (pehle poori invoices table items samet memory me aati thi).
+        List<Invoice> invoices = invoiceRepository.findActiveInRangeWithItems(startDate, endDate);
 
         List<GstInvoiceWiseRowResponse> invoiceWise = invoices.stream()
                 .map(this::toInvoiceWiseRow)
@@ -64,7 +63,8 @@ public class GstReportService {
         BigDecimal taxableAmount = invoices.stream().map(Invoice::getTaxableAmount).reduce(zero(), this::add);
         BigDecimal cgstAmount = invoices.stream().map(Invoice::getCgstTotal).reduce(zero(), this::add);
         BigDecimal sgstAmount = invoices.stream().map(Invoice::getSgstTotal).reduce(zero(), this::add);
-        BigDecimal igstAmount = invoices.stream().map(Invoice::getIgstTotal).reduce(zero(), this::add);
+        BigDecimal igstAmount = invoices.stream().map(GstReportService::gstIgstTotal).reduce(zero(), this::add);
+        BigDecimal otherTaxAmount = invoices.stream().map(GstReportService::nonGstTaxTotal).reduce(zero(), this::add);
         BigDecimal grandTotal = invoices.stream().map(Invoice::getGrandTotal).reduce(zero(), this::add);
 
         return GstReportResponse.builder()
@@ -76,6 +76,7 @@ public class GstReportService {
                 .sgstAmount(scale(sgstAmount))
                 .igstAmount(scale(igstAmount))
                 .totalTaxAmount(scale(cgstAmount.add(sgstAmount).add(igstAmount)))
+                .otherTaxAmount(scale(otherTaxAmount))
                 .grandTotal(scale(grandTotal))
                 .invoiceWise(invoiceWise)
                 .customerWise(customerWise)
@@ -92,14 +93,14 @@ public class GstReportService {
                 .invoiceDate(invoice.getInvoiceDate())
                 .customerId(invoice.getCustomer().getId())
                 .customerName(invoice.getCustomer().getName())
-                .customerState(invoice.getCustomer().getState())
-                .customerStateId(invoice.getCustomer().getStateMaster() != null ? invoice.getCustomer().getStateMaster().getId() : null)
-                .customerGstin(invoice.getCustomer().getGstin() != null ? invoice.getCustomer().getGstin() : invoice.getCustomer().getGstNo())
+                .customerState(stateOf(invoice))
+                .customerStateId(stateIdOf(invoice))
+                .customerGstin(gstinOf(invoice))
                 .taxableAmount(scale(invoice.getTaxableAmount()))
                 .cgstAmount(scale(invoice.getCgstTotal()))
                 .sgstAmount(scale(invoice.getSgstTotal()))
-                .igstAmount(scale(invoice.getIgstTotal()))
-                .totalTaxAmount(scale(invoice.getCgstTotal().add(invoice.getSgstTotal()).add(invoice.getIgstTotal())))
+                .igstAmount(scale(gstIgstTotal(invoice)))
+                .totalTaxAmount(scale(invoice.getCgstTotal().add(invoice.getSgstTotal()).add(gstIgstTotal(invoice))))
                 .grandTotal(scale(invoice.getGrandTotal()))
                 .build();
     }
@@ -111,12 +112,12 @@ public class GstReportService {
             CustomerAccumulator accumulator = totals.computeIfAbsent(customerId, ignored -> new CustomerAccumulator(
                     customerId,
                     invoice.getCustomer().getName(),
-                    invoice.getCustomer().getGstin() != null ? invoice.getCustomer().getGstin() : invoice.getCustomer().getGstNo()
+                    gstinOf(invoice)
             ));
             accumulator.taxableAmount = add(accumulator.taxableAmount, invoice.getTaxableAmount());
             accumulator.cgstAmount = add(accumulator.cgstAmount, invoice.getCgstTotal());
             accumulator.sgstAmount = add(accumulator.sgstAmount, invoice.getSgstTotal());
-            accumulator.igstAmount = add(accumulator.igstAmount, invoice.getIgstTotal());
+            accumulator.igstAmount = add(accumulator.igstAmount, gstIgstTotal(invoice));
             accumulator.grandTotal = add(accumulator.grandTotal, invoice.getGrandTotal());
             accumulator.invoiceCount++;
         }
@@ -145,7 +146,7 @@ public class GstReportService {
             accumulator.taxableAmount = add(accumulator.taxableAmount, invoice.getTaxableAmount());
             accumulator.cgstAmount = add(accumulator.cgstAmount, invoice.getCgstTotal());
             accumulator.sgstAmount = add(accumulator.sgstAmount, invoice.getSgstTotal());
-            accumulator.igstAmount = add(accumulator.igstAmount, invoice.getIgstTotal());
+            accumulator.igstAmount = add(accumulator.igstAmount, gstIgstTotal(invoice));
             accumulator.grandTotal = add(accumulator.grandTotal, invoice.getGrandTotal());
             accumulator.invoiceCount++;
         }
@@ -174,7 +175,11 @@ public class GstReportService {
                 accumulator.taxableAmount = add(accumulator.taxableAmount, item.getTaxableAmount());
                 accumulator.cgstAmount = add(accumulator.cgstAmount, item.getCgstAmount());
                 accumulator.sgstAmount = add(accumulator.sgstAmount, item.getSgstAmount());
-                accumulator.igstAmount = add(accumulator.igstAmount, item.getIgstAmount());
+                if (isNonGst(item)) {
+                    accumulator.otherTaxAmount = add(accumulator.otherTaxAmount, item.getIgstAmount());
+                } else {
+                    accumulator.igstAmount = add(accumulator.igstAmount, item.getIgstAmount());
+                }
                 accumulator.grandAmount = add(accumulator.grandAmount, item.getGrandAmount());
                 accumulator.lineCount++;
             }
@@ -190,7 +195,7 @@ public class GstReportService {
                         .cgstAmount(scale(item.cgstAmount))
                         .sgstAmount(scale(item.sgstAmount))
                         .igstAmount(scale(item.igstAmount))
-                        .totalTaxAmount(scale(item.cgstAmount.add(item.sgstAmount).add(item.igstAmount)))
+                        .totalTaxAmount(scale(item.cgstAmount.add(item.sgstAmount).add(item.igstAmount).add(item.otherTaxAmount)))
                         .grandAmount(scale(item.grandAmount))
                         .lineCount(item.lineCount)
                         .build())
@@ -202,6 +207,9 @@ public class GstReportService {
         Map<String, HsnAccumulator> totals = new LinkedHashMap<>();
         for (Invoice invoice : invoices) {
             for (InvoiceItem item : invoice.getItems()) {
+                if (isNonGst(item)) {
+                    continue;
+                }
                 String hsnCode = safe(item.getHsnCode()).isBlank() ? "UNSPECIFIED" : item.getHsnCode().trim();
                 HsnAccumulator accumulator = totals.computeIfAbsent(hsnCode, ignored -> new HsnAccumulator(hsnCode));
                 accumulator.taxableAmount = add(accumulator.taxableAmount, item.getTaxableAmount());
@@ -227,6 +235,51 @@ public class GstReportService {
                         .build())
                 .sorted(Comparator.comparing(GstHsnSummaryRowResponse::getHsnCode, String.CASE_INSENSITIVE_ORDER))
                 .toList();
+    }
+
+    // TaxCalculationService VAT/Sales-tax ko invoice ke IGST slot me rakhta hai
+    // (grand total sahi rehta hai). GST report/dashboard ke liye use alag karo.
+    static boolean isNonGst(InvoiceItem item) {
+        return item.getTaxMaster() != null
+                && item.getTaxMaster().getTaxType() != null
+                && item.getTaxMaster().getTaxType() != TaxType.GST;
+    }
+
+    static BigDecimal nonGstTaxTotal(Invoice invoice) {
+        BigDecimal total = BigDecimal.ZERO;
+        for (InvoiceItem item : invoice.getItems()) {
+            if (isNonGst(item) && item.getIgstAmount() != null) {
+                total = total.add(item.getIgstAmount());
+            }
+        }
+        return total.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    static BigDecimal gstIgstTotal(Invoice invoice) {
+        BigDecimal igst = invoice.getIgstTotal() == null ? BigDecimal.ZERO : invoice.getIgstTotal();
+        return igst.subtract(nonGstTaxTotal(invoice)).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    // Invoice ke waqt ka snapshot; purane invoices (snapshot se pehle ke) par customer ki current value.
+    private String stateOf(Invoice invoice) {
+        if (invoice.getPlaceOfSupplyState() != null || invoice.getPlaceOfSupplyStateId() != null) {
+            return invoice.getPlaceOfSupplyState();
+        }
+        return invoice.getCustomer().getState();
+    }
+
+    private Long stateIdOf(Invoice invoice) {
+        if (invoice.getPlaceOfSupplyState() != null || invoice.getPlaceOfSupplyStateId() != null) {
+            return invoice.getPlaceOfSupplyStateId();
+        }
+        return invoice.getCustomer().getStateMaster() != null ? invoice.getCustomer().getStateMaster().getId() : null;
+    }
+
+    private String gstinOf(Invoice invoice) {
+        if (invoice.getPlaceOfSupplyState() != null || invoice.getPlaceOfSupplyStateId() != null) {
+            return invoice.getCustomerGstin();
+        }
+        return invoice.getCustomer().getGstin() != null ? invoice.getCustomer().getGstin() : invoice.getCustomer().getGstNo();
     }
 
     private boolean inRange(LocalDate value, LocalDate startDate, LocalDate endDate) {
@@ -293,6 +346,7 @@ public class GstReportService {
         private BigDecimal cgstAmount = BigDecimal.ZERO;
         private BigDecimal sgstAmount = BigDecimal.ZERO;
         private BigDecimal igstAmount = BigDecimal.ZERO;
+        private BigDecimal otherTaxAmount = BigDecimal.ZERO;
         private BigDecimal grandAmount = BigDecimal.ZERO;
         private long lineCount = 0;
 

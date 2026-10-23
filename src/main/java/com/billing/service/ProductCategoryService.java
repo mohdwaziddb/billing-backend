@@ -82,7 +82,7 @@ public class ProductCategoryService {
                 .company(company)
                 .categoryName(categoryName)
                 .description(blankToNull(request.getDescription()))
-                .active(Boolean.TRUE.equals(request.getActive()))
+                .active(request.getActive() == null || request.getActive())
                 .build();
         ProductCategory saved = productCategoryRepository.save(category);
         auditLogService.logCreate(email, company, "Product Category", "ProductCategory", saved.getId(), snapshot(saved));
@@ -101,7 +101,10 @@ public class ProductCategoryService {
 
         category.setCategoryName(categoryName);
         category.setDescription(blankToNull(request.getDescription()));
-        category.setActive(Boolean.TRUE.equals(request.getActive()));
+        // active na bheja ho to purani value rahe (pehle chup-chaap inactive ho jata tha).
+        if (request.getActive() != null) {
+            category.setActive(request.getActive());
+        }
         ProductCategory saved = productCategoryRepository.save(category);
         auditLogService.logUpdate(email, company, "Product Category", "ProductCategory", saved.getId(), oldData, snapshot(saved));
         return toResponse(saved);

@@ -59,9 +59,27 @@ public class BillingAiToolService {
     private final ProductRepository productRepository;
     private final PaymentRepository paymentRepository;
     private final AccessControlService accessControlService;
+    private final AiToolGuard aiToolGuard;
+
+    /**
+     * Tool chalane se pehle user ki menu/action permission. Map me tool na ho to
+     * deny (fail-closed): naya tool bina permission ke kabhi khula na rahe.
+     */
+    private String denyIfNotAllowed(String toolName) {
+        AiToolPermissions.Requirement requirement = AiToolPermissions.BY_TOOL.get(toolName);
+        if (requirement == null || !aiToolGuard.allowed(requirement.menu(), requirement.action())) {
+            return aiToolGuard.denied();
+        }
+        return null;
+    }
 
     @Tool(name = "get_sales_summary", description = "Get the current business summary: today's sales, today's collection, this month's sales and collection, total sales, total collection, total outstanding balance, total customers, total invoices, number of customers with dues, and number of low-stock products.")
     public String getSalesSummary() {
+        // Chat se bhi wahi permission jo UI/API par hai (pehle koi check nahi tha).
+        String denied = denyIfNotAllowed("get_sales_summary");
+        if (denied != null) {
+            return denied;
+        }
         try {
             Company company = accessControlService.getCurrentCompany(); // for per-tenant
             LocalDate today = com.billing.core.AppDateTime.istToday();
@@ -89,6 +107,11 @@ public class BillingAiToolService {
 
     @Tool(name = "get_daily_collection_chart", description = "Get day-wise sales and collection amounts for the CURRENT month (today's month). Use this when the user asks for a graph or chart of sales or collection. This tool always uses the current month, so do not ask the user for a month.")
     public String getDailyCollectionChart() {
+        // Chat se bhi wahi permission jo UI/API par hai (pehle koi check nahi tha).
+        String denied = denyIfNotAllowed("get_daily_collection_chart");
+        if (denied != null) {
+            return denied;
+        }
         try {
             LocalDate today = com.billing.core.AppDateTime.istToday();
             int targetMonth = today.getMonthValue();
@@ -141,6 +164,11 @@ public class BillingAiToolService {
     @Tool(name = "find_customer", description = "Search active customers by name, mobile number or email. Returns customer id, name, mobile and outstanding balance. Use the id returned here when creating invoices or payments.")
     public String findCustomer(
             @ToolParam(description = "Search text: customer name, 10-digit mobile number or email.", required = true) String query) {
+        // Chat se bhi wahi permission jo UI/API par hai (pehle koi check nahi tha).
+        String denied = denyIfNotAllowed("find_customer");
+        if (denied != null) {
+            return denied;
+        }
         try {
             if (query == null || query.isBlank()) {
                 return "Please provide a search text.";
@@ -173,6 +201,11 @@ public class BillingAiToolService {
     @Tool(name = "find_product", description = "Search active products by name or SKU. Returns product id, name and SKU. Use the id returned here when creating invoices.")
     public String findProduct(
             @ToolParam(description = "Search text: product name or SKU.", required = true) String query) {
+        // Chat se bhi wahi permission jo UI/API par hai (pehle koi check nahi tha).
+        String denied = denyIfNotAllowed("find_product");
+        if (denied != null) {
+            return denied;
+        }
         try {
             if (query == null || query.isBlank()) {
                 return "Please provide a search text.";
@@ -208,6 +241,11 @@ public class BillingAiToolService {
             @ToolParam(description = "Email address, optional.") String email,
             @ToolParam(description = "GST number (GSTIN), optional. Required if the customer is GST registered.") String gstin,
             @ToolParam(description = "Whether the customer is GST registered: true or false.") Boolean gstRegistered) {
+        // Chat se bhi wahi permission jo UI/API par hai (pehle koi check nahi tha).
+        String denied = denyIfNotAllowed("create_customer");
+        if (denied != null) {
+            return denied;
+        }
         if (name == null || name.isBlank()) {
             return "Customer name is required.";
         }
@@ -238,7 +276,12 @@ public class BillingAiToolService {
             @ToolParam(description = "Invoice date in YYYY-MM-DD format. Defaults to today.") String invoiceDate,
             @ToolParam(description = "Discount amount, optional.") BigDecimal discountAmount,
             @ToolParam(description = "Amount paid at the time of billing, optional.") BigDecimal paidAmount,
-            @ToolParam(description = "Payment mode when paid amount is given, for example cash, upi, card or bank.") String paymentMode) {
+            @ToolParam(description = "Payment mode when paid amount is given, for example cash. Online (Razorpay) payments cannot be recorded here.") String paymentMode) {
+        // Chat se bhi wahi permission jo UI/API par hai (pehle koi check nahi tha).
+        String denied = denyIfNotAllowed("create_invoice");
+        if (denied != null) {
+            return denied;
+        }
         if (customerId == null) {
             return "Customer id is required.";
         }
@@ -279,10 +322,15 @@ public class BillingAiToolService {
     public String createPayment(
             @ToolParam(description = "Customer id. Get it from find_customer first.", required = true) Long customerId,
             @ToolParam(description = "Payment amount, must be greater than zero.", required = true) BigDecimal amount,
-            @ToolParam(description = "Payment mode, for example cash, upi, card or bank.", required = true) String mode,
+            @ToolParam(description = "Payment mode, for example cash. Online (Razorpay) payments cannot be recorded here.", required = true) String mode,
             @ToolParam(description = "Payment date in YYYY-MM-DD format. Defaults to today.") String paymentDate,
             @ToolParam(description = "Invoice id the payment is for, optional.") Long invoiceId,
             @ToolParam(description = "Remarks, optional.") String remarks) {
+        // Chat se bhi wahi permission jo UI/API par hai (pehle koi check nahi tha).
+        String denied = denyIfNotAllowed("create_payment");
+        if (denied != null) {
+            return denied;
+        }
         if (customerId == null) {
             return "Customer id is required.";
         }
@@ -315,6 +363,11 @@ public class BillingAiToolService {
     public String getCustomerInvoices(
             @ToolParam(description = "Customer id. Get it from find_customer first.", required = true) Long customerId,
             @ToolParam(description = "Maximum number of invoices to show, between 1 and 10. Defaults to 5.", required = false) Integer limit) {
+        // Chat se bhi wahi permission jo UI/API par hai (pehle koi check nahi tha).
+        String denied = denyIfNotAllowed("get_customer_invoices");
+        if (denied != null) {
+            return denied;
+        }
         if (customerId == null) {
             return "Customer id is required. Use find_customer first to get the customer id.";
         }
@@ -350,6 +403,11 @@ public class BillingAiToolService {
     @Tool(name = "get_invoice_detail", description = "Get full details of a single invoice: line items (product, qty, price, line total), subtotal, discount, taxes, grand total, paid amount, balance and payment status. Use this when the user asks for details of a specific invoice.")
     public String getInvoiceDetail(
             @ToolParam(description = "Invoice id as returned by get_customer_invoices.", required = true) Long invoiceId) {
+        // Chat se bhi wahi permission jo UI/API par hai (pehle koi check nahi tha).
+        String denied = denyIfNotAllowed("get_invoice_detail");
+        if (denied != null) {
+            return denied;
+        }
         if (invoiceId == null) {
             return "Invoice id is required. Use get_customer_invoices first to find the invoice id.";
         }
@@ -391,6 +449,11 @@ public class BillingAiToolService {
     public String getBusinessGrowthReport(
             @ToolParam(description = "Start date in YYYY-MM-DD format. Optional, defaults to 30 days ago.", required = false) String startDate,
             @ToolParam(description = "End date in YYYY-MM-DD format. Optional, defaults to today.", required = false) String endDate) {
+        // Chat se bhi wahi permission jo UI/API par hai (pehle koi check nahi tha).
+        String denied = denyIfNotAllowed("get_business_growth_report");
+        if (denied != null) {
+            return denied;
+        }
         try {
             LocalDate today = com.billing.core.AppDateTime.istToday();
             LocalDate safeStart = parseDate(startDate, today.minusDays(29));
@@ -471,6 +534,11 @@ public class BillingAiToolService {
             @ToolParam(description = "Start date in YYYY-MM-DD format. Optional, defaults to 30 days ago.", required = false) String startDate,
             @ToolParam(description = "End date in YYYY-MM-DD format. Optional, defaults to today.", required = false) String endDate,
             @ToolParam(description = "How many products to show, between 1 and 10. Defaults to 5.", required = false) Integer limit) {
+        // Chat se bhi wahi permission jo UI/API par hai (pehle koi check nahi tha).
+        String denied = denyIfNotAllowed("get_top_products");
+        if (denied != null) {
+            return denied;
+        }
         try {
             LocalDate today = com.billing.core.AppDateTime.istToday();
             LocalDate safeStart = parseDate(startDate, today.minusDays(29));
@@ -501,6 +569,11 @@ public class BillingAiToolService {
     @Tool(name = "get_customer_dues", description = "List customers who have an outstanding (unpaid) balance, largest first. Returns customer name, mobile and current balance. Use this when the user asks who owes money, pending payments, or which customers have dues.")
     public String getCustomerDues(
             @ToolParam(description = "How many customers to show, between 1 and 20. Defaults to 10.", required = false) Integer limit) {
+        // Chat se bhi wahi permission jo UI/API par hai (pehle koi check nahi tha).
+        String denied = denyIfNotAllowed("get_customer_dues");
+        if (denied != null) {
+            return denied;
+        }
         try {
             int safeLimit = limit == null ? 10 : Math.max(1, Math.min(limit, 20));
             PageResponse<CustomerDueResponse> dues = analyticsService.customerDueList("x", null, 0, safeLimit);
@@ -527,6 +600,11 @@ public class BillingAiToolService {
             @ToolParam(description = "Optional filter text: customer name, 10-digit mobile or email. Leave empty to list all.", required = false) String search,
             @ToolParam(description = "Set to true to only show customers who have an outstanding balance (dues).", required = false) Boolean onlyWithDues,
             @ToolParam(description = "How many customers to show, between 1 and 50. Defaults to 10.", required = false) Integer limit) {
+        // Chat se bhi wahi permission jo UI/API par hai (pehle koi check nahi tha).
+        String denied = denyIfNotAllowed("list_customers");
+        if (denied != null) {
+            return denied;
+        }
         try {
             Company company = accessControlService.getCurrentCompany(); // for per-tenant
             int safeLimit = limit == null ? 10 : Math.max(1, Math.min(limit, 50));

@@ -7,6 +7,7 @@ import com.billing.entity.InvoiceItemAllocation;
 import com.billing.entity.Product;
 import com.billing.entity.ProductBatch;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -52,6 +53,26 @@ public interface InvoiceItemAllocationRepository extends JpaRepository<InvoiceIt
                                        @Param("customerId") Long customerId,
                                        @Param("startDate") java.time.LocalDate startDate,
                                        @Param("endDate") java.time.LocalDate endDate);
+
+    // P&L COGS: revenue jaise hi customer/invoice filter (pehle sirf date filter tha).
+    @Query("""
+            select coalesce(sum(a.costAmount), 0)
+            from InvoiceItemAllocation a
+            where (:startDate is null or a.invoice.invoiceDate >= :startDate)
+              and (:endDate is null or a.invoice.invoiceDate <= :endDate)
+              and (:customerId is null or a.invoice.customer.id = :customerId)
+              and (:invoiceId is null or a.invoice.id = :invoiceId)
+              and a.active = true
+            """)
+    BigDecimal sumActiveCostFiltered(@Param("customerId") Long customerId,
+                                     @Param("invoiceId") Long invoiceId,
+                                     @Param("startDate") java.time.LocalDate startDate,
+                                     @Param("endDate") java.time.LocalDate endDate);
+
+    // Invoice edit: purane items delete karne se pehle released allocations ka item link hatao.
+    @Modifying
+    @Query("update InvoiceItemAllocation a set a.invoiceItem = null where a.invoiceItem in :items and a.active = false")
+    int detachReleasedFromItems(@Param("items") List<InvoiceItem> items);
 
     @Query("""
             select a from InvoiceItemAllocation a

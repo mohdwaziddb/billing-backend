@@ -461,7 +461,17 @@ public class PlatformAdminService {
             sql.append(", username=?");
             args.add(request.getUsername().trim());
         }
+        boolean credentialsChanging = (request.getPassword() != null && !request.getPassword().isBlank())
+                || (request.getUsername() != null && !request.getUsername().isBlank()
+                && !request.getUsername().trim().equalsIgnoreCase(String.valueOf(row.get("username")).trim()));
+        if (credentialsChanging) {
+            // Chori hua admin token akela password/username na badal sake.
+            requireCurrentPlatformPassword(request.getCurrentPassword());
+        }
         if (request.getPassword() != null && !request.getPassword().isBlank()) {
+            if (request.getPassword().trim().length() < 8) {
+                throw new BadRequestException("New password must be at least 8 characters");
+            }
             sql.append(", password=?");
             args.add(passwordEncoder.encode(request.getPassword().trim()));
         }
@@ -734,6 +744,26 @@ public class PlatformAdminService {
         if (password.length() > 0) {
             request.setPassword(password);
         }
+        String currentPassword = DataTypeUtility.stringValue(param.get("currentPassword"));
+        if (currentPassword.length() > 0) {
+            request.setCurrentPassword(currentPassword);
+        }
         return request;
+    }
+
+    private void requireCurrentPlatformPassword(String currentPassword) {
+        if (currentPassword == null || currentPassword.isBlank()) {
+            throw new BadRequestException("Current password is required to change username or password");
+        }
+        String storedHash;
+        try {
+            storedHash = billingCommonJdbcTemplate.queryForObject(
+                    "SELECT password FROM billing_common.platform_settings ORDER BY id ASC LIMIT 1", String.class);
+        } catch (Exception e) {
+            throw new ResourceNotFoundException("Platform settings not found");
+        }
+        if (storedHash == null || !passwordEncoder.matches(currentPassword, storedHash)) {
+            throw new BadRequestException("Current password is incorrect");
+        }
     }
 }

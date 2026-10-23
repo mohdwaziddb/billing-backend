@@ -82,6 +82,17 @@ public class PasswordResetService {
 
     @Transactional
     public PasswordResetChallengeResponse requestOtp(PasswordResetRequestRequest request, Long authenticatedUserId) {
+        boolean publicFlow = authenticatedUserId == null;
+        // Company-level checks user lookup se PEHLE: inka jawab har identifier
+        // ke liye same hai, isliye account exist karta hai ya nahi ye nahi batate.
+        Company company = resolveTenantCompany()
+                .orElseThrow(() -> new BadRequestException("Unable to resolve company for this request. Please contact administrator."));
+        if (!company.isActive()) {
+            return PasswordResetChallengeResponse.builder().build();
+        }
+        if (!hasEmailProvider(company)) {
+            throw new BadRequestException(ProviderMessages.EMAIL_NOT_CONFIGURED_USER);
+        }
         User user;
         if (authenticatedUserId != null) {
             // Logged-in dashboard flow: the recipient is ALWAYS the
@@ -102,20 +113,15 @@ public class PasswordResetService {
             }
             java.util.Optional<User> userOpt = findActiveUser(identifier);
             if (userOpt.isEmpty()) {
-                // Generic success: never reveal whether the identifier exists.
-                return PasswordResetChallengeResponse.builder().build();
+                // Never reveal whether the identifier exists: same shape as a real challenge.
+                return decoyChallenge();
             }
             user = userOpt.get();
         }
-        Company company = resolveTenantCompany()
-                .orElseThrow(() -> new BadRequestException("Unable to resolve company for this request. Please contact administrator."));
-        if (!company.isActive()) {
-            return PasswordResetChallengeResponse.builder().build();
-        }
-        if (!hasEmailProvider(company)) {
-            throw new BadRequestException(ProviderMessages.EMAIL_NOT_CONFIGURED_USER);
-        }
         if (user.getEmail() == null || user.getEmail().isBlank()) {
+            if (publicFlow) {
+                return decoyChallenge();
+            }
             throw new BadRequestException("No registered email address on this account. Please contact your administrator.");
         }
         // EMAIL ONLY: OTP always goes to the registered email.
@@ -125,6 +131,10 @@ public class PasswordResetService {
         if (latest != null && !latest.isConsumed()
                 && latest.getCreatedAt() != null
                 && latest.getCreatedAt().plusSeconds(RESEND_COOLDOWN_SECONDS).isAfter(LocalDateTime.now())) {
+            if (publicFlow) {
+                // Cooldown error sirf asli account par aata, isliye public flow me chup.
+                return decoyChallenge();
+            }
             throw new BadRequestException("Please wait a minute before requesting a new OTP.");
         }
         passwordResetOtpRepository.deleteByUserId(user.getId());
@@ -164,7 +174,23 @@ public class PasswordResetService {
         return PasswordResetChallengeResponse.builder()
                 .challengeId(challenge.getId())
                 .channel(resolvedChannel)
-                .maskedDestination(maskDestination(resolvedChannel, destination))
+                // Public flow me masked email nahi: decoy response me ye ho nahi sakta,
+                // to iske hone/na hone se account ka pata chal jata.
+                .maskedDestination(publicFlow ? null : maskDestination(resolvedChannel, destination))
+                .expiresInSeconds(OTP_TTL_SECONDS)
+                .build();
+    }
+
+    /**
+     * Unknown / email-less / cooldown identifiers ke liye asli jaisa challenge.
+     * ID itna bada hai ki kisi real row se kabhi nahi takrata; verify par
+     * "Incorrect OTP" milta hai, bilkul galat OTP jaisa.
+     */
+    private PasswordResetChallengeResponse decoyChallenge() {
+        long decoyId = 1_000_000_000_000L + (secureRandom.nextLong() & 0xFFFFFFFFFFL);
+        return PasswordResetChallengeResponse.builder()
+                .challengeId(decoyId)
+                .channel("EMAIL")
                 .expiresInSeconds(OTP_TTL_SECONDS)
                 .build();
     }
@@ -207,6 +233,8 @@ public class PasswordResetService {
         passwordResetOtpRepository.save(challenge);
         passwordResetOtpRepository.deleteByUserId(user.getId());
         user.setPassword(passwordEncoder.encode(newPassword));
+        // Reset se pehle ke saare access tokens band (refresh tokens neeche delete).
+        user.setTokensValidAfter(LocalDateTime.now());
         userRepository.save(user);
         refreshTokenRepository.deleteByUser(user);
         auditPasswordReset(user);
@@ -220,8 +248,9 @@ public class PasswordResetService {
         if (otp.isEmpty()) {
             throw new BadRequestException("OTP is required");
         }
+        // Decoy challenge (unknown account) bhi galat OTP jaisa hi dikhe.
         PasswordResetOtp challenge = passwordResetOtpRepository.findById(challengeId)
-                .orElseThrow(() -> new BadRequestException("Invalid OTP request. Please request a new OTP."));
+                .orElseThrow(() -> new BadRequestException("Incorrect OTP. Please try again."));
         if (challenge.isConsumed()
                 || challenge.getExpiresAt() == null
                 || challenge.getExpiresAt().isBefore(LocalDateTime.now())) {

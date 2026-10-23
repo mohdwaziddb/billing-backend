@@ -39,30 +39,25 @@ Long id = Long.parseLong(param.get("id").toString());
 
 ## 2) Local DB kaha se uthega
 
-- **Local DB `billing` ka config `application.properties` se nahi uthega.**
-- **Sahi jagah (relative path):** `src/main/resources/application-local.properties:2`
-  ```properties
-  # File: src/main/resources/application-local.properties
-  spring.datasource.url=jdbc:mysql://localhost:3306/billing?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=Asia/Kolkata
-  spring.datasource.username=root
-  spring.datasource.password=hrhk
-  spring.jpa.hibernate.ddl-auto=update
-  ```
-  > Project root se relative: `src/main/resources/...` . Kisi bhi OS me absolute path hardcode mat karo.
-- `src/main/resources/application.properties` me `spring.profiles.active` sirf defaults ke liye hai. Runtime me `src/main/resources/application-local.properties` override karta hai (local profile).
-- Naya tenant/company banana ho (e.g. `company_id=2`) to yaha DB change nahi, `billing.company` table me `INSERT` karo, `company_id` se tenant isolation `src/main/java/com/billing/tenant/TenantContext.java:5` + `TenantFilterAspect.java:18` via `company_id` filter handle karega.
+- **Local config:** `src/main/resources/application-local.properties` (local profile). `application.properties` me sirf defaults hain.
+- Default (startup) datasource `billing_common` catalog ke liye hai; **company ka data har company ke apne alag database me hai** (neeche section 3).
+- **Naya tenant/company:** platform-admin se banao. Wo `billing_common.company_registry` me row + naya tenant DB (`src/main/resources/db/tenant/tenant_schema.sql` se) banata hai. Kisi shared table me `INSERT` karke company mat banao.
 
 ---
 
-## 3) Multi-Tenant Flow (company_id Filter - Single DB)
+## 3) Multi-Tenant Flow (DATABASE-per-tenant)
 
-- `billing` = single DB (company, customer, invoice, product etc) — `CREATE DATABASE billing` — `company_id` column se isolated
-- **Tenant Mechanism:** Hibernate `@FilterDef tenantFilter` — `src/main/java/com/billing/entity/package-info.java` + `src/main/java/com/billing/tenant/TenantContext.java:5` (ThreadLocal<Long> CURRENT_COMPANY_ID) + `src/main/java/com/billing/tenant/TenantFilterAspect.java:18` (`@Around @Service || @Transactional`)
+> Pehle is file me "single DB + `company_id` Hibernate filter + `TenantContext` / `TenantFilterAspect`" likha tha. **Wo galat tha**: ye classes code me hain hi nahi, aur koi `@Filter`/`@FilterDef` nahi hai.
 
+- **Har company = alag MySQL database.** Registry: `billing_common.company_registry` (`company_code`, `company_name`, `database_name`, `domain`, `db_host`, `status`).
+- **Hibernate `multiTenancy = DATABASE`:** `src/main/java/com/billing/multitenancy/MultiTenancyJpaConfiguration.java`, `DataSourceBasedMultiTenantConnectionProviderImpl.java` (tenant ka connection pool), `CurrentTenantIdentifierResolverImpl.java` (tenant set na ho to default DB par girta hai — isliye tenant hamesha set karo).
+- **Tenant kahan se aata hai:** `src/main/java/com/billing/multitenancy/RequestInterceptor.java` — `X-Company-Code` header (ya `company_code` / `companyCode` param), warna subdomain/domain. `ensureTenant(db, host)` pool lazily banata hai. Tenant id `TenantContextHolder` (ThreadLocal) me rehta hai. GET requests by default `<db>_read` pool, baaki write pool.
 - **Request Flow:**
-  `POST /api/v1/auth/login` → `src/main/java/com/billing/controller/AuthController.java` → `src/main/java/com/billing/service/AuthService.java` validates `company` + `user` → JWT create `JwtService.java:47` `subject=userId` + `claim:companyId` → `src/main/java/com/billing/security/JwtAuthenticationFilter.java` extracts `companyId` → `TenantContext.setCompanyId(companyId)` → `TenantFilterAspect.java:22` `session.enableFilter("tenantFilter").setParameter("companyId", ...)` → All `InvoiceRepository`, `CustomerRepository` etc queries auto-filtered by `company_id = :companyId` → response → `TenantContext.clear()` in filter `finally`.
-
-- **Note:** Gym project ka `gymcommon.gym_registry` + `dbgym` dual-DB + `X-Gym-Code` + `MysqlDataSourceService.java:23` + `MultiTenancyJpaConfiguration:92` flow yaha **applicable nahi** hai. Yaha single DB + `company_id` filter hai.
+  `POST /api/v1/auth/login` → `RequestInterceptor` tenant DB chunta hai → `AuthService.login` us DB me user + BCrypt check (warna tenant super-admin, jo `companies` row par hai) → `JwtService` token: claims `authType` (USER / SUPER_ADMIN / PLATFORM_ADMIN / MFA_PENDING), `userId`, `companyCode`, `databaseName` → har request par `JwtAuthenticationFilter` token ke `databaseName` se tenant set karta hai (user lookup se PEHLE, kyunki har DB me ids 1 se shuru hote hain) → `RequestInterceptor` header/subdomain wala tenant token ke tenant se match karta hai, mismatch = **403** → `@RequiresPermission` (`RequirePermissionAspect` → `PermissionService.has`) → service → `finally` me `TenantContextHolder.clear()`.
+- **Platform admin** (`/api/v1/platform-admin/**`) `billing_common` par `billingCommonJdbcTemplate` se chalta hai; kisi tenant par kaam karna ho to `PlatformAdminService.withTenantDb(...)` pattern.
+- **Entities:** `company` field `@Transient` hai. Repository queries me `(:company is null or 1=1)` sirf purana leftover hai (no-op). **`company_id` filter / `@Filter` mat lagao** — isolation database level par hai.
+- **Background kaam (`@Scheduled`, `ApplicationRunner`) ke paas request nahi, isliye tenant nahi.** Har ACTIVE tenant par loop karo: `companyRegistryService.listTenants(null, "ACTIVE", ...)` → `requestInterceptor.ensureTenant(db, companyRegistryService.resolveDbHostByDatabase(db))` → `TenantContextHolder.setTenantId(db)` → `@Transactional` method ko **self proxy** se call karo (naya session us DB ka) → `finally` me `clear()`. Example: `ReminderService.prepareDailyDueCustomerList()`.
+- **Note:** Gym project ka `gymcommon.gym_registry` + `X-Gym-Code` flow jaisa hi pattern hai (registry + per-tenant DB + header routing), bas yahan naam `billing_common.company_registry` + `X-Company-Code` hain.
 
 ---
 
@@ -107,8 +102,8 @@ Long id = Long.parseLong(param.get("id").toString());
   Object temp = param.get("totalAmount");
   ```
 - **Controller:** `param` ko `DataTypeUtility` se validate karo, `@RequiresPermission("invoice:create")` + `SecurityConfig.java` RBAC check. Gym me `SanitizeData.sanitizeMapObj(param)` tha, yaha `DataTypeUtility.stringValue/longValue` se santization hota hai.
-- **Entity:** Lombok `@Getter @Setter`, `@Table(name="invoices")` + `@Filter(name="tenantFilter", condition="company_id = :companyId")` + `extends BaseEntity` (`@MappedSuperclass` audit fields).
-- **DTO/Validation:** `src/main/java/com/billing/dto/...` me BeanValidation (`@NotBlank`, `@Min`, `@DecimalMin`) + service me `DataTypeUtility` double-check.
+- **Entity:** Lombok `@Getter @Setter`, `@Table(name="invoices")` + `extends BaseEntity` (`@MappedSuperclass` audit fields). Tenant filter/`company_id` column NAHI (database-per-tenant, section 3).
+- **DTO/Validation:** Controllers `Map<String,Object>` lete hain, isliye DTO ke `@NotBlank` / `@Min` / `@DecimalMin` **chalte hi nahi**. Har zaroori check (null date, qty >= 1, amount > 0, negative discount) **service me khud likho** (example: `InvoiceService.validateInvoiceRequest`, `PurchaseService.validateRequest`).
 - **Controller-Service Separation - MANDATORY:** Sara kaam controller layer par mat karo, service layer ka use karo. Controller sirf `param` sanitization, `DataTypeUtility` se basic validation, permission check aur service call kare; business logic, DB access, calculations hamesha `src/main/java/com/billing/service/...` me rakho:
   ```java
   // Sahi (Controller - thin):
@@ -152,6 +147,7 @@ Long id = Long.parseLong(param.get("id").toString());
 - **Nayi Entity banayi to `db/migration/V<date>_<naam>.sql` file LIKHNA FARZ hai.** Runner SQL banata nahi, sirf chalata hai. File bhool gaye to live boot par Hibernate `validate` fail hoga (fail-loud, fail-safe).
 - **File routing:** pehli lines me `-- target: common` likho to `billing_common` par (ek baar), warna har ACTIVE tenant DB par (default). Marker nahi to `billing_common.` text wali file common par jayegi.
 - **Migration me sirf plain DDL/DML, `;` separated.** `DELIMITER` wali procedure/trigger file runner reject karega (WARN, apply nahi hogi) — aisi cheez haath se chalani padegi.
+- **Ek file = ek statement rakho (jahan "already exists" ho sakta hai).** Runner "already exists" (table/column/key, error 1050/1060/1061) ko **poori file** ke level par tolerate karta hai: pehla aisa error aate hi file ke BAAKI statements skip ho jaate hain aur file "applied" maan li jaati hai. Isliye `ADD COLUMN` jaise statements alag-alag files me likho.
 - **Purani file EDIT mat karo** (version = filename; `schema_version` table hisaab rakhti hai). Galti sudharni ho to NAYI `V<date>_` file banao.
   Exception: jo file **kabhi success se apply hui hi nahi** (har boot par FAILED retry ho rahi hai, `schema_version.success=0`) usko theek karna allowed hai — nayi file banane se order tootega. Applied (`success=1`) file ko kabhi mat chhedo.
 - **Boot order:** `src/main/java/com/billing/config/TenantSeedSweepRunner.java:30` har restart par `TenantSchemaMigrationService.migrateAll()` (pehle) phir `PlatformAdminService.sweepSeedsForAllActiveTenants()` (baad me) chalata hai. Dono per-tenant try/catch me — 1 tenant fail to boot nahi rukega, WARN log aayega.

@@ -24,6 +24,7 @@ import com.billing.repository.PaymentRepository;
 import com.billing.util.DataTypeUtility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -185,12 +186,11 @@ public class ExpenseService {
         Customer customer = customerService.getCustomerOrThrow(company, customerId);
         BigDecimal revenue = invoiceRepository.findByCustomerOrderByInvoiceDateDescIdDesc( customer).stream()
                 .filter(invoice -> inRange(invoice.getInvoiceDate(), startDate, endDate))
-                .map(Invoice::getTotalAmount)
+                .map(ExpenseService::revenueOf)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal costOfGoodsSold = invoiceItemAllocationRepository.sumActiveCostByCustomer(company, customerId, startDate, endDate);
-        BigDecimal expense = expenseRepository.findByCompanyOrderByExpenseDateDescIdDesc(company).stream()
+        BigDecimal expense = expenseRepository.findInRange(startDate, endDate).stream()
                 .filter(item -> item.getCustomer() != null && item.getCustomer().getId().equals(customerId))
-                .filter(item -> inRange(item.getExpenseDate(), startDate, endDate))
                 .map(Expense::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         return profitability(customerId, customer.getName(), revenue, costOfGoodsSold, expense);
@@ -200,10 +200,9 @@ public class ExpenseService {
     public ProfitabilityResponse invoiceProfitability(String email, Long invoiceId) {
         Company company = accessControlService.getCurrentCompany(email);
         Invoice invoice = invoiceService.getInvoiceOrThrow(company, invoiceId);
-        BigDecimal revenue = scale(invoice.getTotalAmount());
+        BigDecimal revenue = scale(revenueOf(invoice));
         BigDecimal costOfGoodsSold = scale(invoiceItemAllocationRepository.sumActiveCostByInvoice(company, invoiceId));
-        BigDecimal expense = expenseRepository.findByCompanyOrderByExpenseDateDescIdDesc(company).stream()
-                .filter(item -> item.getInvoice() != null && item.getInvoice().getId().equals(invoiceId))
+        BigDecimal expense = expenseRepository.searchExpenses(company, null, null, null, null, invoiceId, null, null, null, Pageable.unpaged()).getContent().stream()
                 .map(Expense::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         return profitability(invoiceId, invoice.getInvoiceNo(), revenue, costOfGoodsSold, expense);
@@ -246,19 +245,20 @@ public class ExpenseService {
                                                      RoleName createdByRole) {
         User user = accessControlService.getCurrentUser(email);
         Company company = accessControlService.requireCompany(user);
-        List<Expense> expenses = expenseRepository.searchExpenses(company, null, expenseType, categoryId, customerId, invoiceId, startDate, endDate, createdByRole, PageRequest.of(0, 1000)).getContent();
-        List<Invoice> invoices = invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company).stream()
+        // Pehle PageRequest.of(0, 1000): 1000 se zyada expenses par totals chup-chaap galat.
+        List<Expense> expenses = expenseRepository.searchExpenses(company, null, expenseType, categoryId, customerId, invoiceId, startDate, endDate, createdByRole, Pageable.unpaged()).getContent();
+        // Date range DB me (pehle poori invoices/payments table memory me aati thi).
+        List<Invoice> invoices = invoiceRepository.findActiveInRange(startDate, endDate).stream()
                 .filter(invoice -> customerId == null || invoice.getCustomer().getId().equals(customerId))
                 .filter(invoice -> invoiceId == null || invoice.getId().equals(invoiceId))
-                .filter(invoice -> inRange(invoice.getInvoiceDate(), startDate, endDate))
                 .toList();
-        List<Payment> payments = paymentRepository.findByCompanyOrderByPaymentDateDescIdDesc(company).stream()
+        List<Payment> payments = paymentRepository.findActiveInRange(startDate, endDate).stream()
                 .filter(payment -> customerId == null || payment.getCustomer().getId().equals(customerId))
                 .filter(payment -> invoiceId == null || (payment.getInvoice() != null && payment.getInvoice().getId().equals(invoiceId)))
-                .filter(payment -> inRange(payment.getPaymentDate(), startDate, endDate))
                 .toList();
-        BigDecimal revenue = invoices.stream().map(Invoice::getTotalAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal costOfGoodsSold = scale(invoiceItemAllocationRepository.sumActiveCostByInvoiceDateRange(company, startDate, endDate));
+        BigDecimal revenue = invoices.stream().map(ExpenseService::revenueOf).reduce(BigDecimal.ZERO, BigDecimal::add);
+        // COGS par bhi wahi customer/invoice filter jo revenue par hai.
+        BigDecimal costOfGoodsSold = scale(invoiceItemAllocationRepository.sumActiveCostFiltered(customerId, invoiceId, startDate, endDate));
         BigDecimal expense = expenses.stream().map(Expense::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
 
         Map<String, BigDecimal> categoryTotals = expenses.stream()
@@ -269,7 +269,7 @@ public class ExpenseService {
                 .toList();
 
         Map<YearMonth, BigDecimal> revenueByMonth = invoices.stream()
-                .collect(Collectors.groupingBy(invoice -> YearMonth.from(invoice.getInvoiceDate()), Collectors.reducing(BigDecimal.ZERO, Invoice::getTotalAmount, BigDecimal::add)));
+                .collect(Collectors.groupingBy(invoice -> YearMonth.from(invoice.getInvoiceDate()), Collectors.reducing(BigDecimal.ZERO, ExpenseService::revenueOf, BigDecimal::add)));
         Map<YearMonth, BigDecimal> collectionByMonth = payments.stream()
                 .collect(Collectors.groupingBy(payment -> YearMonth.from(payment.getPaymentDate()), Collectors.reducing(BigDecimal.ZERO, Payment::getAmount, BigDecimal::add)));
         Map<YearMonth, BigDecimal> expenseByMonth = expenses.stream()
@@ -302,6 +302,14 @@ public class ExpenseService {
                 .expenseByCategory(expenseByCategory)
                 .revenueVsExpense(revenueVsExpense)
                 .build();
+    }
+
+    /**
+     * Revenue = taxable value (discount ke baad, GST se pehle). GST sarkar ka
+     * paisa hai; pehle totalAmount (GST samet) lene se gross profit utna hi zyada dikhta tha.
+     */
+    private static BigDecimal revenueOf(Invoice invoice) {
+        return invoice.getTaxableAmount() != null ? invoice.getTaxableAmount() : BigDecimal.ZERO;
     }
 
     private ExpenseRequest mapToRequest(Map<String, Object> param) {
@@ -347,6 +355,13 @@ public class ExpenseService {
     }
 
     private void applyRequest(Company company, Expense expense, ExpenseRequest request) {
+        // Map endpoints par @Valid nahi chalta: zero/negative amount aur khali date save ho jaate the.
+        if (request.getAmount() == null || request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BadRequestException("Expense amount must be greater than 0");
+        }
+        if (request.getExpenseDate() == null) {
+            throw new BadRequestException("Expense date is required");
+        }
         ExpenseCategory category = expenseCategoryService.getActiveByIdOrThrow(company, request.getCategoryId());
         Customer customer = null;
         Invoice invoice = null;

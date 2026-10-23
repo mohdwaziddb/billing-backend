@@ -23,7 +23,18 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     List<Payment> findByCompanyOrderByPaymentDateDescIdDesc(@Param("company") Company company);
     @EntityGraph(attributePaths = {"customer", "invoice"})
     @Query("select p from Payment p where p.deleted = false order by p.paymentDate desc, p.id desc")
-    List<Payment> findAllByOrderByPaymentDateDescIdDesc();    @EntityGraph(attributePaths = {"customer", "invoice"})
+    List<Payment> findAllByOrderByPaymentDateDescIdDesc();    // Reports: date range DB me filter.
+    @EntityGraph(attributePaths = {"customer", "invoice"})
+    @Query("""
+            select p from Payment p
+            where p.deleted = false
+              and (:startDate is null or p.paymentDate >= :startDate)
+              and (:endDate is null or p.paymentDate <= :endDate)
+            order by p.paymentDate desc, p.id desc
+            """)
+    List<Payment> findActiveInRange(@Param("startDate") LocalDate startDate, @Param("endDate") LocalDate endDate);
+
+    @EntityGraph(attributePaths = {"customer", "invoice"})
     @Query("select p from Payment p where (:company is null or 1=1) and p.deleted = false")
     Page<Payment> findByCompany(@Param("company") Company company, Pageable pageable);
     @Query("select p from Payment p where p.id = :id and (:company is null or 1=1)")
@@ -48,7 +59,8 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
                         or str(p.id) like concat('%', :search, '%')
                         or lower(coalesce(invoice.invoiceNo, '')) like lower(concat('%', :search, '%'))
                         or lower(p.customer.name) like lower(concat('%', :search, '%'))
-                        or p.customer.mobile like concat('%', :search, '%'))
+                        or p.customer.mobile like concat('%', :search, '%')
+                        or lower(coalesce(p.referenceNo, '')) like lower(concat('%', :search, '%')))
                       and (:startDate is null or p.paymentDate >= :startDate)
                       and (:endDate is null or p.paymentDate <= :endDate)
                       and (:minAmount is null or p.amount >= :minAmount)
@@ -57,6 +69,7 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
                       and (:invoiceLinked is null
                         or (:invoiceLinked = true and p.invoice is not null)
                         or (:invoiceLinked = false and p.invoice is null))
+                      and (:invoiceId is null or invoice.id = :invoiceId)
                       and (:createdByRole is null or exists (
                         select 1 from User u
                         where 1=1
@@ -73,7 +86,8 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
                         or str(p.id) like concat('%', :search, '%')
                         or lower(coalesce(invoice.invoiceNo, '')) like lower(concat('%', :search, '%'))
                         or lower(p.customer.name) like lower(concat('%', :search, '%'))
-                        or p.customer.mobile like concat('%', :search, '%'))
+                        or p.customer.mobile like concat('%', :search, '%')
+                        or lower(coalesce(p.referenceNo, '')) like lower(concat('%', :search, '%')))
                       and (:startDate is null or p.paymentDate >= :startDate)
                       and (:endDate is null or p.paymentDate <= :endDate)
                       and (:minAmount is null or p.amount >= :minAmount)
@@ -82,6 +96,7 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
                       and (:invoiceLinked is null
                         or (:invoiceLinked = true and p.invoice is not null)
                         or (:invoiceLinked = false and p.invoice is null))
+                      and (:invoiceId is null or invoice.id = :invoiceId)
                       and (:createdByRole is null or exists (
                         select 1 from User u
                         where 1=1
@@ -100,5 +115,6 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
                                  @Param("mode") String mode,
                                  @Param("invoiceLinked") Boolean invoiceLinked,
                                  @Param("createdByRole") RoleName createdByRole,
+                                 @Param("invoiceId") Long invoiceId,
                                  Pageable pageable);
 }

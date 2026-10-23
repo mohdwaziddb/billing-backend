@@ -16,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import com.billing.util.OutboundUrlGuard;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -105,7 +106,7 @@ public class Msg91WhatsAppProvider implements WhatsAppProvider {
                                         Map<String, Object> variables) {
         try {
             validateConfiguration(settings);
-            HttpRequest request = HttpRequest.newBuilder(URI.create(resolveApiUrl(settings)))
+            HttpRequest request = HttpRequest.newBuilder(OutboundUrlGuard.requirePublicUrl(resolveApiUrl(settings)))
                     .timeout(Duration.ofSeconds(20))
                     .header("Content-Type", "application/json")
                     .header("authkey", settings.required("authKey", "MSG91 auth key is required"))

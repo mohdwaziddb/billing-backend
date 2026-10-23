@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.util.UriUtils;
 
 import java.io.IOException;
+import com.billing.util.OutboundUrlGuard;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -54,7 +55,7 @@ public class NsTechSmsProviderService implements SmsProviderService {
         RuntimeException runtimeFailure = null;
         for (int attempt = 0; attempt <= retryCount; attempt++) {
             try {
-                HttpRequest request = HttpRequest.newBuilder(URI.create(buildProviderUrl(config, mobileNumber, message)))
+                HttpRequest request = HttpRequest.newBuilder(OutboundUrlGuard.requirePublicUrl(buildProviderUrl(config, mobileNumber, message)))
                         .timeout(Duration.ofSeconds(timeoutSeconds))
                         .GET()
                         .build();

@@ -1,7 +1,10 @@
 package com.billing.entity;
 
+import com.billing.entity.enums.PaymentSource;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -56,4 +59,17 @@ public class Payment extends BaseEntity {
     private boolean deleted = false;
 
     private String remarks;
+
+    // UPI UTR / card approval no. / gateway payment id.
+    @Column(name = "reference_no", length = 120)
+    private String referenceNo;
+
+    // null (purani rows) = MANUAL.
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_source", length = 20)
+    private PaymentSource source;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "payment_transaction_id")
+    private PaymentTransaction paymentTransaction;
 }

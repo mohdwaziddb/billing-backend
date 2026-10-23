@@ -38,7 +38,9 @@ public class InvoiceItemAllocation extends BaseEntity {
     private Invoice invoice;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "invoice_item_id", nullable = false)
+    // Nullable: invoice edit par purane item rows hatte hain; released (inactive)
+    // allocations ka history invoice_id se juda rehta hai.
+    @JoinColumn(name = "invoice_item_id")
     private InvoiceItem invoiceItem;
 
     @ManyToOne(fetch = FetchType.LAZY)

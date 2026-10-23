@@ -53,7 +53,8 @@ public class InvoiceRestController {
         String invoiceNo = invoiceService.get(authentication.getName(), invoiceId).getInvoiceNo();
         return ResponseEntity.ok()
         .header("Content-Type", "application/pdf")
-        .header("Content-Disposition", "attachment; filename=\"" + invoiceNo + ".pdf\"")
+        // Invoice no me "/" hota hai (INV/2627/00001); filename me allowed nahi.
+        .header("Content-Disposition", "attachment; filename=\"" + invoiceNo.replace('/', '-') + ".pdf\"")
         .body(pdfContent);
     }
 

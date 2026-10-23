@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.util.UriUtils;
 
 import java.io.IOException;
+import com.billing.util.OutboundUrlGuard;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -51,7 +52,7 @@ public class Msg91SmsProviderService implements SmsProviderService {
         try {
             validateSettings(settings);
             String url = buildProviderUrl(settings, mobileNumber, message);
-            HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+            HttpRequest request = HttpRequest.newBuilder(OutboundUrlGuard.requirePublicUrl(url))
                     .timeout(Duration.ofSeconds(15))
                     .header("authkey", secretEncryptionService.decrypt(settings.getAuthKey()))
                     .GET()

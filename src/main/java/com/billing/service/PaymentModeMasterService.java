@@ -6,6 +6,7 @@ import com.billing.dto.paymentmode.PaymentModeResponse;
 import com.billing.core.appconfig.ApplicationConstant;
 import com.billing.entity.Company;
 import com.billing.entity.PaymentModeMaster;
+import com.billing.entity.enums.PaymentModeType;
 import com.billing.exception.BadRequestException;
 import com.billing.exception.ResourceNotFoundException;
 import com.billing.multitenancy.TenantContextHolder;
@@ -28,7 +29,13 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class PaymentModeMasterService {
 
-    private static final List<String> DEFAULT_MODES = List.of("Cash", "UPI", "Card", "Bank Transfer", "Cheque", "Wallet", "Other");
+    // Sirf Cash (counter) + Online (gateway, dropdown me gateway ke naam se — e.g. "Razorpay").
+    // UPI / Card ab gateway checkout ke andar aate hain; purane default modes V20261023_04 se delete.
+    private static final List<String> DEFAULT_MODES = List.of("Cash", "Online");
+
+    /** Gateway (Razorpay etc.) se aayi payments isi mode code se record hoti hain. */
+    public static final String ONLINE_MODE_CODE = "ONLINE";
+
 
     private static final Logger log = LoggerFactory.getLogger(PaymentModeMasterService.class);
 
@@ -92,7 +99,9 @@ public class PaymentModeMasterService {
                 .modeName(modeName)
                 .modeCode(modeCode)
                 .description(blankToNull(request.getDescription()))
-                .active(Boolean.TRUE.equals(request.getActive()))
+                .active(request.getActive() == null || request.getActive())
+                .modeType(resolveModeType(modeCode, request.getModeType()))
+                .requiresReference(request.getRequiresReference() != null && request.getRequiresReference())
                 .build();
         PaymentModeMaster saved = paymentModeMasterRepository.save(mode);
         auditLogService.logCreate(email, company, "Payment Mode", "PaymentMode", saved.getId(), snapshot(saved));
@@ -107,11 +116,22 @@ public class PaymentModeMasterService {
         String modeName = normalizeName(request.getModeName());
         String modeCode = toCode(modeName);
         validateUnique(company, modeName, modeCode, modeId);
+        // Gateway payments isi code se record hoti hain; rename se code toot jaata.
+        if (ONLINE_MODE_CODE.equals(mode.getModeCode()) && !ONLINE_MODE_CODE.equals(modeCode)) {
+            throw new BadRequestException("Online payment mode cannot be renamed");
+        }
 
         mode.setModeName(modeName);
         mode.setModeCode(modeCode);
         mode.setDescription(blankToNull(request.getDescription()));
-        mode.setActive(Boolean.TRUE.equals(request.getActive()));
+        // active na bheja ho to purani value rahe (pehle chup-chaap inactive ho jata tha).
+        if (request.getActive() != null) {
+            mode.setActive(request.getActive());
+        }
+        mode.setModeType(resolveModeType(modeCode, request.getModeType()));
+        if (request.getRequiresReference() != null) {
+            mode.setRequiresReference(request.getRequiresReference());
+        }
         PaymentModeMaster saved = paymentModeMasterRepository.save(mode);
         auditLogService.logUpdate(email, company, "Payment Mode", "PaymentMode", saved.getId(), oldData, snapshot(saved));
         return toResponse(saved);
@@ -164,16 +184,45 @@ public class PaymentModeMasterService {
                         .modeName(modeName)
                         .modeCode(modeCode)
                         .active(true)
+                        .modeType(ONLINE_MODE_CODE.equals(modeCode) ? PaymentModeType.ONLINE : PaymentModeType.OFFLINE)
                         .build());
             }
         }
     }
 
     public String requireActiveModeCode(Company company, String mode) {
+        return requireActiveMode(company, mode).getModeCode();
+    }
+
+    public PaymentModeMaster requireActiveMode(Company company, String mode) {
         String modeCode = toCode(mode);
-        paymentModeMasterRepository.findByCompanyAndModeCodeIgnoreCaseAndActiveTrue(company, modeCode)
+        return paymentModeMasterRepository.findByCompanyAndModeCodeIgnoreCaseAndActiveTrue(company, modeCode)
                 .orElseThrow(() -> new BadRequestException("Select an active payment mode"));
-        return modeCode;
+    }
+
+    /**
+     * Manual entry (invoice initial payment / Record Payment) ke liye: ONLINE
+     * mode yahan allowed nahi — wo sirf gateway confirm hone par record hota hai.
+     */
+    public String requireActiveOfflineModeCode(Company company, String mode) {
+        PaymentModeMaster paymentMode = requireActiveMode(company, mode);
+        if (paymentMode.effectiveModeType() == PaymentModeType.ONLINE) {
+            throw new BadRequestException("Online payment is collected through the payment gateway. Use Collect Online.");
+        }
+        return paymentMode.getModeCode();
+    }
+
+    /** Gateway payments ka mode code; mode missing ho to seed karke. */
+    public String onlineModeCode(Company company) {
+        paymentModeMasterRepository.findByCompanyAndModeCodeIgnoreCase(company, ONLINE_MODE_CODE)
+                .orElseGet(() -> paymentModeMasterRepository.save(PaymentModeMaster.builder()
+                        .company(company)
+                        .modeName("Online")
+                        .modeCode(ONLINE_MODE_CODE)
+                        .active(true)
+                        .modeType(PaymentModeType.ONLINE)
+                        .build()));
+        return ONLINE_MODE_CODE;
     }
 
     public Map<String, String> activeModeLabels(Company company) {
@@ -208,6 +257,8 @@ public class PaymentModeMasterService {
                 .modeCode(mode.getModeCode())
                 .description(mode.getDescription())
                 .active(mode.isActive())
+                .modeType(mode.effectiveModeType().name())
+                .requiresReference(mode.isRequiresReference())
                 .createdAt(mode.getCreatedAt())
                 .updatedAt(mode.getUpdatedAt())
                 .createdBy(auditNameResolver.displayName(mode.getCreatedBy()))
@@ -221,7 +272,33 @@ public class PaymentModeMasterService {
         data.put("modeCode", mode.getModeCode());
         data.put("description", mode.getDescription());
         data.put("active", mode.isActive());
+        data.put("modeType", mode.effectiveModeType().name());
+        data.put("requiresReference", mode.isRequiresReference());
         return data;
+    }
+
+    /**
+     * Type code se tay hota hai: sirf ONLINE code wala mode gateway (ONLINE) hai,
+     * baaki sab OFFLINE. Warna Cash jaisa mode galti se ONLINE ho kar manual
+     * entry me reject hone lagta.
+     */
+    private PaymentModeType resolveModeType(String modeCode, String requestedType) {
+        PaymentModeType derived = ONLINE_MODE_CODE.equals(modeCode) ? PaymentModeType.ONLINE : PaymentModeType.OFFLINE;
+        if (requestedType == null || requestedType.isBlank()) {
+            return derived;
+        }
+        PaymentModeType requested;
+        try {
+            requested = PaymentModeType.valueOf(requestedType.trim().toUpperCase(Locale.ENGLISH));
+        } catch (IllegalArgumentException exception) {
+            throw new BadRequestException("Invalid payment mode type");
+        }
+        if (requested != derived) {
+            throw new BadRequestException(derived == PaymentModeType.ONLINE
+                    ? "Online payment mode must stay Online"
+                    : "Only the 'Online' mode can be an online (gateway) mode");
+        }
+        return derived;
     }
 
     private String normalizeName(String value) {
@@ -282,6 +359,20 @@ public class PaymentModeMasterService {
             }
         }
         paymentModeRequest.setActive(active);
+        String modeType = DataTypeUtility.stringValue(param.get("modeType"));
+        if (modeType.length() == 0) {
+            modeType = null;
+        }
+        paymentModeRequest.setModeType(modeType);
+        Boolean requiresReference = null;
+        Object requiresReferenceRaw = param.get("requiresReference");
+        if (requiresReferenceRaw != null) {
+            String requiresReferenceStr = DataTypeUtility.stringValue(requiresReferenceRaw);
+            if (requiresReferenceStr.length() > 0) {
+                requiresReference = DataTypeUtility.booleanValue(requiresReferenceRaw);
+            }
+        }
+        paymentModeRequest.setRequiresReference(requiresReference);
         return paymentModeRequest;
     }
 }

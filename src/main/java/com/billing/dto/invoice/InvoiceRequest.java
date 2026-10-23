@@ -31,6 +31,8 @@ public class InvoiceRequest {
 
     private String paymentMode;
 
+    private String referenceNo;
+
     @Valid
     @NotEmpty
     private List<InvoiceItemRequest> items;

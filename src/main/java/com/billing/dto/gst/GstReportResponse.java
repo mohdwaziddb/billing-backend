@@ -18,6 +18,8 @@ public class GstReportResponse {
     private BigDecimal sgstAmount;
     private BigDecimal igstAmount;
     private BigDecimal totalTaxAmount;
+    // VAT / Sales tax jaise non-GST taxes (GST totals me shamil nahi).
+    private BigDecimal otherTaxAmount;
     private BigDecimal grandTotal;
     private List<GstInvoiceWiseRowResponse> invoiceWise;
     private List<GstCustomerWiseRowResponse> customerWise;

@@ -139,6 +139,21 @@ public class Company extends BaseEntity {
     @Column(name = "is_chatbot_enabled", nullable = false)
     private boolean chatbotEnabled = true;
 
+    @Column(name = "ai_provider", length = 32)
+    private String aiProvider;
+
+    @Column(name = "ai_model", length = 120)
+    private String aiModel;
+
+    @Column(name = "ai_base_url", length = 255)
+    private String aiBaseUrl;
+
+    @Column(name = "ai_completions_path", length = 255)
+    private String aiCompletionsPath;
+
+    @Column(name = "ai_api_key", columnDefinition = "TEXT")
+    private String aiApiKey;
+
     @Builder.Default
     @Column(name = "is_apply_mfa", nullable = false)
     private boolean applyMfa = false;

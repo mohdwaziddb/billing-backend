@@ -90,7 +90,7 @@ public class ProductSubCategoryService {
                 .productCategory(category)
                 .subCategoryName(subCategoryName)
                 .description(blankToNull(request.getDescription()))
-                .active(Boolean.TRUE.equals(request.getActive()))
+                .active(request.getActive() == null || request.getActive())
                 .build();
         ProductSubCategory saved = productSubCategoryRepository.save(subCategory);
         auditLogService.logCreate(email, company, "Product Sub Category", "ProductSubCategory", saved.getId(), productSubCategoryMapper.snapshot(saved));
@@ -111,7 +111,10 @@ public class ProductSubCategoryService {
         subCategory.setProductCategory(category);
         subCategory.setSubCategoryName(subCategoryName);
         subCategory.setDescription(blankToNull(request.getDescription()));
-        subCategory.setActive(Boolean.TRUE.equals(request.getActive()));
+        // active na bheja ho to purani value rahe (pehle chup-chaap inactive ho jata tha).
+        if (request.getActive() != null) {
+            subCategory.setActive(request.getActive());
+        }
         ProductSubCategory saved = productSubCategoryRepository.save(subCategory);
         auditLogService.logUpdate(email, company, "Product Sub Category", "ProductSubCategory", saved.getId(), oldData, productSubCategoryMapper.snapshot(saved));
         return toResponse(saved);

@@ -8,14 +8,19 @@ import com.billing.exception.ResourceNotFoundException;
 import com.billing.dto.user.CompanyUserRequest;
 import com.billing.dto.user.UserProfileResponse;
 import com.billing.exception.BadRequestException;
+import com.billing.repository.RefreshTokenRepository;
 import com.billing.repository.UserRepository;
+import com.billing.service.storage.TenantImageService;
+import com.billing.util.CompanyFileJson;
 import com.billing.util.DataTypeUtility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -30,6 +35,10 @@ public class UserService {
     private final AccessControlService accessControlService;
     private final PasswordEncoder passwordEncoder;
     private final AuditLogService auditLogService;
+    private final RefreshTokenRepository refreshTokenRepository;
+    private final TenantImageService tenantImageService;
+
+    private static final String PHOTO_KIND = "user-photo";
 
     @Transactional(readOnly = true)
     public UserProfileResponse getProfile(String email) {
@@ -191,7 +200,7 @@ public class UserService {
                 .email(normalizeEmail(request.getEmail()))
                 .password(passwordEncoder.encode(request.getPassword()))
                 .role(role)
-                .active(Boolean.TRUE.equals(request.getActive()))
+                .active(request.getActive() == null || request.getActive())
                 .build();
 
         User saved = userRepository.save(user);
@@ -225,11 +234,19 @@ public class UserService {
         user.setUsername(normalizeUsername(request.getUsername()));
         user.setMobileNumber(normalizeMobile(request.getMobileNumber()));
         user.setEmail(normalizeEmail(request.getEmail()));
-        if (request.getPassword() != null && !request.getPassword().isBlank()) {
+        boolean wasActive = user.isActive();
+        boolean passwordChanged = request.getPassword() != null && !request.getPassword().isBlank();
+        if (passwordChanged) {
             user.setPassword(passwordEncoder.encode(request.getPassword()));
         }
         user.setRole(role);
-        user.setActive(Boolean.TRUE.equals(request.getActive()));
+        // active na bheja ho to purani value rahe (pehle chup-chaap inactive ho jata tha).
+        if (request.getActive() != null) {
+            user.setActive(request.getActive());
+        }
+        if (passwordChanged || (wasActive && !user.isActive())) {
+            revokeSessions(user);
+        }
 
         User saved = userRepository.save(user);
         auditLogService.logUpdate(email, company, "User", "User", saved.getId(), oldData, snapshot(saved));
@@ -272,8 +289,104 @@ public class UserService {
             ensureAnotherOwnerExists(company, user.getId());
         }
         user.setActive(false);
+        revokeSessions(user);
         User saved = userRepository.save(user);
         auditLogService.logDelete(email, company, "User", "User", saved.getId(), oldData);
+    }
+
+    /**
+     * Logged-in user apni profile khud badle (koi bhi role, USERS permission nahi chahiye).
+     * SIRF naam (photo alag endpoint se). Request me email / mobile / username / role
+     * kuch bhi aaye, padha hi nahi jaata — wo sirf owner Users page se badalta hai.
+     */
+    @Transactional
+    public UserProfileResponse updateOwnProfile(Map<String, Object> param, String email) {
+        User user = requireOwnEditableUser(email);
+        Company company = accessControlService.requireCompany(user);
+        Map<String, Object> oldData = snapshot(user);
+
+        String fullName = DataTypeUtility.stringValue(param.get("fullName"));
+        if (fullName.length() == 0) {
+            throw new BadRequestException("Full name is required");
+        }
+        if (fullName.length() > 120) {
+            throw new BadRequestException("Full name is too long");
+        }
+
+        user.setFullName(fullName);
+        User saved = userRepository.save(user);
+        auditLogService.logUpdate(email, company, "User", "User", saved.getId(), oldData, snapshot(saved));
+        return userMapper.toProfile(saved, company);
+    }
+
+    @Transactional
+    public UserProfileResponse uploadOwnPhoto(String email, MultipartFile file) {
+        User user = requireOwnEditableUser(email);
+        return savePhoto(email, accessControlService.requireCompany(user), user, file);
+    }
+
+    @Transactional
+    public UserProfileResponse deleteOwnPhoto(String email) {
+        User user = requireOwnEditableUser(email);
+        return removePhoto(email, accessControlService.requireCompany(user), user);
+    }
+
+    /** Users page (owner): kisi bhi company user ki photo add/badle. */
+    @Transactional
+    public UserProfileResponse uploadUserPhoto(String email, Long userId, MultipartFile file) {
+        Company company = accessControlService.requireOwnerCompany(email);
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        return savePhoto(email, company, user, file);
+    }
+
+    @Transactional
+    public UserProfileResponse deleteUserPhoto(String email, Long userId) {
+        Company company = accessControlService.requireOwnerCompany(email);
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        return removePhoto(email, company, user);
+    }
+
+    private UserProfileResponse savePhoto(String email, Company company, User user, MultipartFile file) {
+        Map<String, Object> oldData = snapshot(user);
+        String oldDbValue = user.getPhotoUrl();
+        String nextDbValue = tenantImageService.store(company, PHOTO_KIND, file, oldDbValue, "Photo");
+        user.setPhotoUrl(nextDbValue);
+        User saved = userRepository.save(user);
+        // Purani file DB save ke BAAD hatao (failed save par photo kabhi orphan/gayab na ho).
+        tenantImageService.cleanupReplaced(oldDbValue, nextDbValue);
+        auditLogService.logUpdate(email, company, "User", "User", saved.getId(), oldData, snapshot(saved));
+        return userMapper.toProfile(saved, company);
+    }
+
+    private UserProfileResponse removePhoto(String email, Company company, User user) {
+        String oldDbValue = user.getPhotoUrl();
+        if (DataTypeUtility.stringValue(oldDbValue).length() == 0) {
+            return userMapper.toProfile(user, company);
+        }
+        Map<String, Object> oldData = snapshot(user);
+        user.setPhotoUrl(null);
+        User saved = userRepository.save(user);
+        tenantImageService.delete(oldDbValue);
+        auditLogService.logUpdate(email, company, "User", "User", saved.getId(), oldData, snapshot(saved));
+        return userMapper.toProfile(saved, company);
+    }
+
+    /** Current user ka DB row (super-admin session synthetic hota hai, uski profile DB me nahi). */
+    private User requireOwnEditableUser(String email) {
+        User current = accessControlService.getCurrentUser(email);
+        if (current.isSuperAdmin() || current.getId() == null) {
+            throw new BadRequestException("Super admin profile cannot be edited here");
+        }
+        return userRepository.findById(current.getId())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+    }
+
+    // Password badla ya user deactivate hua: purane access tokens + refresh tokens turant band.
+    private void revokeSessions(User user) {
+        user.setTokensValidAfter(LocalDateTime.now());
+        refreshTokenRepository.deleteByUser(user);
     }
 
     private CompanyUserRequest mapToCompanyUserRequest(Map<String, Object> param) {
@@ -410,6 +523,7 @@ public class UserService {
         data.put("email", user.getEmail());
         data.put("role", user.getRole() != null ? user.getRole().name() : null);
         data.put("active", user.isActive());
+        data.put("photo", CompanyFileJson.extractFileName(user.getPhotoUrl()));
         return data;
     }
 }

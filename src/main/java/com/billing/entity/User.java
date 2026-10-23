@@ -16,6 +16,8 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+
+import java.time.LocalDateTime;
 @Getter
 @Setter
 @Builder
@@ -55,6 +57,15 @@ public class User extends BaseEntity {
     @Builder.Default
     @Column(nullable = false)
     private boolean active = true;
+
+    // Is waqt se pehle issue hue access tokens reject (password reset/change,
+    // deactivate). Logout ke baad bhi purana 24h token chalta rehta tha.
+    @Column(name = "tokens_valid_after")
+    private LocalDateTime tokensValidAfter;
+
+    // Profile photo ka full file JSON (url, key, file_name, ...) — company logo jaisa, CompanyFileJson se padho.
+    @Column(name = "photo_url", columnDefinition = "TEXT")
+    private String photoUrl;
 
     @Transient
     private Company company;

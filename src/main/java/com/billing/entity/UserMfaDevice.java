@@ -56,4 +56,8 @@ public class UserMfaDevice extends BaseEntity {
 
     @Column(name = "last_used_at")
     private LocalDateTime lastUsedAt;
+
+    // Last accepted TOTP time-step: same/purana step dobara accept nahi (code replay).
+    @Column(name = "last_used_step")
+    private Long lastUsedStep;
 }

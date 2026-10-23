@@ -162,6 +162,14 @@ CREATE TABLE IF NOT EXISTS `customers` (
   KEY `FKbojusylguv9eormswob1wol6i` (`state_id`),
   CONSTRAINT `FKbojusylguv9eormswob1wol6i` FOREIGN KEY (`state_id`) REFERENCES `state_master` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE IF NOT EXISTS `document_sequences` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `doc_type` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `period_key` varchar(10) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `last_number` bigint NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_document_sequences_type_period` (`doc_type`,`period_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE IF NOT EXISTS `email_logs` (
   `id` bigint NOT NULL AUTO_INCREMENT,
   `created_at` datetime(6) NOT NULL,
@@ -301,7 +309,7 @@ CREATE TABLE IF NOT EXISTS `invoice_item_allocations` (
   `purchase_rate` decimal(12,2) NOT NULL,
   `selling_rate` decimal(12,2) NOT NULL,
   `invoice_id` bigint NOT NULL,
-  `invoice_item_id` bigint NOT NULL,
+  `invoice_item_id` bigint DEFAULT NULL,
   `product_id` bigint NOT NULL,
   `product_batch_id` bigint NOT NULL,
   PRIMARY KEY (`id`),
@@ -373,6 +381,9 @@ CREATE TABLE IF NOT EXISTS `invoices` (
   `total_amount` decimal(12,2) NOT NULL,
   `customer_id` bigint NOT NULL,
   `refer_by_user_id` bigint DEFAULT NULL,
+  `place_of_supply_state_id` bigint DEFAULT NULL,
+  `place_of_supply_state` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `customer_gstin` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `UK465kfg5i8gam6kc8fnb96fqce` (`invoice_no`),
   KEY `FKq2w4hmh6l9othnp6cepp0cfe2` (`customer_id`),
@@ -523,7 +534,8 @@ CREATE TABLE IF NOT EXISTS `products` (
   KEY `FK6g8msxgx1xrkolnl05u2ay57l` (`tax_master_id`),
   CONSTRAINT `FK2iidmn83oquteh1f7tbgkdgv9` FOREIGN KEY (`product_sub_category_id`) REFERENCES `product_sub_categories` (`id`),
   CONSTRAINT `FK6g8msxgx1xrkolnl05u2ay57l` FOREIGN KEY (`tax_master_id`) REFERENCES `tax_master` (`id`),
-  CONSTRAINT `FKe05mpyhp4howtq8q4s65wm3q8` FOREIGN KEY (`product_category_id`) REFERENCES `product_categories` (`id`)
+  CONSTRAINT `FKe05mpyhp4howtq8q4s65wm3q8` FOREIGN KEY (`product_category_id`) REFERENCES `product_categories` (`id`),
+  UNIQUE KEY `uk_products_sku` (`sku`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE IF NOT EXISTS `purchase_items` (
   `id` bigint NOT NULL AUTO_INCREMENT,
@@ -602,6 +614,7 @@ CREATE TABLE IF NOT EXISTS `user_mfa_devices` (
   `locked_until` datetime(6) DEFAULT NULL,
   `enrolled_at` datetime(6) DEFAULT NULL,
   `last_used_at` datetime(6) DEFAULT NULL,
+  `last_used_step` bigint DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_mfa_user` (`user_id`),
   KEY `idx_mfa_user_enabled` (`user_id`, `enabled`)
@@ -769,6 +782,7 @@ CREATE TABLE IF NOT EXISTS `users` (
   `password` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
   `role` enum('ADMIN','OWNER','USER') COLLATE utf8mb4_unicode_ci NOT NULL,
   `username` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `tokens_valid_after` datetime(6) DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_users_mobile` (`mobile_number`),
   UNIQUE KEY `uk_users_email` (`email_id`),

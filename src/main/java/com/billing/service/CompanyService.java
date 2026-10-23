@@ -13,7 +13,7 @@ import com.billing.exception.BadRequestException;
 import com.billing.multitenancy.TenantContextHolder;
 import com.billing.repository.CompanyRepository;
 import com.billing.repository.CompanyThemeSettingRepository;
-import com.billing.service.storage.S3StorageService;
+import com.billing.service.storage.TenantImageService;
 import com.billing.util.CompanyFileJson;
 import com.billing.util.DataTypeUtility;
 import lombok.RequiredArgsConstructor;
@@ -34,8 +34,7 @@ public class CompanyService {
     private final CompanyThemeSettingRepository companyThemeSettingRepository;
     private final StateMasterService stateMasterService;
     private final AuditLogService auditLogService;
-    private final S3StorageService s3StorageService;
-    private static final Set<String> LOGO_CONTENT_TYPES = Set.of("image/jpeg", "image/png", "image/webp");
+    private final TenantImageService tenantImageService;
 
     /**
      * Current tenant's company for public surfaces (login page branding).
@@ -111,10 +110,10 @@ public class CompanyService {
             if (companyOpt.isPresent()) {
                 Company c = companyOpt.get();
                 java.util.Map<String, Object> map = new java.util.HashMap<>();
-                map.put("id", c.getId());
+                // Public (bina login) endpoint: sirf branding fields. databaseName/id
+                // internal hain, inse DB naam pata chalta tha.
                 map.put("name", c.getName());
                 map.put("code", c.getCode());
-                map.put("databaseName", c.getDatabaseName());
                 map.put("email", c.getEmail());
                 map.put("logoUrl", CompanyFileJson.extractUrl(c.getLogoUrl()));
                 map.put("active", c.isActive());
@@ -455,7 +454,7 @@ public class CompanyService {
         String oldDbValue = company.getSignatureUrl();
         company.setSignatureUrl(null);
         CompanySummary summary = toSummary(companyRepository.save(company));
-        deleteFile(oldDbValue);
+        tenantImageService.delete(oldDbValue);
         return summary;
     }
 
@@ -470,26 +469,15 @@ public class CompanyService {
      * DB save ke BAAD, taaki failed upload kabhi data orphan na kare.
      */
     private CompanySummary saveImage(Company company, MultipartFile file, String slot, boolean logo) {
-        if (file == null || file.isEmpty()) {
-            throw new BadRequestException((logo ? "Logo" : "Signature") + " file is required");
-        }
-        String contentType = DataTypeUtility.stringValue(file.getContentType()).toLowerCase(Locale.ROOT);
-        if (!LOGO_CONTENT_TYPES.contains(contentType)) {
-            throw new BadRequestException("Only JPG, PNG, and WEBP images are allowed");
-        }
-        CompanyFileInfo meta = s3StorageService.store(company, slot, file);
         String oldDbValue = logo ? company.getLogoUrl() : company.getSignatureUrl();
+        String nextDbValue = tenantImageService.store(company, slot, file, oldDbValue, logo ? "Logo" : "Signature");
         if (logo) {
-            company.setLogoUrl(CompanyFileJson.toJson(meta));
+            company.setLogoUrl(nextDbValue);
         } else {
-            company.setSignatureUrl(CompanyFileJson.toJson(meta));
+            company.setSignatureUrl(nextDbValue);
         }
         CompanySummary summary = toSummary(companyRepository.save(company));
-        String newKey = DataTypeUtility.stringValue(meta.getKey());
-        String oldKey = DataTypeUtility.stringValue(CompanyFileJson.extractKey(oldDbValue));
-        if (!newKey.equals(oldKey)) {
-            deleteFile(oldDbValue);
-        }
+        tenantImageService.cleanupReplaced(oldDbValue, nextDbValue);
         return summary;
     }
 
@@ -499,36 +487,8 @@ public class CompanyService {
         String oldDbValue = company.getLogoUrl();
         company.setLogoUrl(null);
         CompanySummary summary = toSummary(companyRepository.save(company));
-        deleteFile(oldDbValue);
+        tenantImageService.delete(oldDbValue);
         return summary;
-    }
-
-    /**
-     * Best-effort cleanup of a previously stored image. New JSON rows: S3 key
-     * delete (S3 on) ya local relative-path delete (S3 off). Legacy plain
-     * {@code /uploads/...} rows: URL se derived local path delete. Never throws.
-     */
-    private void deleteFile(String dbValue) {
-        if (DataTypeUtility.stringValue(dbValue).length() == 0) {
-            return;
-        }
-        try {
-            String key = CompanyFileJson.extractKey(dbValue);
-            if (key != null) {
-                if (s3StorageService.isEnabled()) {
-                    s3StorageService.deleteByKey(key);
-                    return;
-                }
-                s3StorageService.deleteLocalPath(key);
-                return;
-            }
-            String relativePath = CompanyFileJson.extractRelativePath(dbValue);
-            if (relativePath != null) {
-                s3StorageService.deleteLocalPath(relativePath);
-            }
-        } catch (Exception ignored) {
-            // Cleanup must never break the main flow.
-        }
     }
 
     @Transactional(readOnly = true)

@@ -10,8 +10,12 @@ import com.billing.dto.payment.PaymentResponse;
 import com.billing.entity.Customer;
 import com.billing.entity.Invoice;
 import com.billing.entity.User;
+import com.billing.entity.enums.PaymentSource;
 import com.billing.exception.BadRequestException;
+import com.billing.repository.InvoiceRepository;
 import com.billing.repository.PaymentRepository;
+import com.billing.service.payment.PaymentEntry;
+import com.billing.service.payment.PaymentRecordingService;
 import com.billing.util.DataTypeUtility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -37,6 +41,8 @@ public class PaymentService {
     private final AuditLogService auditLogService;
     private final PaymentModeMasterService paymentModeMasterService;
     private final AuditNameResolver auditNameResolver;
+    private final InvoiceRepository invoiceRepository;
+    private final PaymentRecordingService paymentRecordingService;
 
     @Transactional
     public PaymentResponse create(String email, PaymentRequest request) {
@@ -44,31 +50,18 @@ public class PaymentService {
         Customer customer = customerService.getCustomerOrThrow(company, request.getCustomerId());
         Invoice invoice = resolveInvoice(company, request.getInvoiceId(), customer);
         BigDecimal amount = requirePositiveAmount(request.getAmount());
+        requirePaymentDate(request);
         paymentModeMasterService.ensureDefaults(company);
-        String mode = paymentModeMasterService.requireActiveModeCode(company, request.getMode());
+        String mode = paymentModeMasterService.requireActiveOfflineModeCode(company, request.getMode());
+        PaymentEntry entry = new PaymentEntry(company, email, null, customer, invoice, amount, request.getPaymentDate(),
+                mode, request.getRemarks(), request.getReferenceNo(), PaymentSource.MANUAL, null);
 
-        customerService.decreaseBalance(customer, amount);
-        BigDecimal oldOutstanding = invoice != null ? scale(invoice.getBalanceAmount()) : null;
-        if (invoice != null) {
-            invoiceService.applyPayment(invoice, amount);
+        if (invoice == null) {
+            // Invoice select kiye bina: customer ke open invoices par FIFO (sabse purana pehle),
+            // har invoice ki alag Payment row; bacha amount unlinked rehta hai.
+            return toResponse(paymentRecordingService.recordAllocated(entry).get(0));
         }
-
-        Payment payment = Payment.builder()
-                .company(company)
-                .customer(customer)
-                .invoice(invoice)
-                .amount(amount)
-                .paymentDate(request.getPaymentDate())
-                .mode(mode)
-                .remarks(request.getRemarks())
-                .build();
-
-        Payment saved = paymentRepository.save(payment);
-        auditLogService.logCreate(email, company, "Payment", "Payment", saved.getId(), snapshot(saved));
-        if (invoice != null) {
-            invoiceService.logPaymentApplied(email, company, invoice, amount, oldOutstanding, invoice.getBalanceAmount(), saved.getMode());
-        }
-        return toResponse(saved);
+        return toResponse(paymentRecordingService.record(entry));
     }
 
     @Transactional(readOnly = true)
@@ -82,7 +75,7 @@ public class PaymentService {
 
     @Transactional(readOnly = true)
     public PageResponse<PaymentResponse> page(String email, int page, int size) {
-        return page(email, null, null, null, null, null, null, null, null, null, "ACTIVE", page, size);
+        return page(email, null, null, null, null, null, null, null, null, null, null, "ACTIVE", page, size);
     }
 
     @Transactional(readOnly = true)
@@ -119,6 +112,8 @@ public class PaymentService {
             } catch (Exception ignore) {
             }
         }
+        // Invoice detail page sirf us invoice ke payments maangta hai (pehle saare laakar filter hota tha).
+        Long invoiceId = DataTypeUtility.getForeignKeyValue(param.get("invoiceId"));
         String recordStatus = DataTypeUtility.stringValue(param.get("recordStatus"));
         if (recordStatus.length() == 0) {
             recordStatus = "ACTIVE";
@@ -128,7 +123,7 @@ public class PaymentService {
         if (size == 0) {
             size = 20;
         }
-        return page(email, search, paymentStatus, startDate, endDate, minAmount, maxAmount, mode, invoiceLinked, createdByRole, recordStatus, page, size);
+        return page(email, search, paymentStatus, startDate, endDate, minAmount, maxAmount, mode, invoiceLinked, createdByRole, invoiceId, recordStatus, page, size);
     }
 
     @Transactional(readOnly = true)
@@ -142,6 +137,7 @@ public class PaymentService {
                                               String mode,
                                               Boolean invoiceLinked,
                                               RoleName createdByRole,
+                                              Long invoiceId,
                                               String recordStatus,
                                               int page,
                                               int size) {
@@ -169,6 +165,7 @@ public class PaymentService {
                 blankToNull(mode) == null ? null : blankToNull(mode).toUpperCase(java.util.Locale.ENGLISH),
                 invoiceLinked,
                 createdByRole,
+                invoiceId,
                 pageable
         ).map(this::toResponse));
     }
@@ -187,6 +184,9 @@ public class PaymentService {
         if (payment.isDeleted()) {
             throw new BadRequestException("Restore payment before editing it");
         }
+        if (payment.getSource() == PaymentSource.GATEWAY) {
+            throw new BadRequestException("Online gateway payments cannot be edited");
+        }
         Map<String, Object> oldData = snapshot(payment);
         Invoice previousInvoice = payment.getInvoice();
         BigDecimal previousAmount = scale(payment.getAmount());
@@ -197,8 +197,14 @@ public class PaymentService {
         Customer customer = customerService.getCustomerOrThrow(company, request.getCustomerId());
         Invoice invoice = resolveInvoice(company, request.getInvoiceId(), customer);
         BigDecimal amount = requirePositiveAmount(request.getAmount());
+        requirePaymentDate(request);
+        if (invoice == null && !invoiceRepository.lockOpenInvoicesOldestFirst(customer).isEmpty()) {
+            // Edit me auto-split nahi (ek payment row = ek invoice). Bina invoice ke
+            // customer balance ghatta aur invoice UNPAID reh jata tha.
+            throw new BadRequestException("This customer has unpaid invoices. Select the invoice this payment is for.");
+        }
         paymentModeMasterService.ensureDefaults(company);
-        String mode = paymentModeMasterService.requireActiveModeCode(company, request.getMode());
+        String mode = paymentModeMasterService.requireActiveOfflineModeCode(company, request.getMode());
 
         customerService.decreaseBalance(customer, amount);
         BigDecimal nextOldOutstanding = invoice != null && invoice.equals(previousInvoice) && previousOutstanding != null
@@ -214,6 +220,7 @@ public class PaymentService {
         payment.setPaymentDate(request.getPaymentDate());
         payment.setMode(mode);
         payment.setRemarks(request.getRemarks());
+        payment.setReferenceNo(blankToNull(request.getReferenceNo()));
 
         Payment saved = paymentRepository.save(payment);
         auditLogService.logUpdate(email, company, "Payment", "Payment", saved.getId(), oldData, snapshot(saved));
@@ -261,9 +268,12 @@ public class PaymentService {
     @Transactional
     public PaymentResponse restore(String email, Long paymentId) {
         Company company = accessControlService.getCurrentCompany(email);
-        Payment payment = getPaymentOrThrow(company, paymentId);
+        Payment payment = getPaymentIncludingDeleted(paymentId);
         if (!payment.isDeleted()) {
             return toResponse(payment);
+        }
+        if (payment.getInvoice() != null && payment.getInvoice().isDeleted()) {
+            throw new BadRequestException("Restore the invoice first");
         }
         Map<String, Object> oldData = snapshot(payment);
         reapplyPayment(payment);
@@ -271,6 +281,12 @@ public class PaymentService {
         Payment saved = paymentRepository.save(payment);
         auditLogService.logCustomUpdate(email, company, "Payment", "Payment", paymentId, "PAYMENT_RESTORED", oldData, snapshot(saved));
         return toResponse(saved);
+    }
+
+    // Restore hi ek path hai jise deleted row chahiye; baaki sab ke liye deleted = not found.
+    private Payment getPaymentIncludingDeleted(Long paymentId) {
+        return paymentRepository.findById(paymentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Payment not found"));
     }
 
     private Payment getPaymentOrThrow(Company company, Long paymentId) {
@@ -334,6 +350,10 @@ public class PaymentService {
                 .paymentDate(payment.getPaymentDate())
                 .mode(payment.getMode())
                 .remarks(payment.getRemarks())
+                .referenceNo(payment.getReferenceNo())
+                .source(payment.getSource() == null ? PaymentSource.MANUAL.name() : payment.getSource().name())
+                .transactionRef(payment.getPaymentTransaction() != null ? payment.getPaymentTransaction().getTxnRef() : null)
+                .gatewayType(payment.getPaymentTransaction() != null ? payment.getPaymentTransaction().getGatewayType().name() : null)
                 .deleted(payment.isDeleted())
                 .createdAt(payment.getCreatedAt())
                 .createdBy(auditNameResolver.displayName(payment.getCreatedBy()))
@@ -341,17 +361,7 @@ public class PaymentService {
     }
 
     private Map<String, Object> snapshot(Payment payment) {
-        Map<String, Object> data = new LinkedHashMap<>();
-        data.put("customerId", payment.getCustomer().getId());
-        data.put("customerName", payment.getCustomer().getName());
-        data.put("invoiceId", payment.getInvoice() != null ? payment.getInvoice().getId() : null);
-        data.put("invoiceNo", payment.getInvoice() != null ? payment.getInvoice().getInvoiceNo() : null);
-        data.put("amount", scale(payment.getAmount()));
-        data.put("paymentDate", payment.getPaymentDate());
-        data.put("mode", payment.getMode());
-        data.put("remarks", payment.getRemarks());
-        data.put("deleted", payment.isDeleted());
-        return data;
+        return paymentRecordingService.snapshot(payment);
     }
 
     private Boolean resolveDeletedFilter(String recordStatus) {
@@ -385,6 +395,12 @@ public class PaymentService {
 
     private BigDecimal scale(BigDecimal value) {
         return value == null ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP) : value.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private void requirePaymentDate(PaymentRequest request) {
+        if (request.getPaymentDate() == null) {
+            throw new BadRequestException("Payment date is required");
+        }
     }
 
     private BigDecimal requirePositiveAmount(BigDecimal value) {
@@ -425,6 +441,11 @@ public class PaymentService {
             remarks = null;
         }
         paymentRequest.setRemarks(remarks);
+        String referenceNo = DataTypeUtility.stringValue(param.get("referenceNo"));
+        if (referenceNo.length() == 0) {
+            referenceNo = null;
+        }
+        paymentRequest.setReferenceNo(referenceNo);
         return paymentRequest;
     }
 }
