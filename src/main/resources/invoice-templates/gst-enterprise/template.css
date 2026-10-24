@@ -1,39 +1,82 @@
-@page { size: A4; margin: 9mm; }
-body { margin: 0; background: #eef2f7; color: #1e293b; font-family: "Calibri", "Segoe UI", Arial, sans-serif; font-size: 11px; }
-.sheet { background: #fff; position: relative; }
-.watermark { position: fixed; top: 42%; left: 12%; font-size: 82px; color: rgba(30, 41, 59, 0.12); font-weight: 900; transform: rotate(-32deg); letter-spacing: 0.16em; z-index: 5; pointer-events: none; }
-.header-box, .party-grid, .items-table, .compliance-grid, .closing-grid, .footer { position: relative; z-index: 1; }
-.header-box, .party-grid, .compliance-grid, .closing-grid { display: grid; gap: 10px; }
-.header-box { grid-template-columns: 1.25fr 0.95fr; margin-bottom: 10px; }
-.company-box, .invoice-box, .box, .totals-box, .tools-box { border: 1px solid #cfd8e3; background: #fff; }
-.company-box { display: grid; grid-template-columns: 72px 1fr; gap: 12px; padding: 12px; }
-.logo-cell { display: flex; align-items: center; justify-content: center; background: #f8fafc; }
-.logo { width: 56px; height: 56px; object-fit: contain; }
-.caption { font-size: 9px; text-transform: uppercase; letter-spacing: 0.14em; color: #64748b; font-weight: 800; margin-bottom: 6px; }
-.company-box h1 { margin: 0 0 4px; font-size: 20px; }
-.company-box p, .box p { margin: 3px 0; color: #475569; }
-.invoice-box { padding: 12px; }
-.heading { font-size: 20px; font-weight: 800; margin-bottom: 8px; }
-.meta-table, .summary-table, .items-table { width: 100%; border-collapse: collapse; }
-.meta-table th, .meta-table td { text-align: left; padding: 5px 0; border-bottom: 1px solid #e2e8f0; }
-.meta-table th { width: 44%; color: #64748b; font-weight: 700; }
-.party-grid { grid-template-columns: 1.25fr 0.9fr; margin-bottom: 10px; }
-.box { padding: 10px 12px; }
-.box h3 { margin: 0 0 4px; font-size: 16px; }
-.items-table { margin-bottom: 10px; }
-.items-table thead th { background: #1e293b; color: #fff; padding: 8px 6px; font-size: 9px; text-transform: uppercase; letter-spacing: 0.12em; }
-.items-table tbody td { border: 1px solid #e2e8f0; padding: 7px 6px; vertical-align: top; }
-.small { margin-top: 3px; color: #64748b; font-size: 10px; }
-.closing-grid { grid-template-columns: 1.05fr 0.95fr; align-items: start; }
-.left-stack, .right-stack { display: grid; gap: 10px; }
-.totals-box { padding: 12px; background: #f8fafc; }
-.totals-box .line, .totals-box .grand { display: flex; justify-content: space-between; margin: 6px 0; }
-.totals-box .grand { padding-top: 8px; margin-top: 8px; border-top: 2px solid #94a3b8; font-size: 14px; font-weight: 800; }
-.tools-box { padding: 12px; display: grid; gap: 12px; justify-items: center; }
-.qr { width: 92px; height: 92px; object-fit: contain; }
-.signature { width: 100%; text-align: center; }
-.signature-heading { margin: 0 0 8px; font-size: 11px; font-weight: 700; color: #475569; }
-.signature-img { max-width: 120px; max-height: 42px; object-fit: contain; }
-.sig-line { border-top: 1px solid #94a3b8; margin-top: 10px; }
-.footer { display: flex; justify-content: space-between; margin-top: 10px; color: #64748b; font-size: 10px; }
-.page-number::after { content: counter(page); }
+/* Detailed GST + Payments - everything on one sheet: IDs, payment summary, HSN summary, bank + UPI, declaration. Tables only. */
+@page {
+  size: A4;
+  margin: 10mm 10mm 12mm 10mm;
+  @bottom-center { content: "Page " counter(page) " of " counter(pages); font-family: Helvetica, Arial, sans-serif; font-size: 7.5pt; color: #94a3b8; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: #ffffff; }
+body { font-family: Helvetica, Arial, sans-serif; font-size: 8.4pt; color: #475569; line-height: 1.38; }
+@media screen { .page { max-width: 210mm; margin: 0 auto; padding: 10mm; } }
+table { width: 100%; border-collapse: collapse; }
+td, th { vertical-align: top; padding: 0; }
+.watermark { position: fixed; top: 40%; left: 0; width: 100%; text-align: center; font-size: 76pt; font-weight: bold; color: #ecf6f0; transform: rotate(-28deg); letter-spacing: 6pt; }
+.muted { color: #64748b; }
+.ink { color: #0f172a; }
+.strong { font-weight: bold; }
+.small { font-size: 7.6pt; }
+.c { text-align: center !important; }
+.r { text-align: right !important; }
+.pre { white-space: pre-line; }
+.label { font-size: 6.8pt; font-weight: bold; text-transform: uppercase; letter-spacing: 1pt; color: #15803d; margin-bottom: 3pt; }
+.plain td { padding: 0; vertical-align: middle; }
+
+.head { border-bottom: 2pt solid #0f172a; margin-bottom: 6pt; }
+.head > tbody > tr > td, .head > tr > td { padding-bottom: 8pt; vertical-align: middle; }
+.logo-cell { width: 56pt; }
+.logo { height: 44pt; width: auto; }
+.company-name { font-size: 13.5pt; font-weight: bold; color: #0f172a; }
+.ids { margin-top: 2pt; }
+.title-cell { text-align: right; width: 30%; }
+.doc-title { font-size: 17pt; font-weight: bold; color: #0f172a; text-transform: uppercase; letter-spacing: 1pt; }
+.copy { font-size: 7pt; letter-spacing: 1pt; color: #15803d; font-weight: bold; margin-top: 2pt; }
+
+.meta { background: #f8fafc; border: 1px solid #e2e8f0; margin-bottom: 6pt; }
+.meta td { padding: 4pt 8pt; border-right: 1px solid #e2e8f0; width: 20%; }
+.k { font-size: 6.8pt; text-transform: uppercase; letter-spacing: 0.6pt; color: #64748b; }
+.v { font-weight: bold; color: #0f172a; font-size: 8.6pt; }
+.status { color: #15803d; }
+
+.parties { margin-bottom: 8pt; }
+.box { border: 1px solid #e2e8f0; padding: 7pt 9pt !important; }
+.spacer { width: 8pt; }
+.party { font-size: 10.5pt; font-weight: bold; color: #0f172a; }
+.pay-box { width: 36%; background: #f0fdf4; border-color: #bbf7d0; }
+.kv td { padding: 1pt 4pt 1pt 0; }
+.kv td:first-child { color: #64748b; }
+.due-row td { font-weight: bold; color: #15803d !important; font-size: 9.6pt; border-top: 1px solid #bbf7d0; padding-top: 3pt; }
+
+.items { -fs-table-paginate: paginate; border: 1px solid #cbd5e1; }
+.items thead { display: table-header-group; }
+.items th { background: #0f172a; color: #ffffff; font-size: 7pt; text-transform: uppercase; padding: 5pt 4pt; text-align: left; }
+.items td { padding: 3.2pt 4pt; border-bottom: 1px solid #e2e8f0; font-size: 8pt; }
+.items tr { page-break-inside: avoid; }
+.sku { font-size: 6.8pt; color: #94a3b8; }
+
+.summary { margin-top: 8pt; page-break-inside: avoid; }
+.sum-left { width: 60%; padding-right: 10pt !important; }
+.hsn { border: 1px solid #e2e8f0; }
+.hsn th { background: #f1f5f9; font-size: 6.8pt; text-transform: uppercase; color: #334155; padding: 3pt 4pt; text-align: left; }
+.hsn td { padding: 2.2pt 4pt; font-size: 7.6pt; border-top: 1px solid #f1f5f9; }
+.words-box { margin-top: 6pt; padding: 5pt 7pt; background: #f8fafc; border-left: 3pt solid #15803d; }
+.totals { border: 1px solid #cbd5e1; }
+.totals td { padding: 3pt 8pt; border-bottom: 1px solid #f1f5f9; }
+.totals td:first-child { color: #64748b; }
+.totals .grand td { background: #15803d; color: #ffffff; font-weight: bold; font-size: 11pt; padding: 6pt 8pt; }
+
+.payments { margin-top: 8pt; border: 1px dashed #94a3b8; page-break-inside: avoid; }
+.payments > tbody > tr > td, .payments > tr > td { padding: 7pt 9pt; }
+.bank .kv td { font-size: 7.8pt; }
+.qr { width: 40%; border-left: 1px dashed #94a3b8; }
+.qr-img { width: 64pt; height: 64pt; }
+.qr-text { padding-left: 8pt !important; }
+
+.closing { margin-top: 8pt; page-break-inside: avoid; }
+.terms-col { width: 34%; padding-right: 10pt !important; font-size: 7.4pt; }
+.note { margin-top: 5pt; }
+.declaration { margin-top: 4pt; font-size: 7pt; font-style: italic; color: #64748b; }
+.sign-col { width: 32%; border: 1px solid #e2e8f0; text-align: center; padding: 7pt !important; }
+.sign-space { height: 34pt; padding-top: 2pt; }
+.signature { height: 30pt; width: auto; }
+.sign-label { border-top: 1px solid #94a3b8; padding-top: 3pt; font-size: 8pt; }
+.credit { margin-top: 6pt; text-align: center; font-size: 7pt; color: #94a3b8; }

@@ -121,6 +121,9 @@ public class ReminderService {
     public ReminderHistoryResponse sendReminder(String email, ReminderSendRequest request) {
         Company company = accessControlService.getCurrentCompany(email);
         Customer customer = customerService.getCustomerOrThrow(company, request.getCustomerId());
+        if (!customer.isActive()) {
+            throw new BadRequestException("Reminder cannot be sent to an inactive customer");
+        }
 
         if (customer.getCurrentBalance().compareTo(BigDecimal.ZERO) <= 0) {
             throw new BadRequestException("Reminder can only be sent to customers with outstanding balance");

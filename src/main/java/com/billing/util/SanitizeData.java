@@ -35,6 +35,29 @@ public class SanitizeData {
         return sanitizeMap;
     }
 
+    /**
+     * Secret fields (password, OTP, token) jo hash/compare hote hain, kabhi
+     * HTML-clean nahi hone chahiye: Jsoup "a<b" ko "a" aur "a>b" ko "a&gt;b"
+     * bana deta tha, phir login raw password se match nahi karta tha.
+     */
+    public static final java.util.Set<String> SECRET_KEYS = java.util.Set.of(
+            "password", "newPassword", "confirmPassword", "confirm_password", "currentPassword",
+            "refreshToken", "otp", "code", "mfaToken");
+
+    public static Map<String, Object> sanitizeMapObjPreservingSecrets(Map<String, Object> map) {
+        if (map == null) {
+            return new HashMap<>();
+        }
+        Map<String, Object> sanitized = sanitizeMapObj(map);
+        for (String key : SECRET_KEYS) {
+            Object raw = map.get(key);
+            if (raw != null) {
+                sanitized.put(key, raw.toString());
+            }
+        }
+        return sanitized;
+    }
+
     private static Object sanitizeValue(String paramName, Object value, int depth) {
         if (value == null) {
             return null;

@@ -22,6 +22,9 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class ProductSubCategoryService {
 
+    // Delete soft hota hai (record inactive rehta hai), isliye duplicate par user ko reactivate ka rasta batao.
+    static final String DUPLICATE_SUB_CATEGORY_MESSAGE = "This sub category already exists in the selected category. If it was deleted, set the Status filter to All and reactivate it.";
+
     private final ProductSubCategoryRepository productSubCategoryRepository;
     private final ProductCategoryService productCategoryService;
     private final AccessControlService accessControlService;
@@ -79,10 +82,11 @@ public class ProductSubCategoryService {
     @Transactional
     public ProductSubCategoryResponse create(String email, ProductSubCategoryRequest request) {
         Company company = accessControlService.requireOwnerCompany(email);
-        ProductCategory category = productCategoryService.getCategoryOrThrow(company, request.getCategoryId());
+        // Inactive category me nayi sub category nahi (UI bhi sirf active categories dikhata hai).
+        ProductCategory category = productCategoryService.getActiveByIdOrThrow(company, request.getCategoryId());
         String subCategoryName = normalizeName(request.getSubCategoryName());
         if (productSubCategoryRepository.existsByCompanyAndProductCategoryAndSubCategoryNameIgnoreCase(company, category, subCategoryName)) {
-            throw new BadRequestException("Product sub category already exists in this category");
+            throw new BadRequestException(DUPLICATE_SUB_CATEGORY_MESSAGE);
         }
 
         ProductSubCategory subCategory = ProductSubCategory.builder()
@@ -101,10 +105,14 @@ public class ProductSubCategoryService {
     public ProductSubCategoryResponse update(String email, Long subCategoryId, ProductSubCategoryRequest request) {
         Company company = accessControlService.requireOwnerCompany(email);
         ProductSubCategory subCategory = getSubCategoryOrThrow(company, subCategoryId);
-        ProductCategory category = productCategoryService.getCategoryOrThrow(company, request.getCategoryId());
+        // Category badli ho to nayi category active honi chahiye; wahi rahi to inactive category ki sub bhi edit ho sake.
+        boolean categoryChanged = subCategory.getProductCategory() == null || !subCategory.getProductCategory().getId().equals(request.getCategoryId());
+        ProductCategory category = categoryChanged
+                ? productCategoryService.getActiveByIdOrThrow(company, request.getCategoryId())
+                : productCategoryService.getCategoryOrThrow(company, request.getCategoryId());
         String subCategoryName = normalizeName(request.getSubCategoryName());
         if (productSubCategoryRepository.existsByCompanyAndProductCategoryAndSubCategoryNameIgnoreCaseAndIdNot(company, category, subCategoryName, subCategoryId)) {
-            throw new BadRequestException("Product sub category already exists in this category");
+            throw new BadRequestException(DUPLICATE_SUB_CATEGORY_MESSAGE);
         }
 
         Map<String, Object> oldData = productSubCategoryMapper.snapshot(subCategory);

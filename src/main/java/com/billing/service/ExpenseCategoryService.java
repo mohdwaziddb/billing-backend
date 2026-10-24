@@ -21,6 +21,9 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class ExpenseCategoryService {
 
+    // Delete soft hota hai (record inactive rehta hai), isliye duplicate par user ko reactivate ka rasta batao.
+    static final String DUPLICATE_CATEGORY_MESSAGE = "An expense category with this name already exists. If it was deleted, set the Status filter to All and reactivate it.";
+
     private final ExpenseCategoryRepository expenseCategoryRepository;
     private final AccessControlService accessControlService;
     private final AuditLogService auditLogService;
@@ -72,7 +75,7 @@ public class ExpenseCategoryService {
         Company company = accessControlService.getCurrentCompany(email);
         String categoryName = normalizeName(request.getCategoryName());
         if (expenseCategoryRepository.existsByCompanyAndCategoryNameIgnoreCase(company, categoryName)) {
-            throw new BadRequestException("Expense category already exists");
+            throw new BadRequestException(DUPLICATE_CATEGORY_MESSAGE);
         }
         ExpenseCategory category = ExpenseCategory.builder()
                 .company(company)
@@ -98,7 +101,7 @@ public class ExpenseCategoryService {
         Map<String, Object> oldData = snapshot(category);
         String categoryName = normalizeName(request.getCategoryName());
         if (expenseCategoryRepository.existsByCompanyAndCategoryNameIgnoreCaseAndIdNot(company, categoryName, categoryId)) {
-            throw new BadRequestException("Expense category already exists");
+            throw new BadRequestException(DUPLICATE_CATEGORY_MESSAGE);
         }
         category.setCategoryName(categoryName);
         category.setDescription(blankToNull(request.getDescription()));

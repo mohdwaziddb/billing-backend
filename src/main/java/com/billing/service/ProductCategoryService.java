@@ -22,6 +22,9 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class ProductCategoryService {
 
+    // Delete soft hota hai (record inactive rehta hai), isliye duplicate par user ko reactivate ka rasta batao.
+    static final String DUPLICATE_CATEGORY_MESSAGE = "A product category with this name already exists. If it was deleted, set the Status filter to All and reactivate it.";
+
     private final ProductCategoryRepository productCategoryRepository;
     private final AccessControlService accessControlService;
     private final AuditLogService auditLogService;
@@ -75,7 +78,7 @@ public class ProductCategoryService {
         Company company = requireOwnerCompany(email);
         String categoryName = normalizeName(request.getCategoryName());
         if (productCategoryRepository.existsByCompanyAndCategoryNameIgnoreCase(company, categoryName)) {
-            throw new BadRequestException("Product category already exists");
+            throw new BadRequestException(DUPLICATE_CATEGORY_MESSAGE);
         }
 
         ProductCategory category = ProductCategory.builder()
@@ -96,7 +99,7 @@ public class ProductCategoryService {
         Map<String, Object> oldData = snapshot(category);
         String categoryName = normalizeName(request.getCategoryName());
         if (productCategoryRepository.existsByCompanyAndCategoryNameIgnoreCaseAndIdNot(company, categoryName, categoryId)) {
-            throw new BadRequestException("Product category already exists");
+            throw new BadRequestException(DUPLICATE_CATEGORY_MESSAGE);
         }
 
         category.setCategoryName(categoryName);

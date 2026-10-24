@@ -48,6 +48,7 @@ public class PaymentService {
     public PaymentResponse create(String email, PaymentRequest request) {
         Company company = accessControlService.getCurrentCompany(email);
         Customer customer = customerService.getCustomerOrThrow(company, request.getCustomerId());
+        requireActiveCustomer(customer);
         Invoice invoice = resolveInvoice(company, request.getInvoiceId(), customer);
         BigDecimal amount = requirePositiveAmount(request.getAmount());
         requirePaymentDate(request);
@@ -195,6 +196,7 @@ public class PaymentService {
         revertPayment(payment);
 
         Customer customer = customerService.getCustomerOrThrow(company, request.getCustomerId());
+        requireActiveCustomer(customer);
         Invoice invoice = resolveInvoice(company, request.getInvoiceId(), customer);
         BigDecimal amount = requirePositiveAmount(request.getAmount());
         requirePaymentDate(request);
@@ -320,6 +322,13 @@ public class PaymentService {
         customerService.increaseBalance(payment.getCustomer(), amount);
         if (payment.getInvoice() != null) {
             invoiceService.reversePayment(payment.getInvoice(), amount);
+        }
+    }
+
+    // Invoice create aur payment restore jaisa hi rule: inactive customer par nayi payment nahi.
+    private void requireActiveCustomer(Customer customer) {
+        if (!customer.isActive()) {
+            throw new BadRequestException("Customer is inactive. Activate the customer before recording a payment.");
         }
     }
 

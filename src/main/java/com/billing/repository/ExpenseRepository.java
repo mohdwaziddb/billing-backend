@@ -15,33 +15,41 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
+// Expense soft delete hota hai (is_deleted): har query me "e.deleted = false" — warna
+// deleted kharcha Dashboard / P&L / Analytics / Payment Hierarchy me gina jata.
 public interface ExpenseRepository extends JpaRepository<Expense, Long> {
 
     @EntityGraph(attributePaths = {"category", "customer", "invoice"})
-    @Query("select e from Expense e where (:company is null or 1=1) order by e.expenseDate desc, e.id desc")
+    @Query("select e from Expense e where (:company is null or 1=1) and e.deleted = false order by e.expenseDate desc, e.id desc")
     List<Expense> findByCompanyOrderByExpenseDateDescIdDesc(@Param("company") Company company);
 
     // Reports: date range DB me filter.
     @EntityGraph(attributePaths = {"category", "customer", "invoice"})
     @Query("""
             select e from Expense e
-            where (:startDate is null or e.expenseDate >= :startDate)
+            where e.deleted = false
+              and (:startDate is null or e.expenseDate >= :startDate)
               and (:endDate is null or e.expenseDate <= :endDate)
             order by e.expenseDate desc, e.id desc
             """)
     List<Expense> findInRange(@Param("startDate") java.time.LocalDate startDate, @Param("endDate") java.time.LocalDate endDate);
 
     @EntityGraph(attributePaths = {"category", "customer", "invoice"})
+    @Query("select e from Expense e where e.deleted = false order by e.expenseDate desc, e.id desc")
     List<Expense> findAllByOrderByExpenseDateDescIdDesc();
 
-    @Query("select coalesce(sum(e.amount), 0) from Expense e")
-    BigDecimal sumTotalAmount();    @Query(
+    @Query("select coalesce(sum(e.amount), 0) from Expense e where e.deleted = false")
+    BigDecimal sumTotalAmount();
+
+    /** deleted: false = sirf active (default), true = sirf deleted, null = sab. */
+    @Query(
             value = """
                     select e from Expense e
                     left join e.category category
                     left join e.customer customer
                     left join e.invoice invoice
                     where (:company is null or 1=1)
+                      and (:deleted is null or e.deleted = :deleted)
                       and (:search is null
                         or lower(coalesce(e.description, '')) like lower(concat('%', :search, '%'))
                         or lower(category.categoryName) like lower(concat('%', :search, '%'))
@@ -66,6 +74,7 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long> {
                     left join e.customer customer
                     left join e.invoice invoice
                     where (:company is null or 1=1)
+                      and (:deleted is null or e.deleted = :deleted)
                       and (:search is null
                         or lower(coalesce(e.description, '')) like lower(concat('%', :search, '%'))
                         or lower(category.categoryName) like lower(concat('%', :search, '%'))
@@ -94,5 +103,6 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long> {
                                  @Param("startDate") LocalDate startDate,
                                  @Param("endDate") LocalDate endDate,
                                  @Param("createdByRole") RoleName createdByRole,
+                                 @Param("deleted") Boolean deleted,
                                  Pageable pageable);
 }

@@ -1,0 +1,23 @@
+{
+  "templateId": "thermal-80mm",
+  "templateName": "Retail Receipt 80mm",
+  "version": "1.0.0",
+  "description": "POS-style thermal receipt for 80mm roll printers with GST summary and UPI QR - for retail counters and kirana stores.",
+  "author": "Bizio",
+  "category": "Retail",
+  "sortOrder": 5,
+  "supportsWatermark": false,
+  "supportsQr": true,
+  "supportsSignature": false,
+  "supportsBankDetails": false,
+  "supportsTerms": true,
+  "supportsNotes": true,
+  "supportsGst": true,
+  "supportsMultiPage": true,
+  "supportedPaperSizes": ["80mm"],
+  "defaultColors": {
+    "accent": "#000000",
+    "muted": "#444444",
+    "surface": "#ffffff"
+  }
+}

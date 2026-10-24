@@ -1,0 +1,23 @@
+{
+  "templateId": "bold-accent",
+  "templateName": "Bold Accent",
+  "version": "1.0.0",
+  "description": "Oversized title, orange accent bar and a charcoal total-due block - a confident look for startups and D2C brands.",
+  "author": "Bizio",
+  "category": "Modern",
+  "sortOrder": 8,
+  "supportsWatermark": true,
+  "supportsQr": true,
+  "supportsSignature": true,
+  "supportsBankDetails": true,
+  "supportsTerms": true,
+  "supportsNotes": true,
+  "supportsGst": true,
+  "supportsMultiPage": true,
+  "supportedPaperSizes": ["A4"],
+  "defaultColors": {
+    "accent": "#ea580c",
+    "muted": "#6b7280",
+    "surface": "#111827"
+  }
+}

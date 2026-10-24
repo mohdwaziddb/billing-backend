@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8" />
+  <title th:text="${invoice.invoiceNo}">Invoice</title>
+</head>
+<body>
+  <div class="watermark" th:if="${settings.showWatermark}" th:text="${invoice.watermarkText}">INVOICE</div>
+  <div class="page">
+    <div class="letterhead">
+      <img th:if="${company.logoDataUrl != null}" th:src="${company.logoDataUrl}" class="logo" alt="Logo" />
+      <div class="company-name" th:text="${company.name}">Company</div>
+      <div class="address" th:if="${company.hasAddress}" th:text="${company.address}">Address</div>
+      <div class="address">
+        <span th:if="${company.hasPhone}" th:text="${company.phone}">Phone</span><span th:if="${company.hasPhone and company.hasEmail}">&#160;&#160;&#8226;&#160;&#160;</span><span th:if="${company.hasEmail}" th:text="${company.email}">Email</span><span th:if="${company.hasWebsite}">&#160;&#160;&#8226;&#160;&#160;<span th:text="${company.website}">Web</span></span>
+      </div>
+      <div class="address" th:if="${company.hasGstin}">GSTIN <span class="ink" th:text="${company.gstin}">GSTIN</span></div>
+    </div>
+    <div class="rule"></div>
+    <div class="doc-title" th:text="${invoice.documentTitle}">Tax Invoice</div>
+
+    <table class="parties">
+      <tr>
+        <td class="billed">
+          <div class="label">Billed To</div>
+          <div class="party" th:text="${invoice.customerName}">Customer</div>
+          <div class="muted" th:if="${invoice.hasCustomerAddress}" th:text="${invoice.customerFullAddress}">Address</div>
+          <div class="muted" th:if="${invoice.hasCustomerGstin}">GSTIN <span class="ink" th:text="${invoice.customerGstin}">GSTIN</span></div>
+          <div class="muted" th:if="${invoice.hasCustomerPhone}" th:text="${invoice.customerPhone}">Phone</div>
+        </td>
+        <td class="details">
+          <table class="kv">
+            <tr><td>Invoice No.</td><td class="ink" th:text="${invoice.invoiceNo}">INV</td></tr>
+            <tr><td>Date</td><td class="ink" th:text="${invoice.invoiceDateShort}">Date</td></tr>
+            <tr><td>Place of Supply</td><td class="ink" th:text="${invoice.placeOfSupplyLabel}">State</td></tr>
+            <tr><td>Status</td><td class="ink" th:text="${invoice.paymentStatus}">Status</td></tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+
+    <table class="items">
+      <thead>
+        <tr>
+          <th class="c">No.</th>
+          <th>Particulars</th>
+          <th class="c">HSN/SAC</th>
+          <th class="r">Qty</th>
+          <th class="r">Rate</th>
+          <th class="r">GST</th>
+          <th class="r">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr th:each="item, stat : ${invoice.items}">
+          <td class="c muted" th:text="${stat.count}">1</td>
+          <td>
+            <span class="ink" th:text="${item.productName}">Item</span>
+            <div class="sub" th:if="${invoice.hasDiscount and item.discountAmount != '0.00'}" th:text="${'Less discount ' + item.discountAmount}"></div>
+          </td>
+          <td class="c muted" th:text="${item.hsnCode}">HSN</td>
+          <td class="r" th:text="${item.qty}">1</td>
+          <td class="r" th:text="${item.price}">0</td>
+          <td class="r" th:text="${item.taxRateLabel + '%'}">18%</td>
+          <td class="r ink" th:text="${item.taxableAmount}">0</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <table class="summary">
+      <tr>
+        <td class="sum-left">
+          <div class="label">Amount in Words</div>
+          <div class="words" th:text="${invoice.amountInWords}">Words</div>
+          <div th:if="${settings.showBankDetails and company.hasBankDetails}" class="block">
+            <div class="label">Bank Particulars</div>
+            <div class="muted"><span class="ink" th:text="${company.bankName}">Bank</span>&#160;&#160;&#8226;&#160;&#160;A/c <span class="ink" th:text="${company.bankAccountNumber}">000</span></div>
+            <div class="muted">IFSC <span class="ink" th:text="${company.bankIfscCode}">IFSC</span>&#160;&#160;&#8226;&#160;&#160;<span th:text="${company.bankAccountName}">Name</span></div>
+          </div>
+          <table class="upi" th:if="${company.qrDataUrl != null}">
+            <tr>
+              <td class="qr-cell"><img th:src="${company.qrDataUrl}" class="qr" alt="UPI QR" /></td>
+              <td class="muted"><div class="label">Pay by UPI</div><span th:text="${company.upiId}">upi</span></td>
+            </tr>
+          </table>
+          <div class="terms" th:if="${settings.showTerms}">
+            <div class="label">Terms &amp; Conditions</div>
+            <div class="pre muted" th:text="${company.invoiceTerms}">Terms</div>
+          </div>
+        </td>
+        <td class="sum-right">
+          <table class="totals">
+            <tr><td>Taxable Value</td><td class="r" th:text="${invoice.taxableAmount}">0</td></tr>
+            <tr th:if="${!invoice.interState}"><td>CGST</td><td class="r" th:text="${invoice.cgst}">0</td></tr>
+            <tr th:if="${!invoice.interState}"><td>SGST</td><td class="r" th:text="${invoice.sgst}">0</td></tr>
+            <tr th:if="${invoice.interState}"><td>IGST</td><td class="r" th:text="${invoice.igst}">0</td></tr>
+            <tr th:if="${invoice.hasRoundOff}"><td>Round Off</td><td class="r" th:text="${invoice.roundOff}">0</td></tr>
+            <tr class="grand"><td>Total</td><td class="r" th:text="${'INR ' + invoice.grandTotal}">0</td></tr>
+            <tr th:if="${invoice.hasPaid}"><td>Received</td><td class="r" th:text="${invoice.paidAmount}">0</td></tr>
+            <tr th:if="${invoice.hasPaid}"><td class="ink">Balance</td><td class="r ink" th:text="${invoice.balanceAmount}">0</td></tr>
+          </table>
+          <div class="sign" th:if="${settings.showSignature}">
+            <div class="muted italic" th:text="${settings.signatureHeading == 'For Company' ? 'For ' + company.name : settings.signatureHeading}">For Company</div>
+            <div class="sign-space"><img th:if="${company.signatureDataUrl != null}" th:src="${company.signatureDataUrl}" class="signature" alt="Signature" /></div>
+            <div class="sign-label" th:text="${settings.signatureLabel}">Authorised Signatory</div>
+          </div>
+        </td>
+      </tr>
+    </table>
+
+    <div class="thanks" th:if="${settings.showNotes}" th:text="${company.invoiceNotes}">Thank you</div>
+    <div class="credit" th:if="${settings.footerCredit != null and settings.footerCredit != ''}" th:text="${settings.footerCredit}">Credit</div>
+  </div>
+</body>
+</html>

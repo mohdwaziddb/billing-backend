@@ -26,4 +26,6 @@ public class InvoiceTemplateMetadataResponse {
     private List<String> supportedPaperSizes;
     private Map<String, String> defaultColors;
     private boolean defaultTemplate;
+    private int sortOrder;
+    private String category;
 }

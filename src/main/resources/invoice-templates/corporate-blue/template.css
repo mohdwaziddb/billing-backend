@@ -1,0 +1,71 @@
+/* Corporate Blue - full-width header band, zebra item rows. Tables only (PDF engine has no flex/grid). */
+@page {
+  size: A4;
+  margin: 10mm 11mm 14mm 11mm;
+  @bottom-right { content: "Page " counter(page) " of " counter(pages); font-family: Helvetica, Arial, sans-serif; font-size: 7.5pt; color: #64748b; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: #ffffff; }
+body { font-family: Helvetica, Arial, sans-serif; font-size: 8.6pt; color: #334155; line-height: 1.4; }
+@media screen { .page { max-width: 210mm; margin: 0 auto; padding: 10mm; } }
+table { width: 100%; border-collapse: collapse; }
+td, th { vertical-align: top; padding: 0; }
+.watermark { position: fixed; top: 40%; left: 0; width: 100%; text-align: center; font-size: 76pt; font-weight: bold; color: #eef2fb; transform: rotate(-28deg); letter-spacing: 6pt; }
+.muted { color: #64748b; }
+.ink { color: #0f172a; }
+.strong { font-weight: bold; }
+.c { text-align: center !important; }
+.r { text-align: right !important; }
+.pre { white-space: pre-line; }
+.tiny { font-size: 7pt; color: #64748b; }
+.label { font-size: 7pt; font-weight: bold; text-transform: uppercase; letter-spacing: 1pt; color: #1e40af; margin-bottom: 3pt; }
+
+.band { background: #1e3a8a; color: #ffffff; }
+.band td { padding: 12pt 12pt; vertical-align: middle; }
+.band-logo { width: 62pt; padding-right: 0 !important; }
+.logo-chip { background: #ffffff; border-radius: 6pt; padding: 4pt; width: 50pt; height: 50pt; text-align: center; }
+.logo { height: 42pt; width: auto; max-width: 42pt; }
+.company-name { font-size: 15pt; font-weight: bold; color: #ffffff; margin-bottom: 2pt; }
+.band-line { color: #dbeafe; font-size: 8pt; }
+.band-title { text-align: right; width: 34%; }
+.doc-title { font-size: 17pt; font-weight: bold; letter-spacing: 2pt; text-transform: uppercase; color: #ffffff; }
+.band-no { font-size: 10pt; font-weight: bold; color: #bfdbfe; margin: 2pt 0; }
+
+.strip { background: #eff6ff; border-bottom: 2pt solid #1e40af; margin-bottom: 10pt; }
+.strip-col { width: 34%; padding: 10pt 12pt !important; }
+.party { font-size: 10.5pt; font-weight: bold; color: #0f172a; }
+.kv td { padding: 0.8pt 0; font-size: 8.2pt; }
+.kv td:first-child { color: #64748b; width: 44%; }
+.due-col { text-align: right; }
+.due { font-size: 16pt; font-weight: bold; color: #1e3a8a; line-height: 1.2; }
+
+.items { -fs-table-paginate: paginate; border: 1px solid #cbd5e1; }
+.items thead { display: table-header-group; }
+.items th { background: #1e40af; color: #ffffff; font-size: 7.2pt; text-transform: uppercase; letter-spacing: 0.6pt; padding: 5pt 4pt; text-align: left; }
+.items td { padding: 5pt 4pt; border-bottom: 1px solid #e2e8f0; font-size: 8.2pt; }
+.items tr { page-break-inside: avoid; }
+.items tr.alt td { background: #f8fafc; }
+
+.summary { margin-top: 10pt; page-break-inside: avoid; }
+.sum-left { width: 58%; padding-right: 14pt !important; }
+.words-box { border-left: 3pt solid #1e40af; background: #f8fafc; padding: 6pt 8pt; margin-bottom: 8pt; }
+.pay td { vertical-align: top; }
+.pay-bank { padding-right: 10pt !important; }
+.pay-qr { width: 80pt; text-align: center; }
+.qr { width: 70pt; height: 70pt; }
+.sum-right { width: 42%; }
+.totals { border: 1px solid #cbd5e1; }
+.totals td { padding: 3.4pt 8pt; border-bottom: 1px solid #eef2f7; }
+.totals td:first-child { color: #64748b; }
+.totals .grand td { background: #1e3a8a; color: #ffffff !important; font-weight: bold; font-size: 11pt; padding: 6pt 8pt; }
+.totals tr.strong td { color: #0f172a; }
+
+.closing { margin-top: 12pt; page-break-inside: avoid; }
+.terms-col { padding-right: 14pt !important; font-size: 7.8pt; }
+.note { margin-top: 6pt; }
+.sign-col { width: 36%; text-align: center; border: 1px solid #cbd5e1; padding: 8pt !important; }
+.sign-space { height: 40pt; padding-top: 4pt; }
+.signature { height: 34pt; width: auto; }
+.sign-label { border-top: 1px solid #94a3b8; padding-top: 3pt; font-size: 8pt; }
+.footer-bar { margin-top: 12pt; border-top: 2pt solid #1e3a8a; padding-top: 5pt; text-align: center; font-size: 7.8pt; color: #1e3a8a; }
+.credit { margin-top: 3pt; text-align: center; font-size: 7pt; color: #94a3b8; }

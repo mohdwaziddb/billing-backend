@@ -86,6 +86,12 @@ public class TenantSeedSweepRunner implements ApplicationRunner {
                         .count();
                 System.out.println("[INFO] Boot seed sweep done: tenants=" + seeds.size()
                         + " failed=" + failed);
+                // Fail ka reason pehle kahin nahi dikhta tha (sirf count aata tha).
+                seeds.stream()
+                        .filter(result -> "FAILED".equals(result.get("status")))
+                        .forEach(result -> System.err.println("[WARN] Seed sweep FAILED code="
+                                + result.get("companyCode") + " db=" + result.get("databaseName")
+                                + " detail=" + result.get("detail")));
                 if (seeds.isEmpty() && Registry.IS_ONLINE) {
                     System.err.println("[ERROR] Boot seed sweep found ZERO tenants — seeds NOT applied. Check billing_common.company_registry rows/status and DB privileges.");
                 }

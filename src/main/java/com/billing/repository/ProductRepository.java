@@ -84,6 +84,10 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     @Query("select count(p) from Product p where (:company is null or 1=1)")
     long countByCompany(@Param("company") Company company);
 
+    // Tax delete / deactivate se pehle: kitne active products ye tax use kar rahe hain.
+    @Query("select count(p) from Product p where p.active = true and p.taxable = true and p.taxMaster.id = :taxId")
+    long countActiveByTaxMasterId(@Param("taxId") Long taxId);
+
     @Query("""
             SELECT LOWER(TRIM(p.sku))
             FROM Product p

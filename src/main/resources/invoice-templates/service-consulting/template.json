@@ -1,0 +1,23 @@
+{
+  "templateId": "service-consulting",
+  "templateName": "Professional Services",
+  "version": "1.0.0",
+  "description": "Fee-based invoice for consultants, agencies and CAs: service description + SAC + amount, amount-due card and payment instructions.",
+  "author": "Bizio",
+  "category": "Service",
+  "sortOrder": 7,
+  "supportsWatermark": true,
+  "supportsQr": true,
+  "supportsSignature": true,
+  "supportsBankDetails": true,
+  "supportsTerms": true,
+  "supportsNotes": true,
+  "supportsGst": true,
+  "supportsMultiPage": true,
+  "supportedPaperSizes": ["A4"],
+  "defaultColors": {
+    "accent": "#4338ca",
+    "muted": "#64748b",
+    "surface": "#eef2ff"
+  }
+}

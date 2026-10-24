@@ -1,6 +1,7 @@
 package com.billing.service.invoice;
 
 import com.billing.exception.BadRequestException;
+import com.billing.util.DataTypeUtility;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
@@ -22,6 +23,12 @@ import java.util.Map;
 public class InvoiceTemplateRegistryService {
 
     private static final String TEMPLATE_ROOT = "classpath*:invoice-templates/*/template.json";
+    /**
+     * Jis tenant ne kabhi default save nahi kiya uska template. Pehle ye "cache ka pehla
+     * entry" tha (classpath scan order) - naya template folder add hote hi un tenants ka
+     * invoice design chup-chaap badal jaata. Ab fixed id.
+     */
+    private static final String FALLBACK_TEMPLATE_ID = "classic-corporate";
 
     private final ObjectMapper objectMapper;
 
@@ -50,7 +57,8 @@ public class InvoiceTemplateRegistryService {
 
     public List<InvoiceTemplateDefinition> templates() {
         return cache.values().stream()
-                .sorted(Comparator.comparing(InvoiceTemplateDefinition::getTemplateName, String.CASE_INSENSITIVE_ORDER))
+                .sorted(Comparator.comparingInt(InvoiceTemplateDefinition::getSortOrder)
+                        .thenComparing(InvoiceTemplateDefinition::getTemplateName, String.CASE_INSENSITIVE_ORDER))
                 .toList();
     }
 
@@ -63,7 +71,19 @@ public class InvoiceTemplateRegistryService {
     }
 
     public String defaultTemplateId() {
-        return cache.keySet().stream().findFirst().orElse("classic-corporate");
+        if (cache.containsKey(FALLBACK_TEMPLATE_ID)) {
+            return FALLBACK_TEMPLATE_ID;
+        }
+        return templates().stream().findFirst().map(InvoiceTemplateDefinition::getTemplateId).orElse(FALLBACK_TEMPLATE_ID);
+    }
+
+    /** Saved default ka folder hata diya gaya ho to invoice print fail na ho: fallback template. */
+    public InvoiceTemplateDefinition getOrDefault(String templateId) {
+        InvoiceTemplateDefinition definition = templateId == null ? null : cache.get(templateId);
+        if (definition != null) {
+            return definition;
+        }
+        return getOrThrow(defaultTemplateId());
     }
 
     private void registerTemplate(Resource metadataResource) throws IOException {
@@ -102,6 +122,8 @@ public class InvoiceTemplateRegistryService {
                 .htmlTemplate(htmlResource.getContentAsString(StandardCharsets.UTF_8))
                 .cssTemplate(cssResource.getContentAsString(StandardCharsets.UTF_8))
                 .folderName(basePath.substring(basePath.lastIndexOf('/') + 1))
+                .sortOrder(metadata.get("sortOrder") == null ? 1000 : DataTypeUtility.integerValue(metadata.get("sortOrder")))
+                .category(defaultString(stringValue(metadata.get("category")), "General"))
                 .build();
         cache.put(templateId, definition);
     }

@@ -350,9 +350,64 @@ public class CompanyService {
         return updateSettings(email, companySettingsRequest);
     }
 
+    // About Company form ke rules (controller Map leta hai, isliye DTO annotations nahi chalte — yahin check).
+    static final String COMPANY_EMAIL_PATTERN = "^[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}$";
+    static final String COMPANY_MOBILE_PATTERN = "^\\d{10}$";
+    static final String GSTIN_PATTERN = "^\\d{2}[A-Z]{5}\\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$";
+    static final String PAN_PATTERN = "^[A-Z]{5}\\d{4}[A-Z]$";
+    static final String IFSC_PATTERN = "^[A-Z]{4}0[A-Z0-9]{6}$";
+    static final String PINCODE_PATTERN = "^[1-9]\\d{5}$";
+
+    static void validateSettingsRequest(CompanySettingsRequest request) {
+        String companyName = DataTypeUtility.stringValue(request.getName());
+        String companyEmail = DataTypeUtility.stringValue(request.getEmail());
+        String companyPhone = DataTypeUtility.stringValue(request.getPhone());
+        String alternatePhone = DataTypeUtility.stringValue(request.getAlternatePhone());
+        String pincode = DataTypeUtility.stringValue(request.getPincode());
+        String panNumber = DataTypeUtility.stringValue(request.getPanNumber()).toUpperCase();
+        String ifscCode = DataTypeUtility.stringValue(request.getBankIfscCode()).toUpperCase();
+        if (companyName.length() == 0) {
+            throw new BadRequestException("Company name is required");
+        }
+        if (companyEmail.length() == 0) {
+            throw new BadRequestException("Email address is required");
+        }
+        if (!companyEmail.matches(COMPANY_EMAIL_PATTERN)) {
+            throw new BadRequestException("Enter a valid email address");
+        }
+        if (companyPhone.length() == 0) {
+            throw new BadRequestException("Mobile number is required");
+        }
+        if (!companyPhone.matches(COMPANY_MOBILE_PATTERN)) {
+            throw new BadRequestException("Enter a 10-digit mobile number");
+        }
+        if (alternatePhone.length() > 0 && !alternatePhone.matches(COMPANY_MOBILE_PATTERN)) {
+            throw new BadRequestException("Enter a 10-digit alternate mobile number");
+        }
+        if (Boolean.TRUE.equals(request.getGstRegistered())) {
+            String gstin = DataTypeUtility.stringValue(request.getGstin()).toUpperCase();
+            if (gstin.length() == 0) {
+                gstin = DataTypeUtility.stringValue(request.getTaxId()).toUpperCase();
+            }
+            if (gstin.length() > 0 && !gstin.matches(GSTIN_PATTERN)) {
+                throw new BadRequestException("Enter a valid 15-character GSTIN (e.g. 07ABCDE1234F1Z5)");
+            }
+        }
+        if (panNumber.length() > 0 && !panNumber.matches(PAN_PATTERN)) {
+            throw new BadRequestException("Enter a valid 10-character PAN (e.g. ABCDE1234F)");
+        }
+        if (ifscCode.length() > 0 && !ifscCode.matches(IFSC_PATTERN)) {
+            throw new BadRequestException("Enter a valid 11-character IFSC code (e.g. SBIN0001234)");
+        }
+        if (pincode.length() > 0 && !pincode.matches(PINCODE_PATTERN)) {
+            throw new BadRequestException("Enter a 6-digit pincode");
+        }
+    }
+
     @Transactional
     public CompanySummary updateSettings(String email, CompanySettingsRequest request) {
         Company company = accessControlService.requireOwnerCompany(email);
+        validateSettingsRequest(request);
         if (!company.getEmail().equalsIgnoreCase(request.getEmail())
                 && companyRepository.existsByEmailIgnoreCase(request.getEmail())) {
             throw new BadRequestException("Company email already exists");
@@ -364,6 +419,9 @@ public class CompanyService {
         }
         if (!gstRegistered) {
             requestedGstin = null;
+        }
+        if (requestedGstin != null) {
+            requestedGstin = requestedGstin.toUpperCase();
         }
         String currentGstin = firstNonBlank(company.getGstin(), company.getTaxId());
         if (requestedGstin != null
@@ -532,8 +590,11 @@ public class CompanyService {
         CompanyThemeSetting setting = companyThemeSettingRepository.findByCompany(company)
                 .orElseGet(() -> CompanyThemeSetting.builder().company(company).build());
         String themeColorValue = DataTypeUtility.stringValue(request.getThemeColor()).trim().toUpperCase(Locale.ROOT);
+        if (themeColorValue.length() == 0) {
+            throw new BadRequestException("Theme color is required");
+        }
         if (!themeColorValue.matches("#[0-9A-F]{6}(,#[0-9A-F]{6})?")) {
-            throw new BadRequestException("Invalid theme color: " + themeColorValue);
+            throw new BadRequestException("Theme color must be a HEX color like #0EA5E9, or two colors for a gradient like #0EA5E9,#8B5CF6");
         }
         setting.setThemeColor(themeColorValue);
         return toThemeResponse(companyThemeSettingRepository.save(setting));

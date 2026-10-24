@@ -31,6 +31,10 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
     Page<Invoice> findByCompany(@Param("company") Company company, Pageable pageable);
     @Query("select i from Invoice i where i.id = :id and (:company is null or 1=1)")
     Optional<Invoice> findByIdAndCompany(@Param("id") Long id, @Param("company") Company company);
+
+    // DataPort (payments/expenses): Excel me invoice number aata hai, id nahi.
+    @Query("select i from Invoice i join fetch i.customer where lower(i.invoiceNo) = lower(:invoiceNo) and i.deleted = false")
+    List<Invoice> findActiveByInvoiceNo(@Param("invoiceNo") String invoiceNo);
     @Query("select i from Invoice i where (:company is null or 1=1) order by i.id desc")
     Optional<Invoice> findTopByCompanyOrderByIdDesc(@Param("company") Company company);
     @Query("select i from Invoice i where (:company is null or 1=1) and i.customer = :customer and i.deleted = false order by i.invoiceDate desc, i.id desc")

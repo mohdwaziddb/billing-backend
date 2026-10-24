@@ -31,6 +31,7 @@ public class TaxMasterService {
     private final AuditNameResolver auditNameResolver;
     private final TaxValidator taxValidator;
     private final TaxMapper taxMapper;
+    private final com.billing.repository.ProductRepository productRepository;
 
     @Transactional(readOnly = true)
     public PageResponse<TaxMasterResponse> page(String email, String search, Boolean active, String taxType, int page, int size) {
@@ -120,6 +121,7 @@ public class TaxMasterService {
     public TaxMasterResponse create(String email, TaxMasterRequest request) {
         Company company = accessControlService.requireOwnerCompany(email);
         taxValidator.validateForCreate(company, request);
+        taxValidator.validateDefaultIsActive(request.getDefaultTax(), request.getActive() == null || request.getActive());
 
         TaxMaster taxMaster = TaxMaster.builder()
                 .company(company)
@@ -154,6 +156,10 @@ public class TaxMasterService {
         TaxMaster taxMaster = getTaxOrThrow(company, taxId);
         Map<String, Object> oldData = snapshot(taxMaster);
         taxValidator.validateForUpdate(company, taxId, request);
+        taxValidator.validateDefaultIsActive(request.getDefaultTax(), request.getActive() == null ? taxMaster.isActive() : request.getActive());
+        if (taxMaster.isActive() && Boolean.FALSE.equals(request.getActive())) {
+            ensureNotUsedByActiveProducts(taxMaster, "deactivate");
+        }
 
         if (Boolean.TRUE.equals(request.getDefaultTax())) {
             clearDefaultFlag(company);
@@ -209,12 +215,23 @@ public class TaxMasterService {
     public void delete(String email, Long taxId) {
         Company company = accessControlService.requireOwnerCompany(email);
         TaxMaster taxMaster = getTaxOrThrow(company, taxId);
+        ensureNotUsedByActiveProducts(taxMaster, "delete");
         Map<String, Object> oldData = snapshot(taxMaster);
         taxMaster.setActive(false);
         taxMaster.setDeleted(true);
         taxMaster.setDefaultTax(false);
         taxMasterRepository.save(taxMaster);
         auditLogService.logDelete(email, company, "Tax Master", "TaxMaster", taxMaster.getId(), oldData);
+    }
+
+    // Product par laga tax hata/band kar diya to us product ka invoice "Tax master not found" deta
+    // ya inactive tax chupchaap lagta rehta — pehle products ka tax badlo.
+    private void ensureNotUsedByActiveProducts(TaxMaster taxMaster, String action) {
+        long used = productRepository.countActiveByTaxMasterId(taxMaster.getId());
+        if (used > 0) {
+            throw new BadRequestException("Cannot " + action + " this tax: " + used + " active product" + (used == 1 ? " uses" : "s use")
+                    + " it. Change their tax first.");
+        }
     }
 
     @Transactional
@@ -243,7 +260,9 @@ public class TaxMasterService {
     @Transactional
     public TaxMaster resolveForProduct(Company company, Long taxMasterId, BigDecimal legacyTaxPercent, boolean taxable) {
         if (!taxable) {
-            return ensureGstTaxForRate(company, BigDecimal.ZERO, true);
+            // 0% na mile to naya banta hai, par default nahi banta (pehle invoice
+            // banate hi company ka default 18% chupchaap 0% ho jaata tha).
+            return ensureGstTaxForRate(company, BigDecimal.ZERO, false);
         }
         if (taxMasterId != null) {
             return getTaxOrThrow(company, taxMasterId);

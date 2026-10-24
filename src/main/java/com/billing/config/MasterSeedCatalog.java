@@ -45,7 +45,15 @@ public final class MasterSeedCatalog {
             new MenuSeed("Outstanding", "OUTSTANDING", "Wallet", "/outstanding", 11, null),
             new MenuSeed("Analytics", "ANALYTICS", "BarChart3", "/analytics", 12, null),
             new MenuSeed("DataPort", "DATA_PORT", "FileText", "/data-port", 13, null),
-            new MenuSeed("Product DataPort", "PRODUCT_DATAPORT", "Boxes", "/data-port/products", 14, "DATA_PORT"),
+            // DataPort children: hub/import kram me (masters pehle, phir transactions).
+            new MenuSeed("Category DataPort", "CATEGORY_DATAPORT", "Tags", "/data-port/product-categories", 40, "DATA_PORT"),
+            new MenuSeed("Product DataPort", "PRODUCT_DATAPORT", "Boxes", "/data-port/products", 41, "DATA_PORT"),
+            new MenuSeed("Opening Stock DataPort", "STOCK_DATAPORT", "Package", "/data-port/opening-stock", 42, "DATA_PORT"),
+            new MenuSeed("Customer DataPort", "CUSTOMER_DATAPORT", "Users", "/data-port/customers", 43, "DATA_PORT"),
+            new MenuSeed("Invoice DataPort", "INVOICE_DATAPORT", "FileText", "/data-port/invoices", 44, "DATA_PORT"),
+            new MenuSeed("Payment DataPort", "PAYMENT_DATAPORT", "CreditCard", "/data-port/payments", 45, "DATA_PORT"),
+            new MenuSeed("Expense Category DataPort", "EXPENSE_CATEGORY_DATAPORT", "Tags", "/data-port/expense-categories", 46, "DATA_PORT"),
+            new MenuSeed("Expense DataPort", "EXPENSE_DATAPORT", "ReceiptIndianRupee", "/data-port/expenses", 47, "DATA_PORT"),
             new MenuSeed("Reports", "REPORTS", "BarChart3", "/reports", 15, null),
             new MenuSeed("Profit & Loss", "PROFIT_LOSS", "TrendingUp", "/reports/profit-loss", 16, "REPORTS"),
             new MenuSeed("Setup", "SETUP", "Settings", "/setup", 999, null),
@@ -112,8 +120,8 @@ public final class MasterSeedCatalog {
 
     /** Role -> visible menu codes (permission policy, single copy). */
     public static final Map<String, Set<String>> VISIBLE_MENUS_BY_ROLE = Map.of(
-            "OWNER", Set.of("DASHBOARD", "CUSTOMERS", "INVENTORY", "PRODUCTS", "PURCHASES", "STOCK_LEDGER", "CREATE_INVOICE", "INVOICES", "PAYMENTS", "EXPENSES", "OUTSTANDING", "ANALYTICS", "DATA_PORT", "PRODUCT_DATAPORT", "REPORTS", "PROFIT_LOSS", "SETUP", "USERS", "PRODUCT_CATEGORY", "PRODUCT_SUB_CATEGORIES", "EXPENSE_CATEGORIES", "PAYMENT_MODES", "PAYMENT_GATEWAY", "THEME_SETTINGS", "ABOUT_COMPANY", "EMAIL_TEMPLATES", "SMS_TEMPLATES", "COMMUNICATION", "ROLE_PERMISSIONS", "TAX_MASTER", "INVOICE_TEMPLATES", "PAYMENT_HIERARCHY", "SALES_REFERRALS", "GST_SUMMARY", "AI_ASSISTANT", "COMMUNICATION_HISTORY", "MAIL_HISTORY", "SMS_HISTORY", "WHATSAPP_HISTORY"),
-            "ADMIN", Set.of("DASHBOARD", "CUSTOMERS", "INVENTORY", "PRODUCTS", "PURCHASES", "STOCK_LEDGER", "CREATE_INVOICE", "INVOICES", "PAYMENTS", "EXPENSES", "OUTSTANDING", "ANALYTICS", "DATA_PORT", "PRODUCT_DATAPORT", "REPORTS", "PROFIT_LOSS", "SETUP", "PRODUCT_CATEGORY", "PRODUCT_SUB_CATEGORIES", "EXPENSE_CATEGORIES", "PAYMENT_MODES", "ABOUT_COMPANY", "EMAIL_TEMPLATES", "SMS_TEMPLATES", "COMMUNICATION", "TAX_MASTER", "INVOICE_TEMPLATES", "GST_SUMMARY", "AI_ASSISTANT", "COMMUNICATION_HISTORY", "MAIL_HISTORY", "SMS_HISTORY", "WHATSAPP_HISTORY"),
+            "OWNER", Set.of("DASHBOARD", "CUSTOMERS", "INVENTORY", "PRODUCTS", "PURCHASES", "STOCK_LEDGER", "CREATE_INVOICE", "INVOICES", "PAYMENTS", "EXPENSES", "OUTSTANDING", "ANALYTICS", "DATA_PORT", "PRODUCT_DATAPORT", "CATEGORY_DATAPORT", "STOCK_DATAPORT", "CUSTOMER_DATAPORT", "INVOICE_DATAPORT", "PAYMENT_DATAPORT", "EXPENSE_CATEGORY_DATAPORT", "EXPENSE_DATAPORT", "REPORTS", "PROFIT_LOSS", "SETUP", "USERS", "PRODUCT_CATEGORY", "PRODUCT_SUB_CATEGORIES", "EXPENSE_CATEGORIES", "PAYMENT_MODES", "PAYMENT_GATEWAY", "THEME_SETTINGS", "ABOUT_COMPANY", "EMAIL_TEMPLATES", "SMS_TEMPLATES", "COMMUNICATION", "ROLE_PERMISSIONS", "TAX_MASTER", "INVOICE_TEMPLATES", "PAYMENT_HIERARCHY", "SALES_REFERRALS", "GST_SUMMARY", "AI_ASSISTANT", "COMMUNICATION_HISTORY", "MAIL_HISTORY", "SMS_HISTORY", "WHATSAPP_HISTORY"),
+            "ADMIN", Set.of("DASHBOARD", "CUSTOMERS", "INVENTORY", "PRODUCTS", "PURCHASES", "STOCK_LEDGER", "CREATE_INVOICE", "INVOICES", "PAYMENTS", "EXPENSES", "OUTSTANDING", "ANALYTICS", "DATA_PORT", "PRODUCT_DATAPORT", "CATEGORY_DATAPORT", "STOCK_DATAPORT", "CUSTOMER_DATAPORT", "INVOICE_DATAPORT", "PAYMENT_DATAPORT", "EXPENSE_CATEGORY_DATAPORT", "EXPENSE_DATAPORT", "REPORTS", "PROFIT_LOSS", "SETUP", "PRODUCT_CATEGORY", "PRODUCT_SUB_CATEGORIES", "EXPENSE_CATEGORIES", "PAYMENT_MODES", "ABOUT_COMPANY", "EMAIL_TEMPLATES", "SMS_TEMPLATES", "COMMUNICATION", "TAX_MASTER", "INVOICE_TEMPLATES", "GST_SUMMARY", "AI_ASSISTANT", "COMMUNICATION_HISTORY", "MAIL_HISTORY", "SMS_HISTORY", "WHATSAPP_HISTORY"),
             "USER", Set.of("DASHBOARD", "CUSTOMERS", "INVENTORY", "PRODUCTS", "STOCK_LEDGER", "CREATE_INVOICE", "INVOICES", "OUTSTANDING", "ANALYTICS", "ABOUT_COMPANY", "AI_ASSISTANT"));
 
     /** Role -> allowed action codes (permission policy, single copy). */
@@ -124,7 +132,7 @@ public final class MasterSeedCatalog {
 
     /** Menus where non-owners keep VIEW at most. */
     public static final Set<String> RESTRICTED_OWNER_ONLY_MENUS = Set.of(
-            "PRODUCT_CATEGORY", "PRODUCT_SUB_CATEGORIES", "PAYMENT_MODES", "TAX_MASTER");
+            "PRODUCT_CATEGORY", "PRODUCT_SUB_CATEGORIES", "PAYMENT_MODES", "TAX_MASTER", "CATEGORY_DATAPORT");
 
     public static boolean isMenuVisible(String roleCode, String menuCode) {
         Set<String> visible = VISIBLE_MENUS_BY_ROLE.getOrDefault(roleCode, Set.of());

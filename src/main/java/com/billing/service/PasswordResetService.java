@@ -165,7 +165,8 @@ public class PasswordResetService {
         notificationService.logDirectNotification(company, NotificationChannelType.EMAIL, destination,
                 "Password reset OTP", "<p>Your password reset OTP is <b>" + otp + "</b>. Valid for 10 minutes. Do not share it.</p>"
                         + emailService.companySignatureHtml(company),
-                "EMAIL", null, null, result.status(),
+                // null: provider ka asli naam NotificationService active provider se bharta hai.
+                null, null, null, result.status(),
                 result.status() != NotificationStatus.SENT ? result.providerResponse() : null, "system");
         if (result.status() != NotificationStatus.SENT) {
             passwordResetOtpRepository.delete(challenge);
@@ -183,11 +184,20 @@ public class PasswordResetService {
 
     /**
      * Unknown / email-less / cooldown identifiers ke liye asli jaisa challenge.
-     * ID itna bada hai ki kisi real row se kabhi nahi takrata; verify par
-     * "Incorrect OTP" milta hai, bilkul galat OTP jaisa.
+     * ID asli challenge ids ke aas-paas (latest id + chhota random) hota hai:
+     * pehle 1e12+ wala decoy turant pehchana jata tha (user enumeration).
+     * Verify par "Incorrect OTP" milta hai, bilkul galat OTP jaisa.
      */
     private PasswordResetChallengeResponse decoyChallenge() {
-        long decoyId = 1_000_000_000_000L + (secureRandom.nextLong() & 0xFFFFFFFFFFL);
+        long latestId = 0L;
+        try {
+            latestId = passwordResetOtpRepository.findTopByOrderByIdDesc()
+                    .map(PasswordResetOtp::getId)
+                    .orElse(0L);
+        } catch (Exception ignored) {
+            // Decoy kabhi fail na ho.
+        }
+        long decoyId = latestId + 1 + secureRandom.nextInt(3);
         return PasswordResetChallengeResponse.builder()
                 .challengeId(decoyId)
                 .channel("EMAIL")
@@ -195,7 +205,9 @@ public class PasswordResetService {
                 .build();
     }
 
-    @Transactional
+    // noRollbackFor: galat OTP par attempts count save rahe (warna rollback me
+    // counter mit jata aur OTP unlimited baar guess ho sakta tha).
+    @Transactional(noRollbackFor = BadRequestException.class)
     public void confirmOtp(Map<String, Object> param) {
         confirmOtp(mapToConfirm(param));
     }
@@ -205,13 +217,13 @@ public class PasswordResetService {
      * touches the password — it only proves ownership so the UI can reveal
      * the new-password fields. Wrong guesses count toward MAX_ATTEMPTS.
      */
-    @Transactional
+    @Transactional(noRollbackFor = BadRequestException.class)
     public void verifyOtp(Map<String, Object> param) {
         PasswordResetConfirmRequest request = mapToConfirm(param);
         requireValidChallenge(request.getChallengeId(), request.getOtp());
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = BadRequestException.class)
     public void confirmOtp(PasswordResetConfirmRequest request) {
         String newPassword = request.getNewPassword() == null ? "" : request.getNewPassword().trim();
         if (newPassword.length() < MIN_PASSWORD_LENGTH) {

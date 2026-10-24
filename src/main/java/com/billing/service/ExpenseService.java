@@ -70,6 +70,7 @@ public class ExpenseService {
                                                LocalDate startDate,
                                                LocalDate endDate,
                                                RoleName createdByRole,
+                                               Boolean deleted,
                                                int page,
                                                int size) {
         User user = accessControlService.getCurrentUser(email);
@@ -84,6 +85,7 @@ public class ExpenseService {
                 startDate,
                 endDate,
                 createdByRole,
+                deleted,
                 pageRequest(page, size)
         ).map(this::toResponse));
     }
@@ -115,12 +117,15 @@ public class ExpenseService {
             } catch (Exception ignore) {
             }
         }
+        // Invoices jaisa: ACTIVE (default) / DELETED / ALL.
+        String recordStatus = DataTypeUtility.stringValue(param.get("recordStatus")).toUpperCase(java.util.Locale.ROOT);
+        Boolean deleted = "ALL".equals(recordStatus) ? null : "DELETED".equals(recordStatus) ? Boolean.TRUE : Boolean.FALSE;
         int page = DataTypeUtility.integerValue(param.get("page"));
         int size = DataTypeUtility.integerValue(param.get("size"));
         if (size == 0) {
             size = 20;
         }
-        return page(email, search, expenseType, categoryId, customerId, invoiceId, startDate, endDate, createdByRole, page, size);
+        return page(email, search, expenseType, categoryId, customerId, invoiceId, startDate, endDate, createdByRole, deleted, page, size);
     }
 
     @Transactional(readOnly = true)
@@ -157,6 +162,9 @@ public class ExpenseService {
     public ExpenseResponse update(String email, Long expenseId, ExpenseRequest request) {
         Company company = accessControlService.getCurrentCompany(email);
         Expense expense = getExpenseOrThrow(company, expenseId);
+        if (expense.isDeleted()) {
+            throw new BadRequestException("This expense is deleted and cannot be edited");
+        }
         Map<String, Object> oldData = snapshot(expense);
         applyRequest(company, expense, request);
         Expense saved = expenseRepository.save(expense);
@@ -168,8 +176,13 @@ public class ExpenseService {
     public void delete(String email, Long expenseId) {
         Company company = accessControlService.getCurrentCompany(email);
         Expense expense = getExpenseOrThrow(company, expenseId);
+        if (expense.isDeleted()) {
+            throw new BadRequestException("Expense is already deleted");
+        }
         Map<String, Object> oldData = snapshot(expense);
-        expenseRepository.delete(expense);
+        // Soft delete (baaki masters jaisa): row DB me rehti hai, list/reports se bahar.
+        expense.setDeleted(true);
+        expenseRepository.save(expense);
         auditLogService.logDelete(email, company, "Expense", "Expense", expenseId, oldData);
     }
 
@@ -202,7 +215,7 @@ public class ExpenseService {
         Invoice invoice = invoiceService.getInvoiceOrThrow(company, invoiceId);
         BigDecimal revenue = scale(revenueOf(invoice));
         BigDecimal costOfGoodsSold = scale(invoiceItemAllocationRepository.sumActiveCostByInvoice(company, invoiceId));
-        BigDecimal expense = expenseRepository.searchExpenses(company, null, null, null, null, invoiceId, null, null, null, Pageable.unpaged()).getContent().stream()
+        BigDecimal expense = expenseRepository.searchExpenses(company, null, null, null, null, invoiceId, null, null, null, Boolean.FALSE, Pageable.unpaged()).getContent().stream()
                 .map(Expense::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         return profitability(invoiceId, invoice.getInvoiceNo(), revenue, costOfGoodsSold, expense);
@@ -246,7 +259,7 @@ public class ExpenseService {
         User user = accessControlService.getCurrentUser(email);
         Company company = accessControlService.requireCompany(user);
         // Pehle PageRequest.of(0, 1000): 1000 se zyada expenses par totals chup-chaap galat.
-        List<Expense> expenses = expenseRepository.searchExpenses(company, null, expenseType, categoryId, customerId, invoiceId, startDate, endDate, createdByRole, Pageable.unpaged()).getContent();
+        List<Expense> expenses = expenseRepository.searchExpenses(company, null, expenseType, categoryId, customerId, invoiceId, startDate, endDate, createdByRole, Boolean.FALSE, Pageable.unpaged()).getContent();
         // Date range DB me (pehle poori invoices/payments table memory me aati thi).
         List<Invoice> invoices = invoiceRepository.findActiveInRange(startDate, endDate).stream()
                 .filter(invoice -> customerId == null || invoice.getCustomer().getId().equals(customerId))
@@ -417,6 +430,7 @@ public class ExpenseService {
                 .expenseDate(expense.getExpenseDate())
                 .description(expense.getDescription())
                 .attachmentUrl(expense.getAttachmentUrl())
+                .deleted(expense.isDeleted())
                 .createdAt(expense.getCreatedAt())
                 .updatedAt(expense.getUpdatedAt())
                 .createdBy(auditNameResolver.displayName(expense.getCreatedBy()))

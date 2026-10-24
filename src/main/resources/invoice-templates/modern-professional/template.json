@@ -1,9 +1,11 @@
 {
   "templateId": "modern-professional",
-  "templateName": "Modern Professional",
-  "version": "1.0.0",
-  "description": "Minimal premium invoice with airy layout and elegant totals treatment.",
+  "templateName": "Modern Minimal",
+  "version": "2.0.0",
+  "description": "Clean, airy layout with hairline rules, a teal accent and a big amount-due figure. Tax shown in the totals.",
   "author": "Bizio",
+  "category": "Minimal",
+  "sortOrder": 2,
   "supportsWatermark": true,
   "supportsQr": true,
   "supportsSignature": true,
@@ -14,8 +16,8 @@
   "supportsMultiPage": true,
   "supportedPaperSizes": ["A4"],
   "defaultColors": {
-    "accent": "#0f3d3e",
+    "accent": "#0d9488",
     "muted": "#6b7280",
-    "surface": "#f7fbfb"
+    "surface": "#ffffff"
   }
 }

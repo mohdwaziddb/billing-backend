@@ -112,7 +112,7 @@ public class NotificationService {
         }
         EmailService.EmailDeliveryResult result = emailService.sendEmail(company, subject, body, toEmails, safeList(request.getCcEmails()), safeList(request.getBccEmails()), request.getAttachments(), email);
         String recipient = String.join(",", toEmails);
-        NotificationLog saved = saveLog(company, NotificationChannelType.EMAIL, templateId, recipient, subject, body, "EMAIL", resolveSender(company, NotificationChannelType.EMAIL), null, null, result.providerResponse(), result.status(), email, result.sentAt());
+        NotificationLog saved = saveLog(company, NotificationChannelType.EMAIL, templateId, recipient, subject, body, null, resolveSender(company, NotificationChannelType.EMAIL), null, null, result.providerResponse(), result.status(), email, result.sentAt());
         writeAudit(email, company, saved, result.status() == NotificationStatus.SENT ? "EMAIL_SENT" : result.status() == NotificationStatus.FAILED ? "EMAIL_FAILED" : "EMAIL_PENDING");
         return List.of(toResponse(saved));
     }
@@ -133,7 +133,7 @@ public class NotificationService {
         }
         String providerName = smsProviderSettingRepository.findFirstByCompanyAndActiveTrueOrderByIdDesc(company)
                 .map(setting -> setting.getProviderName() == null || setting.getProviderName().isBlank() ? setting.getProviderType().name() : setting.getProviderName())
-                .orElse("SMS");
+                .orElse(null);
         return results.stream().map(result -> {
             NotificationLog saved = saveLog(company, NotificationChannelType.SMS, templateId, result.mobileNumber(), null, message, providerName, resolveSender(company, NotificationChannelType.SMS), null, result.status() == NotificationStatus.FAILED ? result.providerResponse() : null, result.providerResponse(), result.status(), email, result.sentAt());
             writeAudit(email, company, saved, result.status() == NotificationStatus.SENT ? "SMS_SENT" : result.status() == NotificationStatus.FAILED ? "SMS_FAILED" : "SMS_PENDING");
@@ -258,6 +258,52 @@ public class NotificationService {
         }
     }
 
+    private boolean isChannelPlaceholder(String providerName, NotificationChannelType channel) {
+        if (providerName == null || providerName.isBlank()) {
+            return true;
+        }
+        String value = providerName.trim();
+        return value.equalsIgnoreCase(channel.name()) || value.equalsIgnoreCase("EMAIL") || value.equalsIgnoreCase("SMS") || value.equalsIgnoreCase("WHATSAPP");
+    }
+
+    /**
+     * History ke liye provider ("kisse bheja"): company ka active provider —
+     * diya hua naam, warna type (GMAIL_SMTP / MSG91 ...). Frontend isse
+     * padhne layak label ("Gmail SMTP") banata hai. Provider set na ho to null.
+     */
+    String activeProviderName(Company company, NotificationChannelType channel) {
+        if (company == null || channel == null) {
+            return null;
+        }
+        try {
+            if (channel == NotificationChannelType.EMAIL) {
+                return emailProviderSettingRepository.findFirstByCompanyAndActiveTrueOrderByIdDesc(company)
+                        .map(setting -> blankToNull(setting.getProviderName()))
+                        .orElse(null);
+            }
+            if (channel == NotificationChannelType.SMS) {
+                return smsProviderSettingRepository.findFirstByCompanyAndActiveTrueOrderByIdDesc(company)
+                        .map(setting -> {
+                            String name = blankToNull(setting.getProviderName());
+                            return name != null ? name : setting.getProviderType() == null ? null : setting.getProviderType().name();
+                        })
+                        .orElse(null);
+            }
+            return whatsAppProviderSettingRepository.findFirstByCompanyAndActiveTrueOrderByIdDesc(company)
+                    .map(setting -> {
+                        String name = blankToNull(setting.getProviderName());
+                        return name != null ? name : setting.getProviderType() == null ? null : setting.getProviderType().name();
+                    })
+                    .orElse(null);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
     private NotificationLog saveLog(Company company,
                                     NotificationChannelType channel,
                                     Long templateId,
@@ -272,6 +318,9 @@ public class NotificationService {
                                     NotificationStatus status,
                                     String sentBy,
                                     LocalDateTime sentAt) {
+        // Ek jagah se: caller ne naam na diya ho ya channel ka naam ("EMAIL"/"SMS") diya ho to
+        // company ka active provider likho — pehle Mail History me provider "EMAIL" dikhta tha.
+        String resolvedProvider = isChannelPlaceholder(providerName, channel) ? activeProviderName(company, channel) : providerName.trim();
         return notificationLogRepository.save(NotificationLog.builder()
                 .company(company)
                 .channel(channel.name())
@@ -279,7 +328,7 @@ public class NotificationService {
                 .recipient(recipient == null ? "" : recipient)
                 .subject(subject)
                 .message(message)
-                .providerName(providerName)
+                .providerName(resolvedProvider)
                 .sender(sender)
                 .messageId(messageId)
                 .failureReason(failureReason)

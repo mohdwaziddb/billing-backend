@@ -1,44 +1,75 @@
-@page { size: A4; margin: 10mm 10mm 12mm 10mm; }
-body { font-family: "Segoe UI", Arial, sans-serif; color: #16324f; margin: 0; background: #f3f7fa; font-size: 11px; }
-.page { background: #fff; position: relative; }
-.watermark { position: fixed; top: 42%; left: 16%; font-size: 80px; color: rgba(22, 50, 79, 0.12); transform: rotate(-28deg); font-weight: 800; letter-spacing: 0.14em; z-index: 5; pointer-events: none; }
-.hero, .address-grid, .table-shell, .summary-layout, .bottom-grid, .terms, .footer { position: relative; z-index: 1; }
-.hero { display: grid; grid-template-columns: 1.45fr 0.95fr; gap: 12px; align-items: stretch; margin-bottom: 10px; }
-.brand { display: flex; gap: 12px; background: #eef4f8; padding: 12px; border: 1px solid #d7e3ec; }
-.logo { width: 58px; height: 58px; object-fit: contain; border-radius: 12px; background: #fff; padding: 5px; }
-.brand-copy h1 { margin: 0 0 4px; font-size: 18px; }
-.brand-copy p { margin: 2px 0; color: #4b647b; }
-.doc-box { border: 1px solid #cfdbe6; padding: 12px; }
-.eyebrow { font-size: 10px; text-transform: uppercase; letter-spacing: 0.2em; color: #6b7280; margin-bottom: 8px; font-weight: 700; }
-.doc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.doc-grid label, .address-grid h3, .panel h3 { display: block; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: #748396; margin-bottom: 5px; font-weight: 700; }
-.doc-grid strong { font-size: 13px; }
-.address-grid { display: grid; grid-template-columns: 1.35fr 0.85fr; gap: 12px; margin-bottom: 10px; }
-.address-grid article { border: 1px solid #d8e2ea; padding: 12px; min-height: 88px; }
-.status-card { background: #16324f; color: #fff; }
-.status-card h3, .status-card span { color: #dce7f1; }
-.status-pill { background: #fff; color: #16324f; display: inline-block; padding: 6px 12px; border-radius: 999px; font-weight: 800; margin-bottom: 8px; }
-.amount-row { display: flex; justify-content: space-between; margin: 6px 0; }
-.items, .mini-table { width: 100%; border-collapse: collapse; }
-.items thead th { background: #16324f; color: #fff; padding: 9px 8px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; }
-.items tbody td { border-bottom: 1px solid #dde6ee; padding: 8px; vertical-align: top; color: #294862; }
-.subtext { margin-top: 3px; font-size: 10px; color: #718096; }
-.summary-layout { margin-top: 10px; display: block; }
-.panel { border: 1px solid #d8e2ea; padding: 10px 12px; background: #fcfdff; }
-.mini-table th, .mini-table td { padding: 6px 5px; border-bottom: 1px solid #e4edf4; text-align: left; }
-.mini-table th { font-size: 9px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.12em; }
-.totals { background: #16324f; color: #fff; padding: 12px; border-radius: 16px; }
-.totals .line, .totals .grand { display: flex; justify-content: space-between; margin: 6px 0; }
-.totals .grand { margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.24); font-size: 14px; font-weight: 800; }
-.bottom-grid { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 12px; margin-top: 10px; }
-.qr-sign { display: grid; gap: 10px; align-items: center; }
-.qr { width: 86px; height: 86px; object-fit: contain; }
-.qr-block { display: flex; justify-content: center; }
-.signature { text-align: center; }
-.signature-heading { margin: 0 0 8px; font-size: 11px; font-weight: 700; color: #5c7186; }
-.signature-img { max-width: 110px; max-height: 40px; object-fit: contain; }
-.sign-line { border-top: 1px solid #9fb4c7; margin-top: 16px; }
-.terms { margin-top: 10px; }
-.footer { margin-top: 10px; display: flex; justify-content: space-between; color: #7b8794; font-size: 10px; }
-.page-number::after { content: counter(page); }
-.words { margin-top: 8px; }
+/* Classic GST Tax Invoice - boxed, Tally-style. Layout = tables only (PDF engine has no flex/grid). */
+@page {
+  size: A4;
+  margin: 10mm 10mm 14mm 10mm;
+  @bottom-center { content: "Page " counter(page) " of " counter(pages); font-family: Helvetica, Arial, sans-serif; font-size: 7.5pt; color: #6b7280; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: #ffffff; }
+body { font-family: Helvetica, Arial, sans-serif; font-size: 8.6pt; color: #111827; line-height: 1.35; }
+@media screen { .page { max-width: 210mm; margin: 0 auto; padding: 9mm; } }
+table { width: 100%; border-collapse: collapse; }
+td, th { vertical-align: top; }
+.watermark { position: fixed; top: 40%; left: 0; width: 100%; text-align: center; font-size: 72pt; font-weight: bold; color: #eceef1; transform: rotate(-28deg); letter-spacing: 6pt; z-index: 0; }
+
+.frame { border: 1px solid #374151; }
+.frame > tbody > tr > td, .frame > tr > td { border: 1px solid #374151; padding: 5pt 7pt; }
+.title-bar { background: #f3f4f6; text-align: center; padding: 5pt 7pt !important; }
+.doc-title { font-size: 12pt; font-weight: bold; letter-spacing: 2pt; text-transform: uppercase; }
+.copy-label { float: right; font-size: 7pt; font-style: italic; color: #4b5563; padding-top: 3pt; }
+.supplier-cell { width: 60%; }
+.meta-cell { width: 40%; padding: 0 !important; }
+.plain td { padding: 0; border: none; }
+.logo-cell { width: 64pt; padding-right: 8pt !important; }
+.logo { height: 52pt; width: auto; }
+.company-name { font-size: 13pt; font-weight: bold; color: #111827; margin-bottom: 2pt; }
+.line { color: #374151; margin-top: 1pt; }
+.strong { font-weight: bold; }
+.meta th, .meta td { border-bottom: 1px solid #d1d5db; padding: 3.6pt 7pt; text-align: left; font-size: 8.3pt; }
+.meta tr:last-child th, .meta tr:last-child td { border-bottom: none; }
+.meta th { width: 44%; color: #4b5563; font-weight: normal; border-right: 1px solid #d1d5db; }
+.caption { font-size: 7pt; font-weight: bold; text-transform: uppercase; letter-spacing: 0.8pt; color: #6b7280; margin-bottom: 2pt; }
+.caption.spaced { margin-top: 6pt; }
+.buyer-name { font-size: 10.5pt; font-weight: bold; }
+
+.items { -fs-table-paginate: paginate; margin-top: -1px; border: 1px solid #374151; }
+.items thead { display: table-header-group; }
+.items th { background: #f3f4f6; border: 1px solid #374151; padding: 4pt 3pt; font-size: 7.4pt; text-transform: uppercase; text-align: left; }
+.items th.sub { font-size: 7pt; padding: 2pt 3pt; }
+.items td { border-left: 1px solid #374151; border-right: 1px solid #374151; border-bottom: 1px solid #e5e7eb; padding: 3.2pt 3pt; font-size: 8.2pt; }
+.items tr { page-break-inside: avoid; }
+.items td.desc { font-weight: bold; color: #111827; }
+.total-row td { border-top: 1px solid #374151 !important; border-bottom: 1px solid #374151 !important; background: #f9fafb; font-weight: bold; }
+.c { text-align: center !important; }
+.r { text-align: right !important; }
+
+.summary { margin-top: -1px; page-break-inside: avoid; }
+.words-cell { width: 62%; }
+.words { font-weight: bold; font-size: 9pt; }
+.totals-cell { width: 38%; padding: 0 !important; }
+.totals td { padding: 3pt 7pt; border-bottom: 1px solid #e5e7eb; }
+.totals tr.grand td { background: #111827; color: #ffffff; font-weight: bold; font-size: 10pt; border-bottom: none; }
+
+.hsn { margin-top: 6pt; border: 1px solid #9ca3af; }
+.hsn thead { display: table-header-group; }
+.hsn th { background: #f3f4f6; border: 1px solid #9ca3af; padding: 2pt 3pt; font-size: 6.6pt; text-transform: uppercase; text-align: left; }
+.hsn th.sub { font-size: 6.4pt; }
+.hsn td { border: 1px solid #d1d5db; padding: 1.6pt 3pt; font-size: 7.4pt; }
+.hsn .total-row td { border-top: 1px solid #9ca3af !important; border-bottom: none !important; }
+.tax-words { margin-top: 4pt; font-size: 7.6pt; color: #374151; }
+
+.closing { margin-top: 6pt; page-break-inside: avoid; }
+.bank-cell { width: 52%; }
+.kv td { padding: 0.6pt 0; border: none; font-size: 8.2pt; }
+.kv td:first-child { width: 34%; color: #6b7280; }
+.terms { margin-top: 4pt; }
+.pre { white-space: pre-line; color: #374151; font-size: 7.8pt; }
+.qr-cell { width: 18%; text-align: center; }
+.qr { width: 66pt; height: 66pt; }
+.tiny { font-size: 7pt; color: #4b5563; }
+.sign-cell { width: 30%; text-align: center; }
+.sign-heading { font-weight: bold; font-size: 8.4pt; }
+.sign-space { height: 40pt; padding-top: 4pt; }
+.signature { height: 34pt; width: auto; }
+.sign-label { border-top: 1px solid #6b7280; padding-top: 3pt; font-size: 8pt; color: #374151; }
+.footnote { margin-top: 5pt; text-align: center; font-size: 7pt; color: #6b7280; }

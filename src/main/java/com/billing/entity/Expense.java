@@ -63,4 +63,10 @@ public class Expense extends BaseEntity {
     private String description;
 
     private String attachmentUrl;
+
+    // Soft delete (Invoice / Payment jaisa): Delete par row DB me rehti hai, reports/list se bahar.
+    // Naya column AutoDDL apne aap jodta hai; purani rows 0 (not deleted).
+    @Builder.Default
+    @Column(name = "is_deleted", nullable = false)
+    private boolean deleted = false;
 }

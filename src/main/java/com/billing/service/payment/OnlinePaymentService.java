@@ -102,6 +102,9 @@ public class OnlinePaymentService {
             throw new BadRequestException("Select an invoice to collect online payment");
         }
         Invoice invoice = invoiceService.getInvoiceOrThrow(company, invoiceId);
+        if (invoice.getCustomer() != null && !invoice.getCustomer().isActive()) {
+            throw new BadRequestException("Customer is inactive. Activate the customer before collecting payment.");
+        }
         BigDecimal balance = scale(invoice.getBalanceAmount());
         if (balance.compareTo(BigDecimal.ZERO) <= 0) {
             throw new BadRequestException("Invoice is already fully paid");

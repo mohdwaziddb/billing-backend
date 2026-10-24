@@ -1,0 +1,23 @@
+{
+  "templateId": "igst-interstate",
+  "templateName": "Inter-State IGST",
+  "version": "1.0.0",
+  "description": "Highlights supplier state to place of supply with state codes, IGST columns and an HSN-wise tax summary - for out-of-state and B2B dispatches.",
+  "author": "Bizio",
+  "category": "Inter-State",
+  "sortOrder": 9,
+  "supportsWatermark": true,
+  "supportsQr": true,
+  "supportsSignature": true,
+  "supportsBankDetails": true,
+  "supportsTerms": true,
+  "supportsNotes": true,
+  "supportsGst": true,
+  "supportsMultiPage": true,
+  "supportedPaperSizes": ["A4"],
+  "defaultColors": {
+    "accent": "#0f766e",
+    "muted": "#64748b",
+    "surface": "#f0fdfa"
+  }
+}

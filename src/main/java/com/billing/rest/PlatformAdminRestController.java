@@ -99,7 +99,8 @@ public class PlatformAdminRestController {
         if (param == null) {
             param = new HashMap<>();
         }
-        param = SanitizeData.sanitizeMapObj(param);
+        // Raw password: tenant login (AuthService) bhi raw se match karta hai.
+        param = SanitizeData.sanitizeMapObjPreservingSecrets(param);
         String password = DataTypeUtility.stringValue(param.get("password"));
         if (password.length() == 0) {
             password = DataTypeUtility.stringValue(param.get("newPassword"));

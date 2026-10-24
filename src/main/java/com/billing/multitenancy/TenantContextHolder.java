@@ -2,7 +2,9 @@ package com.billing.multitenancy;
 
 public class TenantContextHolder {
 
-    private static final ThreadLocal<String> CONTEXT = new InheritableThreadLocal<>();
+    // Plain ThreadLocal (Inheritable nahi): background thread (jaise s3-cleanup executor)
+    // apne banane wali request ka tenant hamesha ke liye na pakad le.
+    private static final ThreadLocal<String> CONTEXT = new ThreadLocal<>();
 
     public static void setTenantId(String tenant) {
         CONTEXT.set(tenant);

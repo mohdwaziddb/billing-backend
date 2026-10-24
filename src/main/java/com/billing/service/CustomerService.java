@@ -225,8 +225,10 @@ public class CustomerService {
     @Transactional(readOnly = true)
     public CustomerResponse getByMobile(String email, String mobile) {
         Company company = accessControlService.getCurrentCompany(email);
-        Customer customer = customerRepository.findByMobileIgnoreCaseAndActiveTrue( mobile == null ? null : mobile.trim())
-                .orElseThrow(() -> new ResourceNotFoundException("Active customer not found with this mobile number"));
+        // Inactive bhi lautao (response me active=false): pehle 404 aata tha, Create Invoice "naya customer banao"
+        // dikhata tha aur save par "mobile already registered" fail hota. Invoice/payment create khud active check karte hain.
+        Customer customer = customerRepository.findByMobileIgnoreCase(mobile == null ? null : mobile.trim())
+                .orElseThrow(() -> new ResourceNotFoundException("Customer not found with this mobile number"));
         return toResponse(customer, loadMetrics(company, List.of(customer)).get(customer.getId()));
     }
 
@@ -258,6 +260,12 @@ public class CustomerService {
         customer.setGstNo(gstin);
         customer.setGstin(gstin);
         customer.setGstRegistered(gstRegistered);
+        // Delete jaisa hi rule: baaki paisa ho to inactive nahi (warna Edit se Status=Inactive karke
+        // ye check bypass hota tha aur inactive customer Outstanding / reminders me aata rehta).
+        if (Boolean.FALSE.equals(request.getActive()) && customer.isActive()
+                && customer.getCurrentBalance() != null && customer.getCurrentBalance().compareTo(BigDecimal.ZERO) > 0) {
+            throw new BadRequestException("Customer has outstanding balance and cannot be made inactive");
+        }
         // active na bheja ho to purani value rahe (pehle chup-chaap inactive ho jata tha).
         if (request.getActive() != null) {
             customer.setActive(request.getActive());

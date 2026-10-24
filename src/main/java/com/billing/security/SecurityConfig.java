@@ -66,6 +66,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/company/by-domain").permitAll()
                         .requestMatchers("/api/v1/company/current").permitAll()
                         .requestMatchers("/api/v1/platform-admin/login").permitAll()
+                        // Public branding (name/logo/tagline) — login page token se pehle padhta hai.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/platform-settings").permitAll()
                         .requestMatchers("/uploads/public/**").permitAll()
                         // Payment gateway server-to-server callbacks: no JWT, authenticity = gateway signature.
                         .requestMatchers(HttpMethod.POST, "/api/v1/payment-gateway/webhook/**").permitAll()

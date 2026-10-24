@@ -1,0 +1,37 @@
+/* Retail thermal receipt for 80mm roll printers (72mm printable). Monospace, dashed separators, B/W friendly. */
+@page { size: 80mm 297mm; margin: 4mm 4mm 6mm 4mm; }
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: #ffffff; }
+body { font-family: "Courier New", Courier, monospace; font-size: 8.2pt; color: #000000; line-height: 1.3; }
+@media screen {
+  body { background: #f1f5f9; }
+  .page { width: 80mm; margin: 0 auto; padding: 5mm 4mm; background: #ffffff; }
+}
+table { width: 100%; border-collapse: collapse; }
+td, th { vertical-align: top; padding: 0.6pt 0; }
+.center { text-align: center; }
+.r { text-align: right !important; }
+.bold { font-weight: bold; }
+.small { font-size: 7.4pt; }
+.muted { color: #444444; }
+.pre { white-space: pre-line; }
+.logo { height: 30pt; width: auto; margin-bottom: 3pt; }
+.store { font-size: 11.5pt; font-weight: bold; text-transform: uppercase; margin-bottom: 1pt; }
+.title { font-size: 9.5pt; text-transform: uppercase; letter-spacing: 1pt; margin-bottom: 3pt; }
+.dash { border-top: 1px dashed #000000; margin: 4pt 0; }
+.dash-double { border-top: 3px double #000000; margin: 3pt 0; }
+.meta td:first-child { width: 32%; }
+.items { -fs-table-paginate: paginate; }
+.items thead { display: table-header-group; }
+.items th { text-align: left; font-weight: bold; border-bottom: 1px dashed #000000; padding-bottom: 2pt; }
+.items tbody { page-break-inside: avoid; }
+.name-row td { font-weight: bold; padding-top: 3pt; }
+.num-row td { padding-bottom: 1pt; }
+.hsn { font-size: 7pt; color: #333333; }
+.grand td { font-size: 11pt; font-weight: bold; padding: 2pt 0; }
+.words { font-size: 7.4pt; margin-top: 3pt; font-style: italic; }
+.gst th { font-size: 7.2pt; text-align: left; border-bottom: 1px dashed #000000; }
+.gst td { font-size: 7.2pt; }
+.qr-block { page-break-inside: avoid; }
+.qr { width: 92pt; height: 92pt; margin-top: 2pt; }
+.thanks { font-size: 9pt; margin: 2pt 0; }

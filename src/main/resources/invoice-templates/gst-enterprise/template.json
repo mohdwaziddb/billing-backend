@@ -1,9 +1,11 @@
 {
   "templateId": "gst-enterprise",
-  "templateName": "GST Enterprise",
-  "version": "1.0.0",
-  "description": "Enterprise GST-heavy invoice with multi-section summaries and compliance-first presentation.",
+  "templateName": "Detailed GST + Payments",
+  "version": "2.0.0",
+  "description": "The complete invoice: GSTIN/PAN/CIN, payment summary, HSN tax summary, bank account, UPI QR with amount, terms, declaration and signatory.",
   "author": "Bizio",
+  "category": "Detailed",
+  "sortOrder": 10,
   "supportsWatermark": true,
   "supportsQr": true,
   "supportsSignature": true,
@@ -14,8 +16,8 @@
   "supportsMultiPage": true,
   "supportedPaperSizes": ["A4"],
   "defaultColors": {
-    "accent": "#1e293b",
+    "accent": "#15803d",
     "muted": "#64748b",
-    "surface": "#f8fafc"
+    "surface": "#f0fdf4"
   }
 }

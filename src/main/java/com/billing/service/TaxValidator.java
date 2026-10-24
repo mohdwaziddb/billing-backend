@@ -44,6 +44,13 @@ public class TaxValidator {
         parseTaxType(request.getTaxType());
     }
 
+    // Default tax naye invoice/product par khud lagta hai — inactive tax default nahi ho sakta.
+    public void validateDefaultIsActive(Boolean defaultTax, boolean active) {
+        if (Boolean.TRUE.equals(defaultTax) && !active) {
+            throw new BadRequestException("Default tax must be active. Set Status to Active or Default Tax to No.");
+        }
+    }
+
     public TaxType parseTaxType(String value) {
         if (value == null || value.isBlank()) {
             throw new BadRequestException("Tax type is required");

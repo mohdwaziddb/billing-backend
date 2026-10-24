@@ -1,0 +1,60 @@
+/* Elegant Serif - centred letterhead, serif type, antique-gold rules. Tables only (PDF engine has no flex/grid). */
+@page {
+  size: A4;
+  margin: 12mm 14mm 14mm 14mm;
+  @bottom-center { content: "- " counter(page) " of " counter(pages) " -"; font-family: Georgia, "Times New Roman", serif; font-size: 7.5pt; color: #a8a29e; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: #ffffff; }
+body { font-family: Georgia, "Times New Roman", Times, serif; font-size: 9.2pt; color: #44403c; line-height: 1.45; }
+@media screen { .page { max-width: 210mm; margin: 0 auto; padding: 14mm; } }
+table { width: 100%; border-collapse: collapse; }
+td, th { vertical-align: top; padding: 0; }
+.watermark { position: fixed; top: 40%; left: 0; width: 100%; text-align: center; font-size: 76pt; font-style: italic; color: #f3eee4; transform: rotate(-28deg); letter-spacing: 6pt; }
+.muted { color: #78716c; }
+.ink { color: #1c1917; }
+.italic { font-style: italic; }
+.c { text-align: center !important; }
+.r { text-align: right !important; }
+.pre { white-space: pre-line; }
+.label { font-size: 7.2pt; text-transform: uppercase; letter-spacing: 2pt; color: #a16207; margin-bottom: 3pt; }
+
+.letterhead { text-align: center; }
+.logo { height: 44pt; width: auto; margin-bottom: 6pt; }
+.company-name { font-size: 18pt; text-transform: uppercase; letter-spacing: 4pt; color: #1c1917; }
+.address { font-size: 8.4pt; color: #78716c; margin-top: 2pt; }
+.rule { border-top: 3px double #a16207; margin: 10pt 0 8pt 0; }
+.doc-title { text-align: center; font-size: 13pt; font-style: italic; color: #a16207; letter-spacing: 1pt; margin-bottom: 12pt; }
+
+.parties { margin-bottom: 10pt; }
+.billed { width: 55%; padding-right: 16pt !important; }
+.party { font-size: 11.5pt; color: #1c1917; margin-bottom: 2pt; }
+.details { border-left: 1px solid #e7e0d3; padding-left: 14pt !important; }
+.kv td { padding: 1.4pt 0; }
+.kv td:first-child { color: #78716c; width: 45%; }
+
+.items { -fs-table-paginate: paginate; }
+.items thead { display: table-header-group; }
+.items th { font-weight: normal; font-size: 7.4pt; text-transform: uppercase; letter-spacing: 1.4pt; color: #a16207; text-align: left; padding: 5pt 5pt; white-space: nowrap; border-top: 1px solid #a16207; border-bottom: 1px solid #a16207; }
+.items td { padding: 5pt 5pt; border-bottom: 1px solid #efe9de; }
+.items tr { page-break-inside: avoid; }
+.sub { font-size: 7.6pt; color: #a8a29e; font-style: italic; }
+
+.summary { margin-top: 12pt; page-break-inside: avoid; }
+.sum-left { width: 55%; padding-right: 20pt !important; }
+.words { font-style: italic; color: #1c1917; margin-bottom: 10pt; }
+.block { margin-bottom: 8pt; }
+.upi td { vertical-align: middle; }
+.qr-cell { width: 70pt; }
+.qr { width: 62pt; height: 62pt; }
+.totals td { padding: 2.6pt 0; }
+.totals td:first-child { color: #78716c; }
+.totals .grand td { border-top: 3px double #a16207; border-bottom: 1px solid #a16207; padding: 6pt 0; font-size: 12.5pt; color: #1c1917; }
+.sign { margin-top: 12pt; text-align: center; }
+.sign-space { height: 38pt; padding-top: 4pt; }
+.signature { height: 32pt; width: auto; }
+.sign-label { border-top: 1px solid #a8a29e; padding-top: 3pt; font-size: 8pt; letter-spacing: 1pt; }
+
+.terms { margin-top: 8pt; font-size: 7.6pt; }
+.thanks { margin-top: 10pt; text-align: center; font-style: italic; font-size: 11pt; color: #a16207; }
+.credit { margin-top: 6pt; text-align: center; font-size: 7pt; color: #a8a29e; }

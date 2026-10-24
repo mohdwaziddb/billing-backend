@@ -15,16 +15,12 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
 import java.util.Map;
-import java.util.Set;
 
 @RestController
 @RequestMapping("/api/v1/auth")
 @RequiredArgsConstructor
 public class AuthRestController {
-
-    private static final Set<String> SENSITIVE_KEYS = Set.of("password", "newPassword", "refreshToken", "otp", "code", "mfaToken");
 
     private final AuthService authService;
     private final PasswordResetService passwordResetService;
@@ -140,18 +136,8 @@ public class AuthRestController {
         return null;
     }
 
+    // confirmPassword bhi raw rahe (pehle sanitize hota tha to "must match" galat fail).
     private Map<String, Object> sanitizePreservingSecrets(Map<String, Object> param) {
-        if (param == null) {
-            return new HashMap<>();
-        }
-        Map<String, Object> secrets = new HashMap<>();
-        for (String key : SENSITIVE_KEYS) {
-            if (param.containsKey(key) && param.get(key) != null) {
-                secrets.put(key, param.get(key).toString());
-            }
-        }
-        Map<String, Object> sanitized = SanitizeData.sanitizeMapObj(param);
-        sanitized.putAll(secrets);
-        return sanitized;
+        return SanitizeData.sanitizeMapObjPreservingSecrets(param);
     }
 }

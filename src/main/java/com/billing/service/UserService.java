@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -37,6 +38,14 @@ public class UserService {
     private final AuditLogService auditLogService;
     private final RefreshTokenRepository refreshTokenRepository;
     private final TenantImageService tenantImageService;
+
+    // Users page ke rules (controller Map leta hai, isliye DTO annotations nahi chalte — yahin check).
+    static final String USER_EMAIL_PATTERN = "^[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}$";
+    static final String USER_MOBILE_PATTERN = "^\\d{10}$";
+    static final String USERNAME_PATTERN = "^[A-Za-z0-9._@-]{3,50}$";
+    static final int USER_PASSWORD_MIN_LENGTH = 8;
+    // BCrypt sirf pehle 72 bytes padhta hai — usse lamba password chup-chaap truncate hota.
+    static final int USER_PASSWORD_MAX_BYTES = 72;
 
     private static final String PHOTO_KIND = "user-photo";
 
@@ -189,12 +198,17 @@ public class UserService {
         if (request.getPassword() == null || request.getPassword().isBlank()) {
             throw new BadRequestException("Password is required");
         }
+        validateUserRequest(request);
         validateUniqueUser(company, request.getUsername(), request.getMobileNumber(), request.getEmail(), null);
         RoleName role = resolveRole(request.getRole());
+        // USERS:ADD wala admin khud se bada (OWNER) user na bana sake.
+        if (role == RoleName.OWNER && !accessControlService.isCompanyOwner(accessControlService.getCurrentUser(email))) {
+            throw new BadRequestException("Only an owner can create another owner");
+        }
 
         User user = User.builder()
                 .company(company)
-                .fullName(request.getFullName())
+                .fullName(request.getFullName().trim())
                 .username(normalizeUsername(request.getUsername()))
                 .mobileNumber(normalizeMobile(request.getMobileNumber()))
                 .email(normalizeEmail(request.getEmail()))
@@ -221,8 +235,15 @@ public class UserService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         Map<String, Object> oldData = snapshot(user);
 
+        validateUserRequest(request);
         validateUniqueUser(company, request.getUsername(), request.getMobileNumber(), request.getEmail(), user.getId());
         RoleName role = resolveRole(request.getRole());
+        if (role != user.getRole()) {
+            ensureNotCurrentUser(email, user, "You cannot change your own role");
+        }
+        if (Boolean.FALSE.equals(request.getActive()) && user.isActive()) {
+            ensureNotCurrentUser(email, user, "You cannot deactivate your own account");
+        }
         if (user.getRole() == RoleName.OWNER && user.isActive() && role != RoleName.OWNER) {
             ensureAnotherOwnerExists(company, user.getId());
         }
@@ -230,7 +251,7 @@ public class UserService {
             ensureAnotherOwnerExists(company, user.getId());
         }
 
-        user.setFullName(request.getFullName());
+        user.setFullName(request.getFullName().trim());
         user.setUsername(normalizeUsername(request.getUsername()));
         user.setMobileNumber(normalizeMobile(request.getMobileNumber()));
         user.setEmail(normalizeEmail(request.getEmail()));
@@ -285,6 +306,7 @@ public class UserService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         Map<String, Object> oldData = snapshot(user);
+        ensureNotCurrentUser(email, user, "You cannot disable your own account");
         if (user.getRole() == RoleName.OWNER && user.isActive()) {
             ensureAnotherOwnerExists(company, user.getId());
         }
@@ -416,19 +438,20 @@ public class UserService {
             passwordValue = null;
         }
         companyUserRequest.setPassword(passwordValue);
+        // Role zaroori hai: pehle missing/galat role chup-chaap USER ban jata tha (edit par owner/admin demote).
         String roleString = DataTypeUtility.stringValue(param.get("role"));
         if (roleString.length() > 0) {
             try {
                 companyUserRequest.setRole(RoleName.valueOf(roleString.toUpperCase()));
             } catch (Exception exception) {
-                companyUserRequest.setRole(RoleName.USER);
+                throw new BadRequestException("Select a valid role");
             }
         } else {
             Object roleObject = param.get("role");
             if (roleObject instanceof RoleName) {
                 companyUserRequest.setRole((RoleName) roleObject);
             } else {
-                companyUserRequest.setRole(RoleName.USER);
+                companyUserRequest.setRole(null);
             }
         }
         Object activeObject = param.get("active");
@@ -447,6 +470,55 @@ public class UserService {
             companyUserRequest.setActive(true);
         }
         return companyUserRequest;
+    }
+
+    // Khud ko disable karne se session turant mar jata hai aur wapas aane ka rasta nahi bachta.
+    private void ensureNotCurrentUser(String email, User targetUser, String message) {
+        User currentUser = accessControlService.getCurrentUser(email);
+        if (currentUser != null && currentUser.getId() != null && Objects.equals(currentUser.getId(), targetUser.getId())) {
+            throw new BadRequestException(message);
+        }
+    }
+
+    void validateUserRequest(CompanyUserRequest request) {
+        String fullName = DataTypeUtility.stringValue(request.getFullName());
+        String username = DataTypeUtility.stringValue(request.getUsername());
+        String userEmail = DataTypeUtility.stringValue(request.getEmail());
+        String mobileNumber = DataTypeUtility.stringValue(request.getMobileNumber());
+        if (fullName.length() == 0) {
+            throw new BadRequestException("Full name is required");
+        }
+        if (fullName.length() > 100) {
+            throw new BadRequestException("Full name must be 100 characters or less");
+        }
+        if (username.length() == 0) {
+            throw new BadRequestException("Username is required");
+        }
+        if (!username.matches(USERNAME_PATTERN)) {
+            throw new BadRequestException("Username must be 3-50 characters: letters, numbers, dot, underscore, @ or hyphen (no spaces)");
+        }
+        if (userEmail.length() == 0) {
+            throw new BadRequestException("Email address is required");
+        }
+        if (!userEmail.matches(USER_EMAIL_PATTERN)) {
+            throw new BadRequestException("Enter a valid email address");
+        }
+        if (mobileNumber.length() == 0) {
+            throw new BadRequestException("Mobile number is required");
+        }
+        if (!mobileNumber.matches(USER_MOBILE_PATTERN)) {
+            throw new BadRequestException("Enter a 10-digit mobile number");
+        }
+        if (request.getRole() == null) {
+            throw new BadRequestException("Role is required");
+        }
+        String password = request.getPassword();
+        if (password != null && !password.isBlank() && password.trim().length() < USER_PASSWORD_MIN_LENGTH) {
+            throw new BadRequestException("Password must be at least " + USER_PASSWORD_MIN_LENGTH + " characters");
+        }
+        if (password != null && password.trim().getBytes(java.nio.charset.StandardCharsets.UTF_8).length > USER_PASSWORD_MAX_BYTES) {
+            throw new BadRequestException("Password must be " + USER_PASSWORD_MAX_BYTES + " characters or less");
+        }
     }
 
     private void ensureAnotherOwnerExists(Company company, Long excludedUserId) {
@@ -475,21 +547,37 @@ public class UserService {
             }
         }
 
-        userRepository.findByUsernameIgnoreCase( normalizedUsername)
-                .filter(existing -> currentUserId == null || !existing.getId().equals(currentUserId))
-                .ifPresent(existing -> messages.add("Username already exists in this company."));
+        // findAll* variants: purane duplicate rows hon to bhi Optional lookup crash na kare.
+        if (hasOtherUser(userRepository.findAllByUsernameIgnoreCase(normalizedUsername), currentUserId)) {
+            messages.add("Username already exists in this company.");
+        } else if (hasOtherUser(userRepository.findAllByEmailIgnoreCase(normalizedUsername), currentUserId)
+                || hasOtherUser(userRepository.findAllByMobileNumber(normalizedUsername), currentUserId)) {
+            // Login username / email / mobile teeno se hota hai — kisi aur ka email/mobile username na bane.
+            messages.add("Username is already used as another user's email or mobile number.");
+        }
 
-        userRepository.findByMobileNumber( normalizedMobile)
-                .filter(existing -> currentUserId == null || !existing.getId().equals(currentUserId))
-                .ifPresent(existing -> messages.add("Mobile number already exists in this company."));
+        if (hasOtherUser(userRepository.findAllByMobileNumber(normalizedMobile), currentUserId)) {
+            messages.add("Mobile number already exists in this company.");
+        } else if (hasOtherUser(userRepository.findAllByUsernameIgnoreCase(normalizedMobile), currentUserId)) {
+            messages.add("Mobile number is already used as another user's username.");
+        }
 
-        userRepository.findByEmailIgnoreCase( normalizedEmail)
-                .filter(existing -> currentUserId == null || !existing.getId().equals(currentUserId))
-                .ifPresent(existing -> messages.add("Email already exists in this company."));
+        if (hasOtherUser(userRepository.findAllByEmailIgnoreCase(normalizedEmail), currentUserId)) {
+            messages.add("Email already exists in this company.");
+        } else if (hasOtherUser(userRepository.findAllByUsernameIgnoreCase(normalizedEmail), currentUserId)) {
+            messages.add("Email is already used as another user's username.");
+        }
 
         if (!messages.isEmpty()) {
             throw new BadRequestException(String.join(" ", messages));
         }
+    }
+
+    private boolean hasOtherUser(List<User> matches, Long currentUserId) {
+        if (matches == null) {
+            return false;
+        }
+        return matches.stream().anyMatch(existing -> currentUserId == null || !Objects.equals(existing.getId(), currentUserId));
     }
 
     private String normalizeEmail(String value) {

@@ -1,0 +1,53 @@
+/* Compact A5 - half-sheet invoice for counters and small shops. Dense type, single outline. Tables only. */
+@page {
+  size: A5;
+  margin: 7mm 7mm 9mm 7mm;
+  @bottom-right { content: counter(page) "/" counter(pages); font-family: Helvetica, Arial, sans-serif; font-size: 6.5pt; color: #9ca3af; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: #ffffff; }
+body { font-family: Helvetica, Arial, sans-serif; font-size: 7.4pt; color: #1f2937; line-height: 1.32; }
+@media screen { .page { max-width: 148mm; margin: 0 auto; padding: 7mm; } }
+table { width: 100%; border-collapse: collapse; }
+td, th { vertical-align: top; padding: 0; }
+.watermark { position: fixed; top: 38%; left: 0; width: 100%; text-align: center; font-size: 52pt; font-weight: bold; color: #f1f2f4; transform: rotate(-28deg); }
+.muted { color: #6b7280; }
+.c { text-align: center !important; }
+.r { text-align: right !important; }
+.pre { white-space: pre-line; }
+.tiny { font-size: 6.2pt; color: #6b7280; }
+
+.head { border-bottom: 1.5pt solid #7c3aed; margin-bottom: 4pt; }
+.head td { padding-bottom: 5pt; vertical-align: middle; }
+.logo-cell { width: 36pt; }
+.logo { height: 30pt; width: auto; }
+.company-name { font-size: 11pt; font-weight: bold; color: #111827; }
+.title-cell { text-align: right; width: 34%; }
+.doc-title { font-size: 10pt; font-weight: bold; text-transform: uppercase; letter-spacing: 1pt; color: #7c3aed; }
+
+.party { margin-bottom: 4pt; background: #f5f3ff; }
+.party td { padding: 4pt 5pt; }
+.party-right { text-align: right; width: 40%; }
+
+.items { -fs-table-paginate: paginate; border: 1px solid #d1d5db; }
+.items thead { display: table-header-group; }
+.items th { background: #ede9fe; color: #4c1d95; font-size: 6.6pt; text-transform: uppercase; padding: 3pt 3pt; text-align: left; border-bottom: 1px solid #c4b5fd; }
+.items td { padding: 2.6pt 3pt; border-bottom: 1px solid #eceff3; }
+.items tr { page-break-inside: avoid; }
+
+.bottom { margin-top: 5pt; page-break-inside: avoid; }
+.left { padding-right: 6pt !important; }
+.gst-line { margin-top: 3pt; color: #374151; }
+.bank { margin-top: 3pt; }
+.terms { margin-top: 3pt; font-size: 6.5pt; color: #6b7280; }
+.qr-cell { width: 58pt; text-align: center; }
+.qr { width: 54pt; height: 54pt; }
+.right { width: 36%; }
+.totals td { padding: 1.6pt 4pt; }
+.totals .grand td { background: #7c3aed; color: #ffffff; font-weight: bold; font-size: 9pt; padding: 3pt 4pt; }
+.sign { margin-top: 6pt; text-align: center; }
+.signature { height: 22pt; width: auto; }
+.sign-label { border-top: 1px solid #9ca3af; padding-top: 2pt; font-size: 6.6pt; margin-top: 16pt; }
+.signature + .sign-label { margin-top: 0; }
+.foot { margin-top: 6pt; text-align: center; font-size: 6.8pt; color: #6b7280; border-top: 1px dashed #d1d5db; padding-top: 3pt; }
+.credit { color: #9ca3af; }

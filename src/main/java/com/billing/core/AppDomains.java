@@ -55,4 +55,14 @@ public final class AppDomains {
                 && !MAIN_DOMAIN.equalsIgnoreCase(host)
                 && !WWW_MAIN_DOMAIN.equalsIgnoreCase(host);
     }
+
+    /** Local dev host: localhost, &lt;tenant&gt;.localhost, 127.0.0.1, ::1. */
+    public static boolean isLocalDevHost(String hostOnly) {
+        if (hostOnly == null) {
+            return false;
+        }
+        String host = hostOnly.toLowerCase(java.util.Locale.ROOT);
+        return LOCALHOST.equals(host) || host.endsWith(LOCAL_TENANT_SUFFIX)
+                || "127.0.0.1".equals(host) || "::1".equals(host) || "[::1]".equals(host);
+    }
 }

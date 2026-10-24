@@ -69,6 +69,10 @@ public class PurchaseService {
         BigDecimal subtotal = zero();
         for (PurchaseItemRequest itemRequest : request.getItems()) {
             Product product = productService.getProductOrThrow(company, itemRequest.getProductId());
+            // UI sirf active products dikhata hai; API se bhi inactive product ka stock na bane.
+            if (!product.isActive()) {
+                throw new BadRequestException("Inactive product cannot be purchased: " + product.getName());
+            }
             BigDecimal purchaseRate = scale(itemRequest.getPurchaseRate());
             BigDecimal sellingRate = scale(itemRequest.getSellingRate());
             if (sellingRate.compareTo(purchaseRate) < 0) {

@@ -83,14 +83,15 @@ public class UserRestController {
     @PostMapping
     @com.billing.security.RequiresPermission(menu = "USERS", action = "ADD")
     public ResponseEntity<?> createCompanyUser(@RequestBody Map<String, Object> param, Authentication authentication, HttpServletRequest request) {
-        param = SanitizeData.sanitizeMapObj(param);
+        // Password raw rahe: login raw password se match karta hai.
+        param = SanitizeData.sanitizeMapObjPreservingSecrets(param);
         return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", userService.createCompanyUser(param, authentication.getName())), HttpStatus.OK);
     }
 
     @PutMapping("/{userId}")
     @com.billing.security.RequiresPermission(menu = "USERS", action = "EDIT")
     public ResponseEntity<?> updateCompanyUser(@PathVariable Long userId, @RequestBody Map<String, Object> param, Authentication authentication, HttpServletRequest request) {
-        param = SanitizeData.sanitizeMapObj(param);
+        param = SanitizeData.sanitizeMapObjPreservingSecrets(param);
         userId = DataTypeUtility.getForeignKeyValue(userId);
         return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", userService.updateCompanyUser(param, userId, authentication.getName())), HttpStatus.OK);
     }

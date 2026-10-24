@@ -55,16 +55,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             // collide across databases (every tenant starts at id 1), so the
             // lookup must already run in the token's own database.
             // (RequestInterceptor later re-validates header-vs-token binding.)
-            if (("USER".equals(authType) || "SUPER_ADMIN".equals(authType))
-                    && (TenantContextHolder.getTenant() == null || TenantContextHolder.getTenant().isBlank())) {
+            // Hamesha claim se set (pehle se bhara ho tab bhi): tenant sirf token se aata hai.
+            if ("USER".equals(authType) || "SUPER_ADMIN".equals(authType)) {
                 String claimDb = jwtService.extractDatabaseName(token);
                 if (claimDb == null || claimDb.isBlank()) {
                     String claimCode = jwtService.extractCompanyCode(token);
                     claimDb = claimCode != null ? claimCode.toLowerCase(java.util.Locale.ROOT) : null;
                 }
-                if (claimDb != null && !claimDb.isBlank()) {
-                    TenantContextHolder.setTenantId(claimDb);
+                if (claimDb == null || claimDb.isBlank()) {
+                    // Tenant-less user token: default DB me same id ka koi aur user mil jata. Anonymous maano.
+                    SecurityContextHolder.clearContext();
+                    filterChain.doFilter(request, response);
+                    return;
                 }
+                TenantContextHolder.setTenantId(claimDb);
             }
 
             if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
@@ -108,8 +112,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     );
                     authenticationToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                     SecurityContextHolder.getContext().setAuthentication(authenticationToken);
-                    if (dbName != null && !dbName.isBlank()
-                            && (TenantContextHolder.getTenant() == null || TenantContextHolder.getTenant().isBlank())) {
+                    if (dbName != null && !dbName.isBlank()) {
                         TenantContextHolder.setTenantId(dbName);
                     }
                     filterChain.doFilter(request, response);
@@ -144,9 +147,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                             dbName = code != null ? code.toLowerCase(java.util.Locale.ROOT) : null;
                         }
                         if (dbName != null && !dbName.isBlank()) {
-                            if (TenantContextHolder.getTenant() == null || TenantContextHolder.getTenant().isBlank()) {
-                                TenantContextHolder.setTenantId(dbName);
-                            }
+                            TenantContextHolder.setTenantId(dbName);
                         }
                     }
                 }

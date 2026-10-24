@@ -109,7 +109,8 @@ public class RequestInterceptor implements HandlerInterceptor {
                     return false;
                 }
                 databaseName = dbForCompany;
-                ensureTenantDataSource(databaseName, companyRegistryService.resolveDbHostByDomain(domain));
+                // Host us tenant DB ka (registry), main-domain ka nahi — multi-RDS me galat server na lage.
+                ensureTenantDataSource(databaseName, companyRegistryService.resolveDbHostByDatabase(databaseName));
             }
         }
 
@@ -255,14 +256,28 @@ public class RequestInterceptor implements HandlerInterceptor {
             }
         }
 
+        // Header/subdomain/domain se tenant nahi mila par request ke paas valid token hai:
+        // token ka apna tenant (JwtAuthenticationFilter ne claim se bind kiya) default DB
+        // se pehle. Warna dusre tenant ka token default DB par route hokar 403 khata tha.
+        if (databaseName == null && !isPlatformPath && companyRegistryService != null) {
+            String tokenTenant = TenantContextHolder.getTenant();
+            String tokenDb = tokenTenant == null ? "" : tokenTenant.replace("_read", "").replace("_write", "").trim();
+            if (!tokenDb.isEmpty() && companyRegistryService.isValidDatabase(tokenDb)) {
+                databaseName = tokenDb;
+                ensureTenantDataSource(databaseName, companyRegistryService.resolveDbHostByDatabase(databaseName));
+            }
+        }
+
         // Live main-domain stop: tenant APIs do not exist on the main host.
         // Without this, the sample-DB fallback below would silently serve the wrong
         // workspace (e.g. POST /api/v1/auth/login on biziotechnologies.com would
         // authenticate against the default database). Platform paths, public
         // branding lookup and infra endpoints are exempt; local dev is unaffected.
         // A valid tenant resolved above (header/subdomain/domain) still passes.
+        // Same stop on any non-local host (raw IP, unknown host): wahan bhi default DB
+        // par login/branding nahi. Local dev (localhost / *.localhost) unaffected.
         if (Registry.IS_ONLINE && !isPlatformPath && databaseName == null
-                && hostOnly != null && AppDomains.isMainDomain(hostOnly)
+                && hostOnly != null && (AppDomains.isMainDomain(hostOnly) || !AppDomains.isLocalDevHost(hostOnly))
                 && requestUri != null
                 && (requestUri.startsWith("/api/v1/auth/")
                         || requestUri.equals("/api/v1/company/current"))) {

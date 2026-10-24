@@ -28,4 +28,8 @@ public class InvoiceTemplateDefinition {
     private String htmlTemplate;
     private String cssTemplate;
     private String folderName;
+    /** Gallery order (lower first). Missing in template.json = end of list. */
+    private int sortOrder;
+    /** Short gallery tag, e.g. "GST", "Retail", "Service". */
+    private String category;
 }

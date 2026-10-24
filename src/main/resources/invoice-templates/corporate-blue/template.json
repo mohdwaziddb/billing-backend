@@ -1,0 +1,23 @@
+{
+  "templateId": "corporate-blue",
+  "templateName": "Corporate Blue",
+  "version": "1.0.0",
+  "description": "Navy header band with logo, supply-details strip, zebra item rows and a bold grand-total bar.",
+  "author": "Bizio",
+  "category": "Corporate",
+  "sortOrder": 3,
+  "supportsWatermark": true,
+  "supportsQr": true,
+  "supportsSignature": true,
+  "supportsBankDetails": true,
+  "supportsTerms": true,
+  "supportsNotes": true,
+  "supportsGst": true,
+  "supportsMultiPage": true,
+  "supportedPaperSizes": ["A4"],
+  "defaultColors": {
+    "accent": "#1e3a8a",
+    "muted": "#64748b",
+    "surface": "#eff6ff"
+  }
+}

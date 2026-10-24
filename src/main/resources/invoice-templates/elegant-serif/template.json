@@ -1,0 +1,23 @@
+{
+  "templateId": "elegant-serif",
+  "templateName": "Elegant Serif",
+  "version": "1.0.0",
+  "description": "Centred letterhead with serif typography and antique-gold rules - suits boutiques, jewellers, studios and hotels.",
+  "author": "Bizio",
+  "category": "Premium",
+  "sortOrder": 4,
+  "supportsWatermark": true,
+  "supportsQr": true,
+  "supportsSignature": true,
+  "supportsBankDetails": true,
+  "supportsTerms": true,
+  "supportsNotes": true,
+  "supportsGst": true,
+  "supportsMultiPage": true,
+  "supportedPaperSizes": ["A4"],
+  "defaultColors": {
+    "accent": "#a16207",
+    "muted": "#78716c",
+    "surface": "#faf7f2"
+  }
+}

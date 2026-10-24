@@ -9,4 +9,6 @@ public interface PasswordResetOtpRepository extends JpaRepository<PasswordResetO
     List<PasswordResetOtp> findByUserIdOrderByIdDesc(Long userId);
 
     void deleteByUserId(Long userId);
+
+    java.util.Optional<PasswordResetOtp> findTopByOrderByIdDesc();
 }

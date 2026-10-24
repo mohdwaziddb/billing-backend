@@ -29,6 +29,9 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class PaymentModeMasterService {
 
+    // Delete soft hota hai (record inactive rehta hai), isliye duplicate par user ko reactivate ka rasta batao.
+    static final String DUPLICATE_MODE_MESSAGE = "A payment mode with this name already exists. If it was deleted, set the Status filter to All Modes and reactivate it.";
+
     // Sirf Cash (counter) + Online (gateway, dropdown me gateway ke naam se — e.g. "Razorpay").
     // UPI / Card ab gateway checkout ke andar aate hain; purane default modes V20261023_04 se delete.
     private static final List<String> DEFAULT_MODES = List.of("Cash", "Online");
@@ -240,13 +243,13 @@ public class PaymentModeMasterService {
                 ? paymentModeMasterRepository.existsByCompanyAndModeCodeIgnoreCase(company, modeCode)
                 : paymentModeMasterRepository.existsByCompanyAndModeCodeIgnoreCaseAndIdNot(company, modeCode, excludedId);
         if (codeExists) {
-            throw new BadRequestException("Payment mode already exists");
+            throw new BadRequestException(DUPLICATE_MODE_MESSAGE);
         }
         boolean nameExists = excludedId == null
                 ? paymentModeMasterRepository.existsByCompanyAndModeNameIgnoreCase(company, modeName)
                 : paymentModeMasterRepository.existsByCompanyAndModeNameIgnoreCaseAndIdNot(company, modeName, excludedId);
         if (nameExists) {
-            throw new BadRequestException("Payment mode already exists");
+            throw new BadRequestException(DUPLICATE_MODE_MESSAGE);
         }
     }
 

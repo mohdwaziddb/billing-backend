@@ -153,7 +153,25 @@ public class GlobalExceptionHandler {
             }
         }
 
+        // MySQL "Data too long for column 'category_name'" — pehle "conflicts with existing data" aata tha, jo galat wajah batata tha.
+        if (normalized.contains("data too long") && message.contains("'")) {
+            String columnName = extractQuotedValue(message);
+            if (columnName != null) {
+                return toReadableFieldName(columnName) + " is too long. Please shorten it and try again.";
+            }
+            return "One of the values is too long. Please shorten it and try again.";
+        }
+
         return "This record could not be saved because it conflicts with existing data.";
+    }
+
+    // category_name -> "Category name" (user ko column naam padhne layak dikhe).
+    static String toReadableFieldName(String columnName) {
+        String readableName = columnName.replace('_', ' ').trim();
+        if (readableName.isEmpty()) {
+            return "Value";
+        }
+        return Character.toUpperCase(readableName.charAt(0)) + readableName.substring(1).toLowerCase();
     }
 
     private String extractQuotedValue(String message) {

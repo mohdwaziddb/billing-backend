@@ -1,0 +1,23 @@
+{
+  "templateId": "compact-a5",
+  "templateName": "Compact A5",
+  "version": "1.0.0",
+  "description": "Half-sheet A5 invoice with dense one-line sections - saves paper for counters, pharmacies and small shops.",
+  "author": "Bizio",
+  "category": "Compact",
+  "sortOrder": 6,
+  "supportsWatermark": true,
+  "supportsQr": true,
+  "supportsSignature": true,
+  "supportsBankDetails": true,
+  "supportsTerms": true,
+  "supportsNotes": true,
+  "supportsGst": true,
+  "supportsMultiPage": true,
+  "supportedPaperSizes": ["A5"],
+  "defaultColors": {
+    "accent": "#7c3aed",
+    "muted": "#6b7280",
+    "surface": "#f5f3ff"
+  }
+}

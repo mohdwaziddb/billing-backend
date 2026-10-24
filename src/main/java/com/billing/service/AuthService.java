@@ -61,7 +61,7 @@ public class AuthService {
 
     @Transactional
     public AuthResponse login(LoginRequest request) {
-        String attemptKey = LoginAttemptService.key(currentTenantOrUnknown(), request.getLoginIdentifier());
+        String attemptKey = LoginAttemptService.key(currentTenantOrUnknown(), lockoutSubject(request.getLoginIdentifier()));
         loginAttemptService.assertNotLocked(attemptKey);
         try {
             AuthResponse response = authenticate(request);
@@ -71,6 +71,25 @@ public class AuthService {
             loginAttemptService.recordFailure(attemptKey);
             throw e;
         }
+    }
+
+    // Ek hi account username / email / mobile teeno se login ho sakta hai:
+    // counter user id par ho, warna 5 ki jagah 15 galat try mil jaate the.
+    private String lockoutSubject(String loginIdentifier) {
+        try {
+            String normalized = normalizeIdentifier(loginIdentifier);
+            List<User> candidates = new ArrayList<>();
+            candidates.addAll(userRepository.findAllByUsernameIgnoreCase(normalized));
+            candidates.addAll(userRepository.findAllByEmailIgnoreCase(normalized));
+            candidates.addAll(userRepository.findAllByMobileNumber(normalized));
+            List<User> unique = uniqueById(candidates);
+            if (unique.size() == 1 && unique.get(0).getId() != null) {
+                return "uid:" + unique.get(0).getId();
+            }
+        } catch (Exception ignored) {
+            // Lookup fail ho to raw identifier par hi lock.
+        }
+        return loginIdentifier;
     }
 
     private String currentTenantOrUnknown() {
@@ -196,7 +215,16 @@ public class AuthService {
 
     @Transactional
     public void logout(String refreshToken) {
-        refreshTokenRepository.findByToken(refreshToken).ifPresent(refreshTokenRepository::delete);
+        refreshTokenRepository.findByToken(refreshToken).ifPresent(token -> {
+            // Logout ke baad purana access token bhi band (pehle expiry tak chalta tha).
+            // Login already single-session hai, isliye user-level cutoff theek hai.
+            User user = token.getUser();
+            if (user != null) {
+                user.setTokensValidAfter(LocalDateTime.now());
+                userRepository.save(user);
+            }
+            refreshTokenRepository.delete(token);
+        });
     }
 
     private LoginRequest mapToLoginRequest(Map<String, Object> param) {
@@ -460,14 +488,24 @@ public class AuthService {
         return matches.stream().findFirst();
     }
 
-    private void validateCompanyActiveForLogin(User user) {
+    // User.company @Transient hai (DATABASE-per-tenant me kabhi set nahi hota),
+    // isliye tenant ka apna companies row dekhna zaroori hai — pehle ye check
+    // hamesha pass hota tha aur inactive company ke users login kar lete the.
+    private boolean isCompanyInactive(User user) {
         if (user.getCompany() != null && !user.getCompany().isActive()) {
+            return true;
+        }
+        return resolveTenantCompany().map(company -> !company.isActive()).orElse(false);
+    }
+
+    private void validateCompanyActiveForLogin(User user) {
+        if (isCompanyInactive(user)) {
             throw new CompanyInactiveException("Company is inactive. Please contact administrator.");
         }
     }
 
     private void validateCompanyActiveForApi(User user) {
-        if (user.getCompany() != null && !user.getCompany().isActive()) {
+        if (isCompanyInactive(user)) {
             throw new CompanyInactiveException("Company is inactive");
         }
     }

@@ -432,8 +432,18 @@ public class InvoiceService {
                 throw new BadRequestException("Inactive product cannot be invoiced: " + product.getName());
             }
             inventoryService.assertSufficientStock(invoice.getCompany(), product, itemRequest.getQty());
+            // Saaf wajah do (pehle deleted tax par "Tax master not found", inactive par chupchaap lagta tha).
+            if (product.isTaxable() && product.getTaxMaster() != null
+                    && (!product.getTaxMaster().isActive() || product.getTaxMaster().isDeleted())) {
+                throw new BadRequestException("The tax on product " + product.getName() + " is inactive. Set an active tax on the product first.");
+            }
 
-            TaxMaster taxMaster = taxMasterService.resolveForProduct(invoice.getCompany(), product.getTaxMaster() != null ? product.getTaxMaster().getId() : null, BigDecimal.ZERO, product.isTaxable());
+            // Pehle yahan legacy rate 0 jaata tha, to tax-less taxable product chupchaap 0% GST par bikta tha.
+            // Default tax bhi nahi lagate: screen us product ka tax 0 dikhati, bill me kuch aur aata.
+            if (product.isTaxable() && product.getTaxMaster() == null) {
+                throw new BadRequestException("Product " + product.getName() + " has no tax set. Set its tax (or mark it non-taxable) first.");
+            }
+            TaxMaster taxMaster = taxMasterService.resolveForProduct(invoice.getCompany(), product.getTaxMaster() != null ? product.getTaxMaster().getId() : null, null, product.isTaxable());
             calculationLines.add(new TaxCalculationService.TaxDocumentLineInput(
                     product,
                     taxMaster,
@@ -837,14 +847,14 @@ public class InvoiceService {
             referByUserIdValue = DataTypeUtility.getForeignKeyValue(param.get("referByUser"));
         }
         invoiceRequest.setReferByUserId(referByUserIdValue);
-        BigDecimal discountAmountValue = DataTypeUtility.bigDecimalObjectValue(param.get("discountAmount"));
+        BigDecimal discountAmountValue = amountParam(param.get("discountAmount"), "Invoice discount");
         if (discountAmountValue == null) {
-            discountAmountValue = DataTypeUtility.bigDecimalObjectValue(param.get("discount_amount"));
+            discountAmountValue = amountParam(param.get("discount_amount"), "Invoice discount");
         }
         invoiceRequest.setDiscountAmount(discountAmountValue);
-        BigDecimal paidAmountValue = DataTypeUtility.bigDecimalObjectValue(param.get("paidAmount"));
+        BigDecimal paidAmountValue = amountParam(param.get("paidAmount"), "Paid amount");
         if (paidAmountValue == null) {
-            paidAmountValue = DataTypeUtility.bigDecimalObjectValue(param.get("paid_amount"));
+            paidAmountValue = amountParam(param.get("paid_amount"), "Paid amount");
         }
         invoiceRequest.setPaidAmount(paidAmountValue);
         String paymentModeValue = DataTypeUtility.stringValue(param.get("paymentMode"));
@@ -872,24 +882,24 @@ public class InvoiceService {
                         productIdValue = DataTypeUtility.getForeignKeyValue(itemMap.get("product_id"));
                     }
                     invoiceItemRequest.setProductId(productIdValue);
-                    Integer qtyValue = DataTypeUtility.integerNullValue(itemMap.get("qty"));
+                    Integer qtyValue = quantityParam(itemMap.get("qty"));
                     if (qtyValue == null) {
-                        qtyValue = DataTypeUtility.integerNullValue(itemMap.get("quantity"));
+                        qtyValue = quantityParam(itemMap.get("quantity"));
                     }
                     invoiceItemRequest.setQty(qtyValue);
-                    BigDecimal priceValue = DataTypeUtility.bigDecimalObjectValue(itemMap.get("price"));
+                    BigDecimal priceValue = amountParam(itemMap.get("price"), "Price");
                     if (priceValue == null) {
-                        priceValue = DataTypeUtility.bigDecimalObjectValue(itemMap.get("unitPrice"));
+                        priceValue = amountParam(itemMap.get("unitPrice"), "Price");
                     }
                     invoiceItemRequest.setPrice(priceValue);
-                    BigDecimal taxPercentValue = DataTypeUtility.bigDecimalObjectValue(itemMap.get("taxPercent"));
+                    BigDecimal taxPercentValue = amountParam(itemMap.get("taxPercent"), "Tax percent");
                     if (taxPercentValue == null) {
-                        taxPercentValue = DataTypeUtility.bigDecimalObjectValue(itemMap.get("tax_percent"));
+                        taxPercentValue = amountParam(itemMap.get("tax_percent"), "Tax percent");
                     }
                     invoiceItemRequest.setTaxPercent(taxPercentValue);
-                    BigDecimal discountPercentValue = DataTypeUtility.bigDecimalObjectValue(itemMap.get("discountPercent"));
+                    BigDecimal discountPercentValue = amountParam(itemMap.get("discountPercent"), "Discount percent");
                     if (discountPercentValue == null) {
-                        discountPercentValue = DataTypeUtility.bigDecimalObjectValue(itemMap.get("discount_percent"));
+                        discountPercentValue = amountParam(itemMap.get("discount_percent"), "Discount percent");
                     }
                     invoiceItemRequest.setDiscountPercent(discountPercentValue);
                     String discountTypeValue = DataTypeUtility.stringValue(itemMap.get("discountType"));
@@ -900,9 +910,9 @@ public class InvoiceService {
                         discountTypeValue = null;
                     }
                     invoiceItemRequest.setDiscountType(discountTypeValue);
-                    BigDecimal discountValue = DataTypeUtility.bigDecimalObjectValue(itemMap.get("discountValue"));
+                    BigDecimal discountValue = amountParam(itemMap.get("discountValue"), "Discount");
                     if (discountValue == null) {
-                        discountValue = DataTypeUtility.bigDecimalObjectValue(itemMap.get("discount_value"));
+                        discountValue = amountParam(itemMap.get("discount_value"), "Discount");
                     }
                     invoiceItemRequest.setDiscountValue(discountValue);
                     invoiceItemList.add(invoiceItemRequest);
@@ -911,6 +921,47 @@ public class InvoiceService {
         }
         invoiceRequest.setItems(invoiceItemList);
         return invoiceRequest;
+    }
+
+    /**
+     * Strict number parse: DataTypeUtility galat format ("1,200", "₹500") par
+     * chupchaap 0 / null deta hai, jisse item ₹0 me bill ho jaata tha.
+     */
+    private BigDecimal amountParam(Object raw, String label) {
+        if (raw == null || raw instanceof BigDecimal) {
+            return (BigDecimal) raw;
+        }
+        if (raw instanceof Number number) {
+            return new BigDecimal(number.toString());
+        }
+        if (!(raw instanceof String)) {
+            throw new BadRequestException(label + " must be a number");
+        }
+        String text = DataTypeUtility.stringValue(raw);
+        if (text.length() == 0) {
+            return null;
+        }
+        try {
+            return new BigDecimal(text);
+        } catch (NumberFormatException e) {
+            throw new BadRequestException(label + " must be a plain number like 1200.50 (got \"" + text + "\")");
+        }
+    }
+
+    /** Qty whole number hi ho: 1.5 pehle chupchaap 1 (Double) ya "required" (String) ban jaata tha. */
+    private Integer quantityParam(Object raw) {
+        BigDecimal value = amountParam(raw, "Quantity");
+        if (value == null) {
+            return null;
+        }
+        if (value.stripTrailingZeros().scale() > 0) {
+            throw new BadRequestException("Quantity must be a whole number (got " + value.toPlainString() + ")");
+        }
+        try {
+            return value.intValueExact();
+        } catch (ArithmeticException e) {
+            throw new BadRequestException("Quantity is too large");
+        }
     }
 
     private User resolveReferByUser(Company company, Long referByUserId) {

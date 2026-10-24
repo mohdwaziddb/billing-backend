@@ -22,6 +22,8 @@ public class ExpenseResponse {
     private LocalDate expenseDate;
     private String description;
     private String attachmentUrl;
+    // Soft delete: list me "Deleted" filter ke saath dikhta hai.
+    private boolean deleted;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private String createdBy;

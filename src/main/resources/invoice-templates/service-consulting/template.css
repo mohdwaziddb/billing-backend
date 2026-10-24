@@ -1,0 +1,71 @@
+/* Professional Services - fee-based layout (description + SAC + amount), payment instructions panel. Tables only. */
+@page {
+  size: A4;
+  margin: 12mm 13mm 14mm 13mm;
+  @bottom-right { content: "Page " counter(page) " of " counter(pages); font-family: Helvetica, Arial, sans-serif; font-size: 7.5pt; color: #94a3b8; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: #ffffff; }
+body { font-family: Helvetica, Arial, sans-serif; font-size: 8.8pt; color: #475569; line-height: 1.45; }
+@media screen { .page { max-width: 210mm; margin: 0 auto; padding: 12mm; } }
+table { width: 100%; border-collapse: collapse; }
+td, th { vertical-align: top; padding: 0; }
+.watermark { position: fixed; top: 40%; left: 0; width: 100%; text-align: center; font-size: 76pt; font-weight: bold; color: #eef0fb; transform: rotate(-28deg); letter-spacing: 6pt; }
+.muted { color: #64748b; }
+.ink { color: #0f172a; }
+.strong { font-weight: bold; }
+.small { font-size: 7.6pt; }
+.c { text-align: center !important; }
+.r { text-align: right !important; }
+.pre { white-space: pre-line; }
+.label { font-size: 7pt; font-weight: bold; text-transform: uppercase; letter-spacing: 1.2pt; color: #4338ca; margin-bottom: 4pt; }
+.plain td { padding: 0; vertical-align: top; }
+
+.head { margin-bottom: 10pt; }
+.logo-cell { width: 56pt; }
+.logo { height: 44pt; width: auto; }
+.company-name { font-size: 14pt; font-weight: bold; color: #0f172a; margin-bottom: 1pt; }
+.title-cell { text-align: right; width: 34%; }
+.eyebrow { font-size: 8pt; font-weight: bold; text-transform: uppercase; letter-spacing: 2pt; color: #4338ca; }
+.inv-no { font-size: 17pt; font-weight: bold; color: #0f172a; margin: 2pt 0; }
+
+.cards { margin-bottom: 10pt; }
+.card { border: 1px solid #e2e8f0; border-radius: 6pt; padding: 9pt 10pt !important; width: 32%; }
+.gap { width: 2%; }
+.party { font-size: 10.5pt; font-weight: bold; color: #0f172a; }
+.kv td { padding: 1pt 0; }
+.kv td:first-child { color: #64748b; width: 46%; }
+.due-card { background: #4338ca; border-color: #4338ca; color: #ffffff; }
+.due-label { font-size: 7pt; font-weight: bold; text-transform: uppercase; letter-spacing: 1.2pt; color: #c7d2fe; margin-bottom: 4pt; }
+.due { font-size: 17pt; font-weight: bold; color: #ffffff; line-height: 1.2; }
+.due-sub { font-size: 7.6pt; color: #e0e7ff; margin-top: 2pt; }
+
+.items { -fs-table-paginate: paginate; }
+.items thead { display: table-header-group; }
+.items th { font-size: 7pt; text-transform: uppercase; letter-spacing: 1pt; color: #4338ca; text-align: left; padding: 6pt 6pt; background: #eef2ff; }
+.items td { padding: 6pt 6pt; border-bottom: 1px solid #e2e8f0; }
+.items tr { page-break-inside: avoid; }
+.items .num { width: 24pt; color: #a5b4fc; font-weight: bold; }
+.svc { color: #0f172a; font-weight: bold; font-size: 9.2pt; }
+.calc { font-size: 7.6pt; color: #94a3b8; margin-top: 1pt; }
+
+.bottom { margin-top: 10pt; page-break-inside: avoid; }
+.pay-panel { width: 54%; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6pt; padding: 10pt !important; }
+.pay-empty { width: 54%; }
+.qr-cell { width: 76pt; text-align: right; }
+.qr { width: 70pt; height: 70pt; }
+.ref { margin-top: 6pt; font-size: 7.6pt; color: #64748b; font-style: italic; }
+.gap-wide { width: 4%; }
+.totals td { padding: 3pt 0; border-bottom: 1px solid #f1f5f9; }
+.totals td:first-child { color: #64748b; }
+.totals .grand td { border-top: 2px solid #4338ca; border-bottom: none; padding-top: 7pt; font-size: 13pt; font-weight: bold; color: #0f172a; }
+.words { margin-top: 4pt; font-size: 7.8pt; font-style: italic; color: #64748b; text-align: right; padding-right: 2pt; }
+
+.closing { margin-top: 12pt; page-break-inside: avoid; }
+.terms-col { padding-right: 20pt !important; font-size: 7.8pt; }
+.terms { margin-top: 6pt; }
+.sign-col { width: 32%; text-align: center; }
+.sign-space { height: 40pt; }
+.signature { height: 36pt; width: auto; }
+.sign-label { border-top: 1px solid #94a3b8; padding-top: 3pt; color: #0f172a; font-weight: bold; font-size: 8pt; }
+.credit { margin-top: 8pt; text-align: center; font-size: 7pt; color: #94a3b8; }

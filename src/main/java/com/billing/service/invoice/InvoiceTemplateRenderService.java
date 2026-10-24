@@ -5,6 +5,7 @@ import com.billing.dto.invoice.InvoiceRenderResponse;
 import com.billing.dto.invoice.InvoiceTemplateMetadataResponse;
 import com.billing.entity.Company;
 import com.billing.entity.CompanyInvoiceSetting;
+import com.billing.entity.Customer;
 import com.billing.entity.Invoice;
 import com.billing.entity.InvoiceItem;
 import com.billing.service.AccessControlService;
@@ -30,9 +31,11 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import com.billing.util.OutboundUrlGuard;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -90,6 +93,8 @@ public class InvoiceTemplateRenderService {
                         .supportedPaperSizes(definition.getSupportedPaperSizes())
                         .defaultColors(definition.getDefaultColors())
                         .defaultTemplate(definition.getTemplateId().equals(defaultTemplateId))
+                        .sortOrder(definition.getSortOrder())
+                        .category(definition.getCategory())
                         .build())
                 .toList();
     }
@@ -111,8 +116,11 @@ public class InvoiceTemplateRenderService {
         Company company = accessControlService.getCurrentCompany(email);
         Invoice invoice = invoiceService.getInvoiceOrThrow(company, invoiceId);
         CompanyInvoiceSetting settings = companyInvoiceSettingsService.resolveForCompany(company);
-        String templateId = requestedTemplateId == null || requestedTemplateId.isBlank() ? settings.getDefaultTemplateId() : requestedTemplateId.trim();
-        InvoiceTemplateDefinition definition = invoiceTemplateRegistryService.getOrThrow(templateId);
+        // Saved default ka folder hat gaya ho to bhi print/PDF chale (fallback template);
+        // explicitly maanga gaya galat id abhi bhi 400 deta hai.
+        InvoiceTemplateDefinition definition = requestedTemplateId == null || requestedTemplateId.isBlank()
+                ? invoiceTemplateRegistryService.getOrDefault(settings.getDefaultTemplateId())
+                : invoiceTemplateRegistryService.getOrThrow(requestedTemplateId.trim());
         String html = render(definition, buildInvoiceModel(company, invoice, settings, definition));
         return InvoiceRenderResponse.builder()
                 .invoiceId(invoice.getId())
@@ -219,9 +227,11 @@ public class InvoiceTemplateRenderService {
         // Print-time shown on the PDF: IST wall-time, not server UTC.
         LocalDateTime renderedAt = com.billing.core.AppDateTime.istNow();
         List<Map<String, Object>> itemRows = new ArrayList<>();
+        List<TaxLine> taxLines = new ArrayList<>();
         for (InvoiceItem item : invoice.getItems()) {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("productName", item.getProduct().getName());
+            row.put("sku", item.getProduct().getSku());
             row.put("hsnCode", coalesce(item.getHsnCode(), "--"));
             row.put("qty", item.getQty());
             row.put("price", money(item.getPrice()));
@@ -236,22 +246,34 @@ public class InvoiceTemplateRenderService {
             row.put("gstBreakup", item.getIgstAmount() != null && item.getIgstAmount().compareTo(BigDecimal.ZERO) > 0
                     ? "IGST " + item.getIgstRate().setScale(2, RoundingMode.HALF_UP).toPlainString() + "%"
                     : "CGST " + scale(item.getCgstRate()).toPlainString() + "% + SGST " + scale(item.getSgstRate()).toPlainString() + "%");
+            row.put("cgstRate", rate(item.getCgstRate()));
+            row.put("sgstRate", rate(item.getSgstRate()));
+            row.put("igstRate", rate(item.getIgstRate()));
+            row.put("taxRateLabel", rate(item.getTaxRate()));
+            row.put("taxAmount", money(scale(item.getCgstAmount()).add(scale(item.getSgstAmount())).add(scale(item.getIgstAmount()))));
             itemRows.add(row);
+            taxLines.add(new TaxLine(coalesce(item.getHsnCode(), "--"), scale(item.getTaxRate()), scale(item.getTaxableAmount()),
+                    scale(item.getCgstRate()), scale(item.getCgstAmount()), scale(item.getSgstRate()), scale(item.getSgstAmount()),
+                    scale(item.getIgstRate()), scale(item.getIgstAmount()), item.getQty() == null ? 0 : item.getQty()));
         }
+        Customer customer = invoice.getCustomer();
+        // Invoice ke waqt ka snapshot (place of supply / GSTIN) pehle; purane invoices par customer ki current value.
+        String placeOfSupply = coalesce(invoice.getPlaceOfSupplyState(), customer.getState(), "--");
+        String customerGstin = coalesce(invoice.getCustomerGstin(), customer.getGstin(), customer.getGstNo());
 
         root.put("invoice", invoiceData(
                 invoice.getInvoiceNo(),
                 invoice.getInvoiceDate(),
                 invoice.getInvoiceDate(),
                 renderedAt,
-                coalesce(invoice.getCustomer().getState(), "--"),
-                invoice.getCustomer().getName(),
-                invoice.getCustomer().getMobile(),
-                invoice.getCustomer().getEmail(),
-                invoice.getCustomer().getAddress(),
-                invoice.getCustomer().getState(),
-                invoice.getCustomer().getCountry(),
-                coalesce(invoice.getCustomer().getGstin(), invoice.getCustomer().getGstNo()),
+                placeOfSupply,
+                customer.getName(),
+                customer.getMobile(),
+                customer.getEmail(),
+                customer.getAddress(),
+                customer.getState(),
+                customer.getCountry(),
+                customerGstin,
                 itemRows,
                 invoice.getPaymentStatus().name(),
                 money(invoice.getSubtotal()),
@@ -267,6 +289,12 @@ public class InvoiceTemplateRenderService {
                 amountInWords(invoice.getGrandTotal()),
                 watermarkText(invoice, settings)
         ));
+        String customerStateCode = customer.getStateMaster() == null ? null : customer.getStateMaster().getStateCode();
+        enrichInvoice(root, company, settings, definition, invoice.getInvoiceNo(), invoice.getInvoiceDate(), taxLines,
+                scale(invoice.getDiscountAmount()), scale(invoice.getRoundOff()), scale(invoice.getGrandTotal()),
+                scale(invoice.getPaidAmount()), scale(invoice.getBalanceAmount()),
+                joinNonBlank(customer.getAddress(), customer.getCity(), customer.getState(), customer.getPincode()),
+                stateCodeFor(placeOfSupply, customerGstin, customer.getState(), customerStateCode, company));
         root.put("shareUrl", frontendUrl + "/invoices/" + invoice.getId());
         return root;
     }
@@ -274,42 +302,104 @@ public class InvoiceTemplateRenderService {
     private Map<String, Object> buildSampleModel(Company company, CompanyInvoiceSetting settings, InvoiceTemplateDefinition definition) {
         Map<String, Object> root = baseModel(company, settings, definition);
         LocalDateTime renderedAt = com.billing.core.AppDateTime.istNow();
-        List<Map<String, Object>> itemRows = List.of(
-                item("Demo Office Chair", "9401", 6, "4500.00", "1500.00", "25500.00", "2295.00", "2295.00", "0.00", "30090.00", "CGST 9% + SGST 9%"),
-                item("Demo Workstation Desk", "9403", 3, "8200.00", "600.00", "24000.00", "2160.00", "2160.00", "0.00", "28320.00", "CGST 9% + SGST 9%"),
-                item("Demo Deployment Service", "9983", 1, "18000.00", "0.00", "18000.00", "0.00", "0.00", "3240.00", "21240.00", "IGST 18%")
-        );
+        LocalDate sampleDate = com.billing.core.AppDateTime.istToday();
+        String sampleState = coalesce(company.getState(), "Maharashtra");
+        String sampleStateCode = coalesce(companyStateCode(company), "27");
+        String sampleCustomerGstin = sampleStateCode + "AAPFB4321K1Z7";
+        // Realistic intra-state B2B sample. Amounts code se calculate hote hain (CGST + SGST),
+        // taaki line totals, HSN summary, grand total aur amount-in-words hamesha match karein.
+        List<TaxLine> taxLines = new ArrayList<>();
+        List<Map<String, Object>> itemRows = new ArrayList<>();
+        BigDecimal[] grossAndDiscount = {BigDecimal.ZERO, BigDecimal.ZERO};
+        addSampleLine(itemRows, taxLines, grossAndDiscount, "HP LaserJet Pro M126nw Multifunction Printer", "PRN-M126NW", "8443", 2, "14500.00", "500.00", "18");
+        addSampleLine(itemRows, taxLines, grossAndDiscount, "Logitech MK270 Wireless Keyboard & Mouse Combo", "LOG-MK270", "8471", 10, "1395.00", "0.00", "18");
+        addSampleLine(itemRows, taxLines, grossAndDiscount, "JK Copier A4 Paper 75 GSM (500 Sheets)", "JK-A4-75", "4802", 25, "245.00", "0.00", "12");
+        addSampleLine(itemRows, taxLines, grossAndDiscount, "Ergonomic Mesh Office Chair with Headrest", "CHR-MESH-HR", "9401", 4, "6800.00", "1200.00", "18");
+        addSampleLine(itemRows, taxLines, grossAndDiscount, "Camlin Whiteboard Marker - Pack of 10", "CAM-WBM-10", "9608", 12, "180.00", "0.00", "18");
+        addSampleLine(itemRows, taxLines, grossAndDiscount, "Annual IT Support & Maintenance Contract (12 months)", "AMC-IT-12M", "998713", 1, "12000.00", "0.00", "18");
+        BigDecimal taxableTotal = BigDecimal.ZERO;
+        BigDecimal cgstTotal = BigDecimal.ZERO;
+        BigDecimal sgstTotal = BigDecimal.ZERO;
+        for (TaxLine line : taxLines) {
+            taxableTotal = taxableTotal.add(line.taxableAmount());
+            cgstTotal = cgstTotal.add(line.cgstAmount());
+            sgstTotal = sgstTotal.add(line.sgstAmount());
+        }
+        BigDecimal unroundedTotal = taxableTotal.add(cgstTotal).add(sgstTotal);
+        BigDecimal grandTotal = unroundedTotal.setScale(0, RoundingMode.HALF_UP).setScale(2, RoundingMode.HALF_UP);
+        BigDecimal roundOff = grandTotal.subtract(unroundedTotal);
+        BigDecimal paidAmount = new BigDecimal("50000.00");
+        BigDecimal balanceAmount = grandTotal.subtract(paidAmount);
+        int financialYearStart = sampleDate.getMonthValue() >= 4 ? sampleDate.getYear() : sampleDate.getYear() - 1;
         root.put("invoice", invoiceData(
-                "INV-SAMPLE-20260629-001",
-                com.billing.core.AppDateTime.istToday(),
-                com.billing.core.AppDateTime.istToday().plusDays(7),
+                "INV/" + financialYearStart + "-" + String.format("%02d", (financialYearStart + 1) % 100) + "/0042",
+                sampleDate,
+                sampleDate.plusDays(15),
                 renderedAt,
-                coalesce(company.getState(), "Maharashtra"),
-                "Demo Retail Private Limited",
-                "9876501234",
-                "billing@demo-retail.example",
-                "Unit 14, Business Square, Baner, Pune",
-                "Maharashtra",
+                sampleState,
+                "Shree Balaji Enterprises",
+                "9876543210",
+                "accounts@shreebalaji.in",
+                "Shop No. 12, Laxmi Market, MG Road",
+                sampleState,
                 "India",
-                "27ABCDE1234F1Z5",
+                sampleCustomerGstin,
                 itemRows,
                 "PARTIAL",
-                // Subtotal = 6×4500 + 3×8200 + 18000 = 69600 (pehle 69000 tha: 69600 − 2100 discount = 67500 taxable).
-                "69600.00",
-                "2100.00",
-                "67500.00",
-                "4455.00",
-                "4455.00",
-                "3240.00",
-                "0.00",
-                "79650.00",
-                "30000.00",
-                "49650.00",
-                amountInWords(new BigDecimal("79650.00")),
+                money(grossAndDiscount[0]),
+                money(grossAndDiscount[1]),
+                money(taxableTotal),
+                money(cgstTotal),
+                money(sgstTotal),
+                money(BigDecimal.ZERO),
+                money(roundOff),
+                money(grandTotal),
+                money(paidAmount),
+                money(balanceAmount),
+                amountInWords(grandTotal),
                 previewWatermarkText(settings)
         ));
+        enrichInvoice(root, company, settings, definition, "SAMPLE", sampleDate, taxLines, grossAndDiscount[1], roundOff, grandTotal,
+                paidAmount, balanceAmount, joinNonBlank("Shop No. 12, Laxmi Market, MG Road", "Pune", sampleState, "411001"), sampleStateCode);
         root.put("shareUrl", frontendUrl + "/invoices");
         return root;
+    }
+
+    /** Sample line (intra-state CGST + SGST). grossAndDiscount[0] += qty x price, [1] += discount. */
+    private void addSampleLine(List<Map<String, Object>> itemRows, List<TaxLine> taxLines, BigDecimal[] grossAndDiscount,
+                               String productName, String sku, String hsnCode, int qty, String price, String discount, String taxRate) {
+        BigDecimal unitPrice = new BigDecimal(price);
+        BigDecimal discountAmount = new BigDecimal(discount);
+        BigDecimal rateValue = new BigDecimal(taxRate);
+        BigDecimal gross = unitPrice.multiply(BigDecimal.valueOf(qty));
+        BigDecimal taxableAmount = scale(gross.subtract(discountAmount));
+        BigDecimal halfRate = rateValue.divide(BigDecimal.valueOf(2), 2, RoundingMode.HALF_UP);
+        BigDecimal halfTax = taxableAmount.multiply(halfRate).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+        BigDecimal lineTotal = taxableAmount.add(halfTax).add(halfTax);
+        grossAndDiscount[0] = grossAndDiscount[0].add(gross);
+        grossAndDiscount[1] = grossAndDiscount[1].add(discountAmount);
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("productName", productName);
+        row.put("sku", sku);
+        row.put("hsnCode", hsnCode);
+        row.put("qty", qty);
+        row.put("price", money(unitPrice));
+        row.put("discountAmount", money(discountAmount));
+        row.put("taxRate", scale(rateValue).toPlainString());
+        row.put("taxName", "GST " + rate(rateValue) + "%");
+        row.put("taxableAmount", money(taxableAmount));
+        row.put("cgstAmount", money(halfTax));
+        row.put("sgstAmount", money(halfTax));
+        row.put("igstAmount", money(BigDecimal.ZERO));
+        row.put("lineTotal", money(lineTotal));
+        row.put("gstBreakup", "CGST " + scale(halfRate).toPlainString() + "% + SGST " + scale(halfRate).toPlainString() + "%");
+        row.put("cgstRate", rate(halfRate));
+        row.put("sgstRate", rate(halfRate));
+        row.put("igstRate", "0");
+        row.put("taxRateLabel", rate(rateValue));
+        row.put("taxAmount", money(halfTax.add(halfTax)));
+        itemRows.add(row);
+        taxLines.add(new TaxLine(hsnCode, scale(rateValue), taxableAmount, halfRate, halfTax, halfRate, halfTax, BigDecimal.ZERO, BigDecimal.ZERO, qty));
     }
 
     private CompanyInvoiceSetting mergePreviewSettings(CompanyInvoiceSetting base, InvoiceTemplatePreviewRequest request) {
@@ -392,7 +482,23 @@ public class InvoiceTemplateRenderService {
         companyMap.put("upiId", coalesce(company.getUpiId(), "--"));
         companyMap.put("invoiceNotes", defaultIfNull(settings.getNoteText(), "Thank you for choosing Bizio."));
         companyMap.put("invoiceTerms", defaultIfNull(settings.getTermsText(), "Goods once sold will not be taken back."));
-        companyMap.put("qrDataUrl", settings.isShowQr() && definition.isSupportsQr() ? qrDataUrl(qrPayload(company)) : null);
+        companyMap.put("qrDataUrl", settings.isShowQr() && definition.isSupportsQr() && hasText(company.getUpiId()) ? qrDataUrl(upiPayload(company, null, null)) : null);
+        companyMap.put("qrAmount", null);
+        String companyAddress = DataTypeUtility.stringValue(companyMap.get("address"));
+        companyMap.put("stateName", coalesce(company.getState(), company.getStateMaster() == null ? null : company.getStateMaster().getStateName()));
+        companyMap.put("stateCode", companyStateCode(company));
+        companyMap.put("pan", coalesce(company.getPanNumber()));
+        companyMap.put("cin", coalesce(company.getCinNumber()));
+        companyMap.put("hasGstin", hasText(company.getGstin()) || hasText(company.getTaxId()));
+        companyMap.put("hasPan", hasText(company.getPanNumber()));
+        companyMap.put("hasCin", hasText(company.getCinNumber()));
+        companyMap.put("hasPhone", hasText(company.getPhone()));
+        companyMap.put("hasEmail", hasText(company.getEmail()));
+        companyMap.put("hasWebsite", hasText(company.getWebsiteUrl()));
+        companyMap.put("hasAddress", hasText(companyAddress));
+        companyMap.put("hasBankDetails", hasText(company.getBankAccountNumber()));
+        companyMap.put("hasUpi", hasText(company.getUpiId()));
+        companyMap.put("compositionScheme", company.isCompositionScheme());
 
         model.put("company", companyMap);
         model.put("settings", Map.of(
@@ -475,29 +581,155 @@ public class InvoiceTemplateRenderService {
         return invoiceMap;
     }
 
-    private Map<String, Object> item(String productName, String hsnCode, int qty, String price, String discountAmount, String taxableAmount, String cgstAmount, String sgstAmount, String igstAmount, String lineTotal, String gstBreakup) {
-        Map<String, Object> row = new LinkedHashMap<>();
-        row.put("productName", productName);
-        row.put("hsnCode", hsnCode);
-        row.put("qty", qty);
-        row.put("price", price);
-        row.put("discountAmount", discountAmount);
-        row.put("taxRate", new BigDecimal(cgstAmount).compareTo(BigDecimal.ZERO) > 0 ? "18.00" : "18.00");
-        row.put("taxName", "GST");
-        row.put("taxableAmount", taxableAmount);
-        row.put("cgstAmount", cgstAmount);
-        row.put("sgstAmount", sgstAmount);
-        row.put("igstAmount", igstAmount);
-        row.put("lineTotal", lineTotal);
-        row.put("gstBreakup", gstBreakup);
-        return row;
+    /** Ek invoice line ka GST hissa — HSN summary aur totals isi se bante hain. */
+    private record TaxLine(String hsnCode, BigDecimal taxRate, BigDecimal taxableAmount,
+                           BigDecimal cgstRate, BigDecimal cgstAmount, BigDecimal sgstRate, BigDecimal sgstAmount,
+                           BigDecimal igstRate, BigDecimal igstAmount, int qty) {
+        BigDecimal totalTax() {
+            return cgstAmount.add(sgstAmount).add(igstAmount);
+        }
     }
 
-    private String qrPayload(Company company) {
-        if (company.getUpiId() != null && !company.getUpiId().isBlank()) {
-            return "upi://pay?pa=" + company.getUpiId().trim() + "&pn=" + company.getName().replace(" ", "%20");
+    /**
+     * Templates ke liye extra (sab optional) keys: HSN summary, inter-state flag, "has*" flags
+     * taaki missing GSTIN/bank/phone par "--" chhapne ki jagah poora row chhupa sakein,
+     * aur invoice-specific UPI QR (amount + invoice no ke saath).
+     */
+    @SuppressWarnings("unchecked")
+    private void enrichInvoice(Map<String, Object> root, Company company, CompanyInvoiceSetting settings, InvoiceTemplateDefinition definition,
+                               String invoiceNo, LocalDate invoiceDate, List<TaxLine> taxLines,
+                               BigDecimal discountAmount, BigDecimal roundOff, BigDecimal grandTotal, BigDecimal paidAmount, BigDecimal balanceAmount,
+                               String customerFullAddress, String placeOfSupplyCode) {
+        Map<String, Object> invoiceMap = (Map<String, Object>) root.get("invoice");
+        Map<String, Object> companyMap = (Map<String, Object>) root.get("company");
+        BigDecimal cgstTotal = BigDecimal.ZERO;
+        BigDecimal sgstTotal = BigDecimal.ZERO;
+        BigDecimal igstTotal = BigDecimal.ZERO;
+        int totalQty = 0;
+        Map<String, Map<String, Object>> hsnGroups = new LinkedHashMap<>();
+        Map<String, BigDecimal[]> hsnSums = new LinkedHashMap<>();
+        for (TaxLine line : taxLines) {
+            cgstTotal = cgstTotal.add(line.cgstAmount());
+            sgstTotal = sgstTotal.add(line.sgstAmount());
+            igstTotal = igstTotal.add(line.igstAmount());
+            totalQty += line.qty();
+            String groupKey = line.hsnCode() + "|" + line.taxRate().toPlainString();
+            BigDecimal[] sums = hsnSums.computeIfAbsent(groupKey, key -> new BigDecimal[]{BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO});
+            sums[0] = sums[0].add(line.taxableAmount());
+            sums[1] = sums[1].add(line.cgstAmount());
+            sums[2] = sums[2].add(line.sgstAmount());
+            sums[3] = sums[3].add(line.igstAmount());
+            Map<String, Object> group = hsnGroups.computeIfAbsent(groupKey, key -> new LinkedHashMap<>());
+            group.put("hsnCode", line.hsnCode());
+            group.put("taxRate", rate(line.taxRate()));
+            group.put("cgstRate", rate(line.cgstRate()));
+            group.put("sgstRate", rate(line.sgstRate()));
+            group.put("igstRate", rate(line.igstRate()));
         }
-        return "BANK|" + coalesce(company.getBankName(), "") + "|" + coalesce(company.getBankAccountNumber(), "") + "|" + coalesce(company.getBankIfscCode(), "");
+        List<Map<String, Object>> hsnSummary = new ArrayList<>();
+        hsnGroups.forEach((groupKey, group) -> {
+            BigDecimal[] sums = hsnSums.get(groupKey);
+            group.put("taxableAmount", money(sums[0]));
+            group.put("cgstAmount", money(sums[1]));
+            group.put("sgstAmount", money(sums[2]));
+            group.put("igstAmount", money(sums[3]));
+            group.put("totalTax", money(sums[1].add(sums[2]).add(sums[3])));
+            hsnSummary.add(group);
+        });
+        BigDecimal totalTax = cgstTotal.add(sgstTotal).add(igstTotal);
+        boolean interState = igstTotal.compareTo(BigDecimal.ZERO) > 0;
+        String placeOfSupply = DataTypeUtility.stringValue(invoiceMap.get("placeOfSupply"));
+        String customerGstin = DataTypeUtility.stringValue(invoiceMap.get("customerGstin"));
+
+        invoiceMap.put("invoiceDateShort", formatDate(invoiceDate));
+        invoiceMap.put("interState", interState);
+        invoiceMap.put("totalTax", money(totalTax));
+        invoiceMap.put("totalTaxInWords", amountInWords(totalTax));
+        invoiceMap.put("totalQty", totalQty);
+        invoiceMap.put("itemCount", taxLines.size());
+        invoiceMap.put("hsnSummary", hsnSummary);
+        invoiceMap.put("hasDiscount", discountAmount.compareTo(BigDecimal.ZERO) > 0);
+        invoiceMap.put("hasRoundOff", roundOff.compareTo(BigDecimal.ZERO) != 0);
+        invoiceMap.put("hasPaid", paidAmount.compareTo(BigDecimal.ZERO) > 0);
+        invoiceMap.put("hasBalance", balanceAmount.compareTo(BigDecimal.ZERO) > 0);
+        invoiceMap.put("isPaid", balanceAmount.compareTo(BigDecimal.ZERO) <= 0);
+        invoiceMap.put("hasCustomerGstin", hasText(customerGstin) && !"--".equals(customerGstin));
+        invoiceMap.put("hasCustomerPhone", hasText(DataTypeUtility.stringValue(invoiceMap.get("customerPhone"))));
+        invoiceMap.put("hasCustomerEmail", hasText(DataTypeUtility.stringValue(invoiceMap.get("customerEmail"))));
+        invoiceMap.put("customerFullAddress", customerFullAddress);
+        invoiceMap.put("hasCustomerAddress", hasText(customerFullAddress));
+        invoiceMap.put("placeOfSupplyCode", placeOfSupplyCode);
+        invoiceMap.put("placeOfSupplyLabel", placeOfSupplyCode == null || "--".equals(placeOfSupply) ? placeOfSupply : placeOfSupply + " (" + placeOfSupplyCode + ")");
+        invoiceMap.put("reverseCharge", "No");
+        // Composition dealer GST "Tax Invoice" issue nahi kar sakta — Bill of Supply banta hai.
+        invoiceMap.put("documentTitle", company.isCompositionScheme() ? "Bill of Supply"
+                : (hasText(company.getGstin()) || hasText(company.getTaxId()) ? "Tax Invoice" : "Invoice"));
+
+        if (settings.isShowQr() && definition.isSupportsQr() && hasText(company.getUpiId())) {
+            BigDecimal qrAmount = balanceAmount.compareTo(BigDecimal.ZERO) > 0 ? balanceAmount : null;
+            companyMap.put("qrDataUrl", qrDataUrl(upiPayload(company, qrAmount, invoiceNo)));
+            companyMap.put("qrAmount", qrAmount == null ? null : money(qrAmount));
+        }
+    }
+
+    /** UPI deep link (NPCI format). Scan karte hi payee + amount + invoice note bhar jaata hai. */
+    private String upiPayload(Company company, BigDecimal amount, String invoiceNo) {
+        StringBuilder payload = new StringBuilder("upi://pay?pa=").append(urlEncode(company.getUpiId().trim()))
+                .append("&pn=").append(urlEncode(coalesce(company.getBankAccountName(), company.getLegalName(), company.getName(), "Merchant")))
+                .append("&cu=INR");
+        if (amount != null) {
+            payload.append("&am=").append(scale(amount).toPlainString());
+        }
+        if (hasText(invoiceNo)) {
+            payload.append("&tn=").append(urlEncode("Invoice " + invoiceNo));
+        }
+        return payload.toString();
+    }
+
+    private String urlEncode(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
+    }
+
+    private String companyStateCode(Company company) {
+        if (company.getStateMaster() != null && hasText(company.getStateMaster().getStateCode())) {
+            return company.getStateMaster().getStateCode().trim();
+        }
+        return gstinStateCode(coalesce(company.getGstin(), company.getTaxId()));
+    }
+
+    /** Place of supply ka GST state code: customer GSTIN ke pehle 2 digit, warna state master. */
+    private String stateCodeFor(String placeOfSupply, String customerGstin, String customerState, String customerStateCode, Company company) {
+        String fromGstin = gstinStateCode(customerGstin);
+        if (fromGstin != null) {
+            return fromGstin;
+        }
+        if (hasText(customerStateCode) && placeOfSupply != null && placeOfSupply.equalsIgnoreCase(coalesce(customerState, ""))) {
+            return customerStateCode.trim();
+        }
+        if (placeOfSupply != null && placeOfSupply.equalsIgnoreCase(coalesce(company.getState(), ""))) {
+            return companyStateCode(company);
+        }
+        return null;
+    }
+
+    private String gstinStateCode(String gstin) {
+        if (gstin == null) {
+            return null;
+        }
+        String trimmed = gstin.trim();
+        return trimmed.length() >= 2 && Character.isDigit(trimmed.charAt(0)) && Character.isDigit(trimmed.charAt(1)) ? trimmed.substring(0, 2) : null;
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    /** 18.00 -> "18", 2.50 -> "2.5" (GST rate label). */
+    private String rate(BigDecimal value) {
+        if (value == null || value.compareTo(BigDecimal.ZERO) == 0) {
+            return "0";
+        }
+        return value.stripTrailingZeros().toPlainString();
     }
 
     private String watermarkText(Invoice invoice, CompanyInvoiceSetting settings) {
@@ -676,8 +908,29 @@ public class InvoiceTemplateRenderService {
         return value == null ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP) : value.setScale(2, RoundingMode.HALF_UP);
     }
 
+    /** Invoice par Indian grouping: 1,23,456.00 (pehle 123456.00 chhapta tha). */
     private String money(BigDecimal value) {
-        return scale(value).toPlainString();
+        BigDecimal scaled = scale(value);
+        String plain = scaled.abs().toPlainString();
+        int dotIndex = plain.indexOf('.');
+        String integerPart = dotIndex < 0 ? plain : plain.substring(0, dotIndex);
+        String decimalPart = dotIndex < 0 ? "" : plain.substring(dotIndex);
+        StringBuilder grouped = new StringBuilder();
+        if (integerPart.length() <= 3) {
+            grouped.append(integerPart);
+        } else {
+            String leading = integerPart.substring(0, integerPart.length() - 3);
+            String lastThree = integerPart.substring(integerPart.length() - 3);
+            int firstGroup = leading.length() % 2;
+            if (firstGroup > 0) {
+                grouped.append(leading, 0, firstGroup).append(',');
+            }
+            for (int index = firstGroup; index < leading.length(); index += 2) {
+                grouped.append(leading, index, index + 2).append(',');
+            }
+            grouped.append(lastThree);
+        }
+        return (scaled.signum() < 0 ? "-" : "") + grouped + decimalPart;
     }
 
     private String coalesce(String... values) {

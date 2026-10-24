@@ -77,8 +77,16 @@ public interface TaxMasterRepository extends JpaRepository<TaxMaster, Long> {
     @Query("select case when count(t)>0 then true else false end from TaxMaster t where (:company is null or 1=1) and lower(t.taxCode)=lower(:taxCode) and t.deleted=false and t.id <> :id")
     boolean existsByCompanyAndTaxCodeIgnoreCaseAndDeletedFalseAndIdNot(@Param("company") Company company, @Param("taxCode") String taxCode, @Param("id") Long id);
 
-    @Query("select t from TaxMaster t where (:company is null or 1=1) and t.taxType = :taxType and t.rate = :rate and t.deleted=false")
-    Optional<TaxMaster> findByCompanyAndTaxTypeAndRateAndDeletedFalse(@Param("company") Company company, @Param("taxType") TaxType taxType, @Param("rate") BigDecimal rate);
+    @Query("select t from TaxMaster t where (:company is null or 1=1) and t.taxType = :taxType and t.rate = :rate and t.deleted=false order by t.active desc, t.defaultTax desc, t.id asc")
+    List<TaxMaster> findAllByCompanyAndTaxTypeAndRateAndDeletedFalse(@Param("company") Company company, @Param("taxType") TaxType taxType, @Param("rate") BigDecimal rate);
+
+    /**
+     * Ek rate ki kai rows ho sakti hain (Nil Rated 0% + Exempt 0%), isliye pehle
+     * single-result query IncorrectResultSize (500) deti thi. Active, phir default, phir purani row.
+     */
+    default Optional<TaxMaster> findByCompanyAndTaxTypeAndRateAndDeletedFalse(Company company, TaxType taxType, BigDecimal rate) {
+        return findAllByCompanyAndTaxTypeAndRateAndDeletedFalse(company, taxType, rate).stream().findFirst();
+    }
 
     @Query("select t from TaxMaster t where (:company is null or 1=1) and t.defaultTax=true and t.deleted=false")
     Optional<TaxMaster> findByCompanyAndDefaultTaxTrueAndDeletedFalse(@Param("company") Company company);
