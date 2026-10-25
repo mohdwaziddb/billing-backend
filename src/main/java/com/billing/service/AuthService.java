@@ -4,7 +4,9 @@ import com.billing.entity.Company;
 import com.billing.entity.RefreshToken;
 import com.billing.entity.User;
 import com.billing.entity.UserMfaDevice;
+import com.billing.entity.UserSession;
 import com.billing.entity.enums.RoleName;
+import com.billing.entity.enums.UserSessionStatus;
 import com.billing.multitenancy.TenantContextHolder;
 import com.billing.dto.auth.AuthResponse;
 import com.billing.dto.auth.LoginRequest;
@@ -50,6 +52,7 @@ public class AuthService {
     private final TotpService totpService;
     private final MfaService mfaService;
     private final LoginAttemptService loginAttemptService;
+    private final UserSessionService userSessionService;
 
     @Value("${app.refresh-token-expiration}")
     private long refreshTokenExpiration;
@@ -199,9 +202,19 @@ public class AuthService {
         // sessions. deleteByUser here used to kill every sibling session, so a
         // second concurrent refresh (multi-tab, deploy-time 401 bursts) found
         // its token deleted and logged the user out everywhere (shared storage).
+        UserSession session = token.getSession();
         refreshTokenRepository.delete(token);
         refreshTokenRepository.deleteByUserAndExpiryDateBefore(user, LocalDateTime.now());
-        return issueTokens(user);
+        if (session != null && session.getStatus() != UserSessionStatus.ACTIVE) {
+            throw new UnauthorizedException("This device was logged out. Please sign in again.");
+        }
+        if (session == null) {
+            // Devices feature se pehle ka login: pehli refresh par uski device row ban jaati hai.
+            session = userSessionService.start(user);
+        } else {
+            userSessionService.markActive(session);
+        }
+        return issueTokens(user, session);
     }
 
     @Transactional
@@ -216,14 +229,19 @@ public class AuthService {
     @Transactional
     public void logout(String refreshToken) {
         refreshTokenRepository.findByToken(refreshToken).ifPresent(token -> {
-            // Logout ke baad purana access token bhi band (pehle expiry tak chalta tha).
-            // Login already single-session hai, isliye user-level cutoff theek hai.
+            UserSession session = token.getSession();
+            refreshTokenRepository.delete(token);
+            if (session != null) {
+                // Sirf yahi device bahar (sid se iska access token turant band); baaki devices chalte rahein.
+                userSessionService.end(session, UserSessionStatus.LOGGED_OUT, "Logged out");
+                return;
+            }
+            // Purana (bina device) token: pehle jaisa user-level cutoff.
             User user = token.getUser();
             if (user != null) {
                 user.setTokensValidAfter(LocalDateTime.now());
                 userRepository.save(user);
             }
-            refreshTokenRepository.delete(token);
         });
     }
 
@@ -293,12 +311,11 @@ public class AuthService {
 
     private AuthResponse buildAuthResponse(User user) {
         validateCompanyActiveForApi(user);
-        // Fresh login keeps single-session behavior: old sessions invalidated.
-        refreshTokenRepository.deleteByUser(user);
-        return issueTokens(user);
+        // Kai devices allowed: naya login ek naya device (session) hai, purane chalte rehte hain.
+        return issueTokens(user, userSessionService.start(user));
     }
 
-    private AuthResponse issueTokens(User user) {
+    private AuthResponse issueTokens(User user, UserSession session) {
         // DATABASE-per-tenant: User.company is @Transient, so resolve tenant company
         // explicitly from the current tenant connection (TSM-like JWT claims).
         Company tenantCompany = resolveTenantCompany().orElse(null);
@@ -310,13 +327,14 @@ public class AuthService {
                 ? tenantCompany.getCode()
                 : tenantDb.toUpperCase(Locale.ROOT);
         CustomUserDetails userDetails = new CustomUserDetails(user, tenantCode, tenantDb);
-        String accessToken = jwtService.generateAccessToken(userDetails);
+        String accessToken = jwtService.generateAccessToken(userDetails, session.getSessionKey());
         String refreshTokenValue = UUID.randomUUID().toString() + UUID.randomUUID();
 
         RefreshToken refreshToken = RefreshToken.builder()
                 .token(refreshTokenValue)
                 .user(user)
                 .expiryDate(LocalDateTime.now().plusSeconds(refreshTokenExpiration / 1000))
+                .session(session)
                 .build();
         refreshTokenRepository.save(refreshToken);
 

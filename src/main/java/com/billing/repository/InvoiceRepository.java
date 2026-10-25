@@ -41,6 +41,10 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Long> {
     List<Invoice> findByCompanyAndCustomerOrderByInvoiceDateDescIdDesc(@Param("company") Company company, @Param("customer") Customer customer);
     @Query("select i from Invoice i where i.customer = :customer and i.deleted = false order by i.invoiceDate desc, i.id desc")
     List<Invoice> findByCustomerOrderByInvoiceDateDescIdDesc(@Param("customer") Customer customer);
+
+    /** Outstanding list: saare baaki-wale invoices ek query me (pehle har customer ki alag query). */
+    @Query("select i from Invoice i where i.deleted = false and i.balanceAmount > 0 and i.paymentStatus <> com.billing.entity.enums.InvoiceStatus.PAID")
+    List<Invoice> findAllWithOutstandingBalance();
     @EntityGraph(attributePaths = {"customer", "customer.stateMaster", "referByUser", "items", "items.product", "items.taxMaster"})
     @Query("select i from Invoice i where (:company is null or 1=1) and i.customer = :customer and i.deleted = false")
     Page<Invoice> findByCompanyAndCustomer(@Param("company") Company company, @Param("customer") Customer customer, Pageable pageable);

@@ -26,6 +26,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtService jwtService;
     private final CustomUserDetailsService userDetailsService;
     private final CompanyRepository companyRepository;
+    private final com.billing.service.UserSessionService userSessionService;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
@@ -123,6 +124,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                         ? userDetailsService.loadUserById(userId)
                         : userDetailsService.loadUserByUsername(username);
                 if (jwtService.isTokenValid(token, userDetails)) {
+                    // Device hata diya (logout / admin ne remove kiya) to uska token turant band.
+                    String sessionKey = jwtService.extractSessionKey(token);
+                    if (sessionKey != null && !userSessionService.isActiveAndTouch(sessionKey)) {
+                        SecurityContextHolder.clearContext();
+                        filterChain.doFilter(request, response);
+                        return;
+                    }
                     if (userDetails instanceof CustomUserDetails customUserDetails
                             && !customUserDetails.isCompanyActive()) {
                         SecurityContextHolder.clearContext();

@@ -90,7 +90,7 @@ public class RateLimitingFilter extends OncePerRequestFilter {
      * (private/loopback address) se aayi ho, aur list ko RIGHT se padha jata
      * hai: proxies jo IP append karte hain wo sach hai, left wala fake ho sakta hai.
      */
-    static String clientIp(HttpServletRequest request) {
+    public static String clientIp(HttpServletRequest request) {
         String remote = request.getRemoteAddr();
         if (remote == null || remote.isBlank()) {
             return "unknown";

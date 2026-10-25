@@ -237,10 +237,14 @@ public class TaxMasterService {
     @Transactional
     public void createDefaultTaxesForCompany(Company company) {
         // Single source: com.billing.config.MasterSeedCatalog.DEFAULT_TAX_RATES.
-        boolean first = true;
+        // Ye har boot / repair par chalta hai: pehle 0% ko hamesha default bana deta tha,
+        // to Tax Master me chuna default (jaise 18%) har restart par wapas 0% ho jaata tha.
+        // Ab sirf missing rates banate hain; default tabhi set jab koi default ho hi nahi.
         for (java.math.BigDecimal rate : com.billing.config.MasterSeedCatalog.DEFAULT_TAX_RATES) {
-            ensureTax(company, rate, first);
-            first = false;
+            ensureTax(company, rate, false);
+        }
+        if (taxMasterRepository.findByCompanyAndDefaultTaxTrueAndDeletedFalse(company).isEmpty()) {
+            ensureTax(company, com.billing.config.MasterSeedCatalog.DEFAULT_TAX_RATE, true);
         }
     }
 

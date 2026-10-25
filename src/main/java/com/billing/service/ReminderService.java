@@ -83,8 +83,35 @@ public class ReminderService {
         return PageResponse.from(new PageImpl<>(allRecords.subList(fromIndex, toIndex), pageable, allRecords.size()));
     }
 
+    /** Cards ke liye poori list ka total (pehle sirf current page jodta tha). */
+    @Transactional(readOnly = true)
+    public Map<String, Object> getOverdueSummary(Map<String, Object> param, String email) {
+        Company company = accessControlService.getCurrentCompany(email);
+        OverdueFilters filters = overdueFilters(param);
+        List<OverdueCustomerResponse> records = buildOverdueCustomers(company, normalizeSearch(filters.search()),
+                scaleNullable(filters.minBalance()), filters.overdueDays());
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("customerCount", records.size());
+        summary.put("totalDue", scale(records.stream().map(OverdueCustomerResponse::getCurrentBalance).reduce(BigDecimal.ZERO, BigDecimal::add)));
+        summary.put("maxOverdueDays", records.stream().mapToInt(OverdueCustomerResponse::getOverdueDays).max().orElse(0));
+        return summary;
+    }
+
     @Transactional(readOnly = true)
     public PageResponse<OverdueCustomerResponse> getOverdueCustomers(Map<String, Object> param, String email) {
+        OverdueFilters filters = overdueFilters(param);
+        int pageNumber = DataTypeUtility.integerValue(param.get("page"));
+        int pageSize = DataTypeUtility.integerValue(param.get("size"));
+        if (pageSize == 0) {
+            pageSize = 20;
+        }
+        return getOverdueCustomers(email, filters.search(), filters.minBalance(), filters.overdueDays(), pageNumber, pageSize);
+    }
+
+    private record OverdueFilters(String search, BigDecimal minBalance, Integer overdueDays) {
+    }
+
+    private OverdueFilters overdueFilters(Map<String, Object> param) {
         String searchFilter = DataTypeUtility.stringValue(param.get("search"));
         if (searchFilter.length() == 0) {
             searchFilter = null;
@@ -109,12 +136,7 @@ public class ReminderService {
                 overdueDaysValue = longValue.intValue();
             }
         }
-        int pageNumber = DataTypeUtility.integerValue(param.get("page"));
-        int pageSize = DataTypeUtility.integerValue(param.get("size"));
-        if (pageSize == 0) {
-            pageSize = 20;
-        }
-        return getOverdueCustomers(email, searchFilter, minBalanceValue, overdueDaysValue, pageNumber, pageSize);
+        return new OverdueFilters(searchFilter, minBalanceValue, overdueDaysValue);
     }
 
     @Transactional
@@ -306,8 +328,21 @@ public class ReminderService {
     private List<OverdueCustomerResponse> buildOverdueCustomers(Company company, String search, BigDecimal minBalance, Integer overdueDays) {
         LocalDate today = com.billing.core.AppDateTime.istToday();
 
+        // Saare unpaid invoices aur har customer ka latest reminder ek-ek query me
+        // (pehle har customer par 2 queries chalti thin).
+        Map<Long, Invoice> oldestByCustomer = new java.util.HashMap<>();
+        for (Invoice invoice : invoiceRepository.findAllWithOutstandingBalance()) {
+            oldestByCustomer.merge(invoice.getCustomer().getId(), invoice, (left, right) ->
+                    Comparator.comparing(Invoice::getInvoiceDate, Comparator.nullsLast(LocalDate::compareTo)).compare(right, left) < 0 ? right : left);
+        }
+        Map<Long, ReminderLog> latestReminderByCustomer = new java.util.HashMap<>();
+        for (ReminderLog reminder : reminderLogRepository.findLatestPerCustomer()) {
+            latestReminderByCustomer.putIfAbsent(reminder.getCustomer().getId(), reminder);
+        }
+
         return customerRepository.findByCurrentBalanceGreaterThanOrderByCurrentBalanceDesc( BigDecimal.ZERO).stream()
-                .map(customer -> toOverdueCustomerResponse(company, customer, today).orElse(null))
+                .map(customer -> toOverdueCustomerResponse(customer, oldestByCustomer.get(customer.getId()),
+                        latestReminderByCustomer.get(customer.getId()), today).orElse(null))
                 .filter(Objects::nonNull)
                 .filter(item -> search == null || matchesSearch(item, search))
                 .filter(item -> minBalance == null || item.getCurrentBalance().compareTo(minBalance) >= 0)
@@ -316,22 +351,18 @@ public class ReminderService {
                 .toList();
     }
 
-    private java.util.Optional<OverdueCustomerResponse> toOverdueCustomerResponse(Company company, Customer customer, LocalDate today) {
-        java.util.Optional<Invoice> oldestInvoice = oldestOutstandingInvoice(customer);
-        if (oldestInvoice.isEmpty()) {
+    private java.util.Optional<OverdueCustomerResponse> toOverdueCustomerResponse(Customer customer, Invoice invoice, ReminderLog latestReminder, LocalDate today) {
+        if (invoice == null) {
             return java.util.Optional.empty();
         }
 
-        Invoice invoice = oldestInvoice.get();
         LocalDate oldestOutstandingDate = invoice.getInvoiceDate() != null ? invoice.getInvoiceDate() : today;
         int customerOverdueDays = (int) ChronoUnit.DAYS.between(oldestOutstandingDate, today);
-
-        ReminderLog latestReminder = reminderLogRepository.findFirstByCompanyAndCustomerOrderByCreatedAtDesc(company, customer)
-                .orElse(null);
 
         return java.util.Optional.of(OverdueCustomerResponse.builder()
                 .customerId(customer.getId())
                 .customerName(customer.getName())
+                .active(customer.isActive())
                 .mobile(customer.getMobile())
                 .email(customer.getEmail())
                 .currentBalance(scale(customer.getCurrentBalance()))

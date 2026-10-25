@@ -39,4 +39,9 @@ public class RefreshToken extends BaseEntity {
 
     @Column(nullable = false)
     private LocalDateTime expiryDate;
+
+    /** Kis device (login) ka token: refresh par naya token isi session se judta hai. Purane tokens me null. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "session_id")
+    private UserSession session;
 }

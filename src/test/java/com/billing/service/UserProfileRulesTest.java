@@ -45,12 +45,14 @@ class UserProfileRulesTest {
     private RefreshTokenRepository refreshTokenRepository;
     @Mock
     private TenantImageService tenantImageService;
+    @Mock
+    private UserSessionService userSessionService;
 
     private final Company company = Company.builder().id(1L).name("Acme").build();
 
     private UserService service() {
         return new UserService(userRepository, new UserMapper(), accessControlService, passwordEncoder, auditLogService,
-                refreshTokenRepository, tenantImageService);
+                refreshTokenRepository, tenantImageService, userSessionService);
     }
 
     @Test

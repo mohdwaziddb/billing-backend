@@ -70,10 +70,10 @@ public class CompanyService {
             }
             Company c = companyOpt.get();
             java.util.Map<String, Object> map = new java.util.HashMap<>();
-            map.put("id", c.getId());
+            // Public (bina login) endpoint: sirf login-page branding. id/databaseName
+            // internal the aur bina login DB ka naam bata dete the.
             map.put("name", c.getName());
             map.put("code", c.getCode());
-            map.put("databaseName", c.getDatabaseName());
             map.put("email", c.getEmail());
             map.put("phone", c.getPhone());
             map.put("logoUrl", CompanyFileJson.extractUrl(c.getLogoUrl()));

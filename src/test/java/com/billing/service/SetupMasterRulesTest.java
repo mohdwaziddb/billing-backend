@@ -43,13 +43,15 @@ class SetupMasterRulesTest {
     @Mock
     private TenantImageService tenantImageService;
     @Mock
+    private UserSessionService userSessionService;
+    @Mock
     private TaxMasterRepository taxMasterRepository;
 
     private final Company company = Company.builder().id(1L).name("Acme").build();
 
     private UserService userService() {
         return new UserService(userRepository, new UserMapper(), accessControlService, passwordEncoder, auditLogService,
-                refreshTokenRepository, tenantImageService);
+                refreshTokenRepository, tenantImageService, userSessionService);
     }
 
     @Test

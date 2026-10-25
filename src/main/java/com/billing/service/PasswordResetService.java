@@ -62,6 +62,7 @@ public class PasswordResetService {
     private final AuditLogService auditLogService;
     private final NotificationService notificationService;
     private final EmailProviderSettingRepository emailProviderSettingRepository;
+    private final UserSessionService userSessionService;
 
     private final SecureRandom secureRandom = new SecureRandom();
 
@@ -248,6 +249,7 @@ public class PasswordResetService {
         // Reset se pehle ke saare access tokens band (refresh tokens neeche delete).
         user.setTokensValidAfter(LocalDateTime.now());
         userRepository.save(user);
+        userSessionService.revokeAll(user, "Password reset");
         refreshTokenRepository.deleteByUser(user);
         auditPasswordReset(user);
     }

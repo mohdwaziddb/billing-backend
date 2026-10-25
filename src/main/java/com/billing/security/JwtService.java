@@ -21,6 +21,8 @@ import java.util.function.Function;
 public class JwtService {
 
     private static final String AUTH_TYPE_CLAIM = "authType";
+    /** user_sessions.session_key: kis device ka token hai. */
+    private static final String SESSION_CLAIM = "sid";
     private static final String AUTH_TYPE_USER = "USER";
     private static final String AUTH_TYPE_PLATFORM_ADMIN = "PLATFORM_ADMIN";
     private static final String AUTH_TYPE_SUPER_ADMIN = "SUPER_ADMIN";
@@ -48,7 +50,15 @@ public class JwtService {
     }
 
     public String generateAccessToken(CustomUserDetails userDetails) {
+        return generateAccessToken(userDetails, null);
+    }
+
+    /** sessionKey = user_sessions.session_key ("sid"): device hatate hi ye token band. */
+    public String generateAccessToken(CustomUserDetails userDetails, String sessionKey) {
         Map<String, Object> claims = new HashMap<>();
+        if (sessionKey != null) {
+            claims.put(SESSION_CLAIM, sessionKey);
+        }
         claims.put(AUTH_TYPE_CLAIM, AUTH_TYPE_USER);
         claims.put("role", userDetails.getRole());
         claims.put("companyCode", userDetails.getCompanyCode());
@@ -171,6 +181,11 @@ public class JwtService {
     public String extractCompanyCode(String token) {
         Object code = extractClaim(token, claims -> claims.get("companyCode"));
         return code instanceof String value && !value.isBlank() ? value : null;
+    }
+
+    public String extractSessionKey(String token) {
+        Object sid = extractClaim(token, claims -> claims.get(SESSION_CLAIM));
+        return sid instanceof String value && !value.isBlank() ? value : null;
     }
 
     public String extractDatabaseName(String token) {

@@ -38,6 +38,7 @@ public class UserService {
     private final AuditLogService auditLogService;
     private final RefreshTokenRepository refreshTokenRepository;
     private final TenantImageService tenantImageService;
+    private final UserSessionService userSessionService;
 
     // Users page ke rules (controller Map leta hai, isliye DTO annotations nahi chalte — yahin check).
     static final String USER_EMAIL_PATTERN = "^[^\\s@]+@[^\\s@]+\\.[^\\s@]{2,}$";
@@ -408,6 +409,7 @@ public class UserService {
     // Password badla ya user deactivate hua: purane access tokens + refresh tokens turant band.
     private void revokeSessions(User user) {
         user.setTokensValidAfter(LocalDateTime.now());
+        userSessionService.revokeAll(user, "Password or account status changed");
         refreshTokenRepository.deleteByUser(user);
     }
 

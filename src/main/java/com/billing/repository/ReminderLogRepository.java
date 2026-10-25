@@ -10,7 +10,6 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
-import java.util.Optional;
 
 public interface ReminderLogRepository extends JpaRepository<ReminderLog, Long> {
     @Query("select e from ReminderLog e where (:company is null or 1=1) and e.customer = :customer order by e.createdAt desc")
@@ -19,6 +18,7 @@ public interface ReminderLogRepository extends JpaRepository<ReminderLog, Long> 
     @Query("select e from ReminderLog e where (:company is null or 1=1) and e.customer = :customer order by e.createdAt desc")
     Page<ReminderLog> findByCompanyAndCustomerOrderByCreatedAtDesc(@Param("company") Company company, @Param("customer") Customer customer, Pageable pageable);
 
-    @Query("select e from ReminderLog e where (:company is null or 1=1) and e.customer = :customer order by e.createdAt desc")
-    Optional<ReminderLog> findFirstByCompanyAndCustomerOrderByCreatedAtDesc(@Param("company") Company company, @Param("customer") Customer customer);
+    /** Har customer ka sabse naya reminder, ek query me (Outstanding list). */
+    @Query("select e from ReminderLog e where e.createdAt = (select max(x.createdAt) from ReminderLog x where x.customer = e.customer)")
+    List<ReminderLog> findLatestPerCustomer();
 }

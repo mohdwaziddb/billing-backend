@@ -75,10 +75,35 @@ public class InvoiceService {
     @org.springframework.context.annotation.Lazy
     private com.billing.service.payment.PaymentRecordingService paymentRecordingService;
 
+    /** Create Invoice page: aage ki date band, peeche zyada se zyada itne din. */
+    public static final int BACKDATE_LIMIT_DAYS = 30;
+
     @Transactional
     public InvoiceResponse create(Map<String, Object> param, String email) {
         InvoiceRequest invoiceRequest = mapToRequest(param);
+        validateInvoiceDateWindow(invoiceRequest.getInvoiceDate(), true);
         return create(email, invoiceRequest);
+    }
+
+    /** DataPort import: purane bills migrate ho sakein, isliye 30 din ki rok nahi (future phir bhi band). */
+    @Transactional
+    public InvoiceResponse createImported(Map<String, Object> param, String email) {
+        InvoiceRequest invoiceRequest = mapToRequest(param);
+        validateInvoiceDateWindow(invoiceRequest.getInvoiceDate(), false);
+        return create(email, invoiceRequest);
+    }
+
+    private void validateInvoiceDateWindow(LocalDate invoiceDate, boolean enforceBackdateLimit) {
+        if (invoiceDate == null) {
+            return; // validateInvoiceRequest "Invoice date is required" deta hai
+        }
+        LocalDate today = com.billing.core.AppDateTime.istToday();
+        if (invoiceDate.isAfter(today)) {
+            throw new BadRequestException("Invoice date cannot be in the future");
+        }
+        if (enforceBackdateLimit && invoiceDate.isBefore(today.minusDays(BACKDATE_LIMIT_DAYS))) {
+            throw new BadRequestException("Invoice date cannot be more than " + BACKDATE_LIMIT_DAYS + " days old");
+        }
     }
 
     @Transactional
@@ -101,7 +126,6 @@ public class InvoiceService {
                 .company(company)
                 .customer(customer)
                 .referByUser(resolveReferByUser(company, request.getReferByUserId()))
-                .invoiceNo(documentNumberService.next(DocumentSequenceType.INVOICE, request.getInvoiceDate()))
                 .invoiceDate(request.getInvoiceDate())
                 .subtotal(zero())
                 .taxableAmount(zero())
@@ -120,6 +144,9 @@ public class InvoiceService {
 
         request.setPaidAmount(zero());
         applyInvoiceState(invoice, request, customer, true);
+        // Number (sequence row lock) hisaab ke baad: lock ab sirf save + stock allocation tak rehta hai,
+        // pehle har line ke product/tax lookups ke dauraan doosre bill ruke rehte the.
+        invoice.setInvoiceNo(documentNumberService.next(DocumentSequenceType.INVOICE, request.getInvoiceDate()));
         invoiceRepository.saveAndFlush(invoice);
         inventoryService.allocateForInvoice(invoice);
         if (initialPaidAmount.compareTo(BigDecimal.ZERO) > 0) {
@@ -259,6 +286,10 @@ public class InvoiceService {
         Invoice invoice = getInvoiceOrThrow(company, invoiceId);
         if (invoice.isDeleted()) {
             throw new BadRequestException("Restore invoice before editing it");
+        }
+        // Purane bill ki date na badli ho to edit chalta rahe; badli ho to wahi rok jo create par.
+        if (!request.getInvoiceDate().equals(invoice.getInvoiceDate())) {
+            validateInvoiceDateWindow(request.getInvoiceDate(), true);
         }
         // Payments purane customer ke balance se jude hain; customer badalne se ledger bigadta tha.
         if (scale(invoice.getPaidAmount()).compareTo(BigDecimal.ZERO) > 0
@@ -423,15 +454,23 @@ public class InvoiceService {
 
     private void applyInvoiceState(Invoice invoice, InvoiceRequest request, Customer customer, boolean creating) {
         List<TaxCalculationService.TaxDocumentLineInput> calculationLines = new ArrayList<>();
+        // Bade bill (200 lines) par har line ki alag product/tax/stock query thi (~1000 queries).
+        // Ab products ek query me, tax har distinct id par ek baar. Stock ki kami
+        // inventoryService.allocateForInvoice usi message ke saath pakadta hai.
+        Map<Long, Product> productsById = new java.util.HashMap<>();
+        productRepository.findAllById(request.getItems().stream().map(InvoiceItemRequest::getProductId).distinct().toList())
+                .forEach(product -> productsById.put(product.getId(), product));
+        Map<String, TaxMaster> taxCache = new java.util.HashMap<>();
 
         for (InvoiceItemRequest itemRequest : request.getItems()) {
-            Product product = productRepository.findByIdAndCompany(itemRequest.getProductId(), invoice.getCompany())
-                    .orElseThrow(() -> new BadRequestException("Product not found for id " + itemRequest.getProductId()));
+            Product product = productsById.get(itemRequest.getProductId());
+            if (product == null) {
+                throw new BadRequestException("Product not found for id " + itemRequest.getProductId());
+            }
 
             if (!product.isActive()) {
                 throw new BadRequestException("Inactive product cannot be invoiced: " + product.getName());
             }
-            inventoryService.assertSufficientStock(invoice.getCompany(), product, itemRequest.getQty());
             // Saaf wajah do (pehle deleted tax par "Tax master not found", inactive par chupchaap lagta tha).
             if (product.isTaxable() && product.getTaxMaster() != null
                     && (!product.getTaxMaster().isActive() || product.getTaxMaster().isDeleted())) {
@@ -443,7 +482,9 @@ public class InvoiceService {
             if (product.isTaxable() && product.getTaxMaster() == null) {
                 throw new BadRequestException("Product " + product.getName() + " has no tax set. Set its tax (or mark it non-taxable) first.");
             }
-            TaxMaster taxMaster = taxMasterService.resolveForProduct(invoice.getCompany(), product.getTaxMaster() != null ? product.getTaxMaster().getId() : null, null, product.isTaxable());
+            Long productTaxId = product.getTaxMaster() != null ? product.getTaxMaster().getId() : null;
+            TaxMaster taxMaster = taxCache.computeIfAbsent(product.isTaxable() ? "T" + productTaxId : "EXEMPT",
+                    key -> taxMasterService.resolveForProduct(invoice.getCompany(), productTaxId, null, product.isTaxable()));
             calculationLines.add(new TaxCalculationService.TaxDocumentLineInput(
                     product,
                     taxMaster,

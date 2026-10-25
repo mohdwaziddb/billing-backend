@@ -63,6 +63,21 @@ class TaxResolveRulesTest {
     }
 
     @Test
+    void bootSeedKeepsUserChosenDefaultTax() {
+        // Har restart par seed chalta hai: pehle 0% ko zabardasti default bana deta tha.
+        when(taxMasterRepository.findByCompanyAndTaxTypeAndRateAndDeletedFalse(eq(company), eq(TaxType.GST), any())).thenCallRealMethod();
+        when(taxMasterRepository.findAllByCompanyAndTaxTypeAndRateAndDeletedFalse(eq(company), eq(TaxType.GST), any()))
+                .thenAnswer(invocation -> List.of(TaxMaster.builder().id(1L).taxType(TaxType.GST).rate(invocation.getArgument(2))
+                        .active(true).defaultTax(false).deleted(false).build()));
+        when(taxMasterRepository.findByCompanyAndDefaultTaxTrueAndDeletedFalse(company))
+                .thenReturn(java.util.Optional.of(tax(9, "GST 18%", true, true)));
+
+        service().createDefaultTaxesForCompany(company);
+
+        verify(taxMasterRepository, never()).save(any(TaxMaster.class));
+    }
+
+    @Test
     void nonTaxableItemDoesNotStealCompanyDefaultTax() {
         when(taxMasterRepository.findByCompanyAndTaxTypeAndRateAndDeletedFalse(eq(company), eq(TaxType.GST), any())).thenCallRealMethod();
         when(taxMasterRepository.findAllByCompanyAndTaxTypeAndRateAndDeletedFalse(eq(company), eq(TaxType.GST), any())).thenReturn(List.of());

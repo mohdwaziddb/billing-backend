@@ -21,7 +21,11 @@ public class TaxCalculationService {
                                             List<TaxDocumentLineInput> lines,
                                             BigDecimal invoiceDiscountAmount,
                                             BigDecimal paidAmount) {
-        requireStateForGst(company, customer, lines);
+        // Composition scheme: dealer customer se GST collect nahi kar sakta (Bill of Supply).
+        boolean chargeTax = !company.isCompositionScheme();
+        if (chargeTax) {
+            requireStateForGst(company, customer, lines);
+        }
 
         List<PreparedLine> preparedLines = new ArrayList<>();
         BigDecimal subtotal = money(BigDecimal.ZERO);
@@ -65,7 +69,7 @@ public class TaxCalculationService {
             PreparedLine line = preparedLines.get(index);
             BigDecimal invoiceDiscountShare = invoiceDiscountShares.get(index);
             BigDecimal lineTaxableAmount = money(line.afterProductDiscount().subtract(invoiceDiscountShare));
-            TaxBreakup breakup = breakup(line.taxMaster(), line.product().isTaxable(), lineTaxableAmount, sameState);
+            TaxBreakup breakup = breakup(line.taxMaster(), chargeTax && line.product().isTaxable(), lineTaxableAmount, sameState);
             BigDecimal lineGrandTotal = money(lineTaxableAmount.add(breakup.cgstAmount()).add(breakup.sgstAmount()).add(breakup.igstAmount()));
             taxableAmount = taxableAmount.add(lineTaxableAmount);
             cgstTotal = cgstTotal.add(breakup.cgstAmount());
@@ -93,8 +97,11 @@ public class TaxCalculationService {
             ));
         }
 
-        BigDecimal roundOff = money(BigDecimal.ZERO);
-        BigDecimal safeGrandTotal = money(grandTotal.add(roundOff));
+        // Bill ka total poore rupaye tak (HALF_UP); farq "Round Off" line me jaata hai
+        // (frontend InvoiceCalculationService jaisa). Line amounts aur GST paise tak hi rehte hain.
+        BigDecimal unroundedTotal = money(grandTotal);
+        BigDecimal roundOff = money(unroundedTotal.setScale(0, RoundingMode.HALF_UP).subtract(unroundedTotal));
+        BigDecimal safeGrandTotal = money(unroundedTotal.add(roundOff));
         BigDecimal safePaidAmount = money(paidAmount);
         if (safePaidAmount.compareTo(safeGrandTotal) > 0) {
             throw new BadRequestException("Paid amount cannot exceed grand total");

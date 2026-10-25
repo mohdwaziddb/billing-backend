@@ -56,12 +56,23 @@ class S3StorageServiceTest {
 
     @Test
     void sameNameOfAnotherOwnerGetsSuffixInsteadOfOverwrite() {
-        storage.store(null, "user-photo", image("photo.jpg"));
-        CompanyFileInfo second = storage.store(null, "user-photo", image("photo.jpg"));
-        CompanyFileInfo third = storage.store(null, "signature", image("photo.jpg"));
+        storage.store(null, "logo", image("brand.png"));
+        CompanyFileInfo second = storage.store(null, "logo", image("brand.png"));
 
-        assertEquals("test/photo-1.jpg", second.getKey());
-        assertEquals("test/photo-2.jpg", third.getKey());
+        assertEquals("test/brand-1.png", second.getKey());
+    }
+
+    @Test
+    void signatureAndPhotoKeysAreNotGuessable() {
+        // Public bucket: "test/signature.png" guess karke kisi ka sign khul jaata tha.
+        CompanyFileInfo signature = storage.store(null, "signature", image("signature.png"));
+        CompanyFileInfo photo = storage.store(null, "user-photo", image("photo.jpg"));
+        CompanyFileInfo photoAgain = storage.store(null, "user-photo", image("photo.jpg"));
+
+        assertTrue(signature.getKey().matches("test/[0-9a-f]{16}-signature\\.png"), signature.getKey());
+        assertTrue(photo.getKey().matches("test/[0-9a-f]{16}-photo\\.jpg"), photo.getKey());
+        assertTrue(!photo.getKey().equals(photoAgain.getKey()), "every upload gets a fresh key");
+        assertEquals("signature.png", signature.getOriginalName());
     }
 
     @Test

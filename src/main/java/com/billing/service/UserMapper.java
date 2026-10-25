@@ -54,6 +54,8 @@ public class UserMapper {
                 .country(company.getCountry())
                 .pincode(company.getPincode())
                 .taxId(company.getTaxId())
+                .gstRegistered(company.isGstRegistered())
+                .compositionScheme(company.isCompositionScheme())
                 .panNumber(company.getPanNumber())
                 .cinNumber(company.getCinNumber())
                 .logoUrl(CompanyFileJson.extractUrl(company.getLogoUrl()))

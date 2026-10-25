@@ -319,7 +319,7 @@ public class InvoiceDataPortModule implements DataPortModule<InvoiceDataPortModu
                 items.add(item);
             }
             param.put("items", items);
-            invoiceService.create(DataPortImports.sanitized(param), email);
+            invoiceService.createImported(DataPortImports.sanitized(param), email);
         });
     }
 }

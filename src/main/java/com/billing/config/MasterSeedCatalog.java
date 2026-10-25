@@ -103,7 +103,10 @@ public final class MasterSeedCatalog {
             "SMS_SETTINGS",
             "WHATSAPP_SETTINGS");
 
-    /** Default GST slabs seeded per company; first entry is the default tax. */
+    /** GST slabs seeded per company (default tax = DEFAULT_TAX_RATE, sirf jab koi default na ho). */
+    /** Naye tenant ka default GST (sabse aam rate); sirf tab lagta hai jab koi default na ho. */
+    public static final BigDecimal DEFAULT_TAX_RATE = BigDecimal.valueOf(18);
+
     public static final List<BigDecimal> DEFAULT_TAX_RATES = List.of(
             BigDecimal.ZERO,
             BigDecimal.valueOf(5),

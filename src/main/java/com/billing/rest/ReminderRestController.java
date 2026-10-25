@@ -34,6 +34,13 @@ public class ReminderRestController {
         return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", reminderService.getOverdueCustomers(param, authentication.getName())), HttpStatus.OK);
     }
 
+    @GetMapping("/overdue-summary")
+    @com.billing.security.RequiresPermission(menu = "OUTSTANDING", action = "VIEW")
+    public ResponseEntity<?> overdueSummary(@RequestParam(required = false) Map<String, Object> param, Authentication authentication) {
+        param = SanitizeData.sanitizeMapObj(param);
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", reminderService.getOverdueSummary(param == null ? Map.of() : param, authentication.getName())), HttpStatus.OK);
+    }
+
     @PostMapping("/send")
     @com.billing.security.RequiresPermission(menu = "OUTSTANDING", action = "ADD")
     public ResponseEntity<?> sendReminder(@RequestBody Map<String, Object> param, Authentication authentication, HttpServletRequest request) {

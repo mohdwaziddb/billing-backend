@@ -74,6 +74,8 @@ class LoginSecurityFixesTest {
     private TotpService totpService;
     @Mock
     private MfaService mfaService;
+    @Mock
+    private UserSessionService userSessionService;
 
     @BeforeEach
     void bindTenant() {
@@ -88,13 +90,13 @@ class LoginSecurityFixesTest {
     private PasswordResetService resetService() {
         return new PasswordResetService(userRepository, companyRepository, passwordResetOtpRepository,
                 refreshTokenRepository, passwordEncoder, emailService, auditLogService, notificationService,
-                emailProviderSettingRepository);
+                emailProviderSettingRepository, userSessionService);
     }
 
     private AuthService authService() {
         return new AuthService(userRepository, companyRepository, refreshTokenRepository, userMfaDeviceRepository,
                 passwordEncoder, jwtService, new UserMapper(), secretEncryptionService, totpService, mfaService,
-                new LoginAttemptService());
+                new LoginAttemptService(), userSessionService);
     }
 
     @Test

@@ -12,6 +12,7 @@ import java.time.LocalDateTime;
 public class OverdueCustomerResponse {
     private Long customerId;
     private String customerName;
+    private boolean active;
     private String mobile;
     private String email;
     private BigDecimal currentBalance;

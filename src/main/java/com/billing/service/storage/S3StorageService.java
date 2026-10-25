@@ -25,6 +25,7 @@ import java.nio.file.StandardOpenOption;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -48,6 +49,9 @@ import java.util.concurrent.Executors;
  */
 @Service
 public class S3StorageService {
+
+    /** In slots ki files ka link guess na ho sake (naam me random token). */
+    private static final java.util.Set<String> PRIVATE_SLOTS = java.util.Set.of("signature", "user-photo");
 
     private static final long ABSOLUTE_MAX_BYTES = 10L * 1024L * 1024L;
 
@@ -143,7 +147,12 @@ public class S3StorageService {
             throw new BadRequestException("S3 image storage is enabled but bucket/region is not configured");
         }
         // Flat key: sirf database folder, usme sidha actual naam wali file.
-        String fileName = availableFileName(tenant, buildFileName(file.getOriginalFilename(), contentType), reusableKey);
+        // Signature / user photo ke naam me random token: bucket public hai, aur
+        // "test/signature.png" jaisa naam guess karke koi bhi kisi ka sign khol leta tha.
+        // Logo jaan-boojh kar public hai (login page, emails), wo asli naam par hi rehta hai.
+        String fileName = PRIVATE_SLOTS.contains(safeSlot)
+                ? UUID.randomUUID().toString().replace("-", "").substring(0, 16) + "-" + buildFileName(file.getOriginalFilename(), contentType)
+                : availableFileName(tenant, buildFileName(file.getOriginalFilename(), contentType), reusableKey);
         String key = tenant + "/" + fileName;
         if (isEnabled()) {
             try {
