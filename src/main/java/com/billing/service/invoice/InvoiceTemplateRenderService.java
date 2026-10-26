@@ -25,6 +25,11 @@ import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
 import org.thymeleaf.templateresolver.StringTemplateResolver;
 
+import javax.imageio.ImageIO;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -64,6 +69,11 @@ public class InvoiceTemplateRenderService {
     private static final long REMOTE_IMAGE_FAILURE_TTL_MILLIS = 60L * 1000L;
     private static final int REMOTE_IMAGE_CACHE_MAX_ENTRIES = 200;
     private static final long REMOTE_IMAGE_CACHE_MAX_BYTES = 1024L * 1024L;
+    // Logo/signature invoice par ~150-250px dikhte hain, par upload 2MB tak ka hota hai. Har
+    // preview HTML me poora base64 jaata tha (Invoice Templates page = 11 previews = 20-30MB) aur
+    // 1MB se bade data URL cache bhi nahi hote the. Embed se pehle itni width tak chhota karo.
+    private static final int EMBED_IMAGE_MAX_WIDTH = 600;
+    private static final int EMBED_IMAGE_MAX_HEIGHT = 400;
     // Ek hi engine: pehle har render par naya TemplateEngine + template parse hota tha.
     // Template text hi cache key hai (registry ke templates static hain).
     private static final TemplateEngine TEMPLATE_ENGINE = buildTemplateEngine();
@@ -791,12 +801,20 @@ public class InvoiceTemplateRenderService {
             if (!filePath.startsWith(baseDir) || !Files.exists(filePath)) {
                 return null;
             }
+            String cacheKey = "file:" + filePath + ":" + Files.getLastModifiedTime(filePath).toMillis();
+            long nowMillis = System.currentTimeMillis();
+            CachedRemoteImage cachedImage = remoteImageCache.get(cacheKey);
+            if (cachedImage != null && cachedImage.expiresAtMillis() > nowMillis) {
+                return cachedImage.dataUrl();
+            }
             byte[] bytes = Files.readAllBytes(filePath);
             String mimeType = Files.probeContentType(filePath);
             if (mimeType == null) {
                 mimeType = "image/png";
             }
-            return "data:" + mimeType + ";base64," + Base64.getEncoder().encodeToString(bytes);
+            String dataUrl = toEmbeddableDataUrl(bytes, mimeType);
+            cacheImage(cacheKey, dataUrl, nowMillis);
+            return dataUrl;
         } catch (IOException ex) {
             return null;
         }
@@ -810,18 +828,60 @@ public class InvoiceTemplateRenderService {
             return cachedImage.dataUrl();
         }
         String dataUrl = fetchRemoteUrlAsDataUrl(url);
-        if (dataUrl == null || dataUrl.length() <= REMOTE_IMAGE_CACHE_MAX_BYTES) {
+        cacheImage(url, dataUrl, nowMillis);
+        return dataUrl;
+    }
+
+    private void cacheImage(String cacheKey, String dataUrl, long nowMillis) {
+        if (dataUrl != null && dataUrl.length() > REMOTE_IMAGE_CACHE_MAX_BYTES) {
+            return;
+        }
+        if (remoteImageCache.size() >= REMOTE_IMAGE_CACHE_MAX_ENTRIES) {
+            remoteImageCache.values().removeIf(entry -> entry.expiresAtMillis() <= nowMillis);
             if (remoteImageCache.size() >= REMOTE_IMAGE_CACHE_MAX_ENTRIES) {
-                remoteImageCache.values().removeIf(entry -> entry.expiresAtMillis() <= nowMillis);
-                if (remoteImageCache.size() >= REMOTE_IMAGE_CACHE_MAX_ENTRIES) {
-                    remoteImageCache.clear();
+                remoteImageCache.clear();
+            }
+        }
+        // Fail (timeout/404) bhi thodi der yaad: warna har preview par phir 10s ruke.
+        long ttlMillis = dataUrl == null ? REMOTE_IMAGE_FAILURE_TTL_MILLIS : REMOTE_IMAGE_CACHE_TTL_MILLIS;
+        remoteImageCache.put(cacheKey, new CachedRemoteImage(dataUrl, nowMillis + ttlMillis));
+    }
+
+    /**
+     * Bada raster logo EMBED_IMAGE_MAX_WIDTH x MAX_HEIGHT tak chhota (JPEG -> JPEG, baaki -> PNG,
+     * transparency safe). SVG / na padh sakne wali / pehle se chhoti image jaisi hai waisi.
+     */
+    static String toEmbeddableDataUrl(byte[] bytes, String mimeType) {
+        byte[] embedBytes = bytes;
+        String embedMimeType = mimeType;
+        try {
+            BufferedImage source = ImageIO.read(new ByteArrayInputStream(bytes));
+            if (source != null && (source.getWidth() > EMBED_IMAGE_MAX_WIDTH || source.getHeight() > EMBED_IMAGE_MAX_HEIGHT)) {
+                double scaleFactor = Math.min((double) EMBED_IMAGE_MAX_WIDTH / source.getWidth(), (double) EMBED_IMAGE_MAX_HEIGHT / source.getHeight());
+                int targetWidth = Math.max(1, (int) Math.round(source.getWidth() * scaleFactor));
+                int targetHeight = Math.max(1, (int) Math.round(source.getHeight() * scaleFactor));
+                // JPEG (photo) JPEG hi rahe — PNG me badalne par file badi ho jaati; baaki PNG (transparency).
+                boolean keepJpeg = mimeType != null && mimeType.toLowerCase(Locale.ROOT).contains("jpeg") && !source.getColorModel().hasAlpha();
+                BufferedImage resized = new BufferedImage(targetWidth, targetHeight, keepJpeg ? BufferedImage.TYPE_INT_RGB : BufferedImage.TYPE_INT_ARGB);
+                Graphics2D graphics = resized.createGraphics();
+                try {
+                    graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+                    graphics.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+                    graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                    graphics.drawImage(source, 0, 0, targetWidth, targetHeight, null);
+                } finally {
+                    graphics.dispose();
+                }
+                ByteArrayOutputStream resizedOutput = new ByteArrayOutputStream();
+                if (ImageIO.write(resized, keepJpeg ? "jpg" : "png", resizedOutput) && resizedOutput.size() < bytes.length) {
+                    embedBytes = resizedOutput.toByteArray();
+                    embedMimeType = keepJpeg ? "image/jpeg" : "image/png";
                 }
             }
-            // Fail (timeout/404) bhi thodi der yaad: warna har preview par phir 10s ruke.
-            long ttlMillis = dataUrl == null ? REMOTE_IMAGE_FAILURE_TTL_MILLIS : REMOTE_IMAGE_CACHE_TTL_MILLIS;
-            remoteImageCache.put(url, new CachedRemoteImage(dataUrl, nowMillis + ttlMillis));
+        } catch (Exception ex) {
+            // Resize fail ho to original hi embed (pehle jaisa).
         }
-        return dataUrl;
+        return "data:" + embedMimeType + ";base64," + Base64.getEncoder().encodeToString(embedBytes);
     }
 
     private String fetchRemoteUrlAsDataUrl(String url) {
@@ -843,7 +903,7 @@ public class InvoiceTemplateRenderService {
                     .map(value -> value.split(";")[0].trim().toLowerCase(Locale.ROOT))
                     .filter(value -> value.startsWith("image/"))
                     .orElse("image/png");
-            return "data:" + mimeType + ";base64," + Base64.getEncoder().encodeToString(bytes);
+            return toEmbeddableDataUrl(bytes, mimeType);
         } catch (Exception ex) {
             return null;
         }
