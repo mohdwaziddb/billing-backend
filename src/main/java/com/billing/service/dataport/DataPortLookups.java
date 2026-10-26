@@ -21,6 +21,7 @@ import com.billing.repository.ProductRepository;
 import com.billing.repository.ProductSubCategoryRepository;
 import com.billing.repository.StateMasterRepository;
 import com.billing.repository.TaxMasterRepository;
+import com.billing.util.DataTypeUtility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -51,10 +52,13 @@ public class DataPortLookups {
     private final PaymentModeMasterRepository paymentModeMasterRepository;
     private final ExpenseCategoryRepository expenseCategoryRepository;
     private final InvoiceRepository invoiceRepository;
-    private final com.billing.service.InventoryService inventoryService;
     private final com.billing.repository.PurchaseRepository purchaseRepository;
     private final com.billing.repository.PaymentRepository paymentRepository;
     private final com.billing.repository.ExpenseRepository expenseRepository;
+    private final com.billing.repository.ProductBatchRepository productBatchRepository;
+
+    /** IN (...) list me ek query me itne invoice numbers tak. */
+    private static final int INVOICE_LOOKUP_BATCH = 500;
 
     /** Category naam (lowercase) -> category (active + inactive dono, rule module decide kare). */
     @Transactional(readOnly = true)
@@ -95,12 +99,19 @@ public class DataPortLookups {
         return rates;
     }
 
-    /** Product id -> abhi ka stock (saare batches ka remaining qty). */
+    /**
+     * Product id -> abhi ka stock (saare batches ka remaining qty). Ek GROUP BY query
+     * (pehle har product par alag query — har revalidate par N queries).
+     */
     @Transactional(readOnly = true)
     public Map<Long, Integer> currentStock(Company company, java.util.Collection<Product> products) {
+        Map<Long, Integer> remainingByProduct = new java.util.HashMap<>();
+        for (Object[] stockRow : productBatchRepository.sumRemainingQtyGroupByProduct()) {
+            remainingByProduct.put(DataTypeUtility.longValue(stockRow[0]), DataTypeUtility.integerValue(stockRow[1]));
+        }
         Map<Long, Integer> stock = new LinkedHashMap<>();
         for (Product product : products) {
-            stock.put(product.getId(), inventoryService.currentStock(company, product));
+            stock.put(product.getId(), remainingByProduct.getOrDefault(product.getId(), 0));
         }
         return stock;
     }
@@ -127,32 +138,37 @@ public class DataPortLookups {
         return value == null ? "" : value.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString();
     }
 
-    /** Purchase line key -> purchase no (active purchases). */
+    /** Purchase line key -> purchase no (active purchases). Ek projection query (pehle har purchase ke items lazy = N+1). */
     @Transactional(readOnly = true)
     public Map<String, String> existingPurchaseLines(Company company) {
         Map<String, String> lines = new LinkedHashMap<>();
-        for (var purchase : purchaseRepository.findByCompanyOrderByPurchaseDateDescIdDesc(company)) {
-            if (!purchase.isActive() || purchase.getItems() == null) {
-                continue;
-            }
-            for (var item : purchase.getItems()) {
-                lines.putIfAbsent(purchaseLineKey(purchase.getPurchaseDate(), purchase.getSupplierName(),
-                        item.getProduct() == null ? null : item.getProduct().getId(), item.getQty(), item.getPurchaseRate()), purchase.getPurchaseNo());
-            }
+        for (Object[] lineRow : purchaseRepository.findActivePurchaseLineKeys()) {
+            java.time.LocalDate purchaseDate = (java.time.LocalDate) lineRow[0];
+            String supplierName = lineRow[1] == null ? null : DataTypeUtility.stringValue(lineRow[1]);
+            Long productId = lineRow[2] == null ? null : DataTypeUtility.longValue(lineRow[2]);
+            Integer qty = lineRow[3] == null ? null : DataTypeUtility.integerValue(lineRow[3]);
+            BigDecimal purchaseRate = DataTypeUtility.bigDecimalObjectValue(lineRow[4]);
+            String purchaseNo = lineRow[5] == null ? null : DataTypeUtility.stringValue(lineRow[5]);
+            lines.putIfAbsent(purchaseLineKey(purchaseDate, supplierName, productId, qty, purchaseRate), purchaseNo);
         }
         return lines;
     }
 
-    /** Customer|date -> [grand total, invoice no] (deleted chhod ke). */
+    /**
+     * Customer|date -> [grand total, invoice no] (deleted chhod ke). Sirf 4 columns ki
+     * projection — pehle har preview/revalidate par poori invoices table items+product+tax
+     * graph samet memory me aati thi.
+     */
     @Transactional(readOnly = true)
     public Map<String, List<Map.Entry<BigDecimal, String>>> existingInvoices(Company company) {
         Map<String, List<Map.Entry<BigDecimal, String>>> invoices = new LinkedHashMap<>();
-        for (Invoice invoice : invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company)) {
-            if (invoice.isDeleted() || invoice.getCustomer() == null) {
-                continue;
-            }
-            invoices.computeIfAbsent(invoiceKey(invoice.getCustomer().getId(), invoice.getInvoiceDate()), ignored -> new java.util.ArrayList<>())
-                    .add(Map.entry(invoice.getGrandTotal() == null ? BigDecimal.ZERO : invoice.getGrandTotal(), invoice.getInvoiceNo()));
+        for (Object[] invoiceRow : invoiceRepository.findActiveDuplicateGuardRows()) {
+            Long customerId = DataTypeUtility.longValue(invoiceRow[0]);
+            java.time.LocalDate invoiceDate = (java.time.LocalDate) invoiceRow[1];
+            BigDecimal grandTotal = DataTypeUtility.bigDecimalObjectValue(invoiceRow[2]);
+            String invoiceNo = invoiceRow[3] == null ? null : DataTypeUtility.stringValue(invoiceRow[3]);
+            invoices.computeIfAbsent(invoiceKey(customerId, invoiceDate), ignored -> new java.util.ArrayList<>())
+                    .add(Map.entry(grandTotal == null ? BigDecimal.ZERO : grandTotal, invoiceNo));
         }
         return invoices;
     }
@@ -251,6 +267,38 @@ public class DataPortLookups {
         }
         List<Invoice> matches = invoiceRepository.findActiveByInvoiceNo(invoiceNo.trim());
         return matches.size() == 1 ? Optional.of(matches.get(0)) : Optional.empty();
+    }
+
+    /**
+     * File ki saari rows ke invoice numbers ek hi query me (pehle har row par
+     * invoiceByNumber = 5000 rows tak 5000 queries). Result invoiceByNumber jaisa:
+     * exactly ek active match ho tabhi invoice, warna empty.
+     */
+    @Transactional(readOnly = true)
+    public Function<String, Optional<Invoice>> invoicesByNumber(List<com.billing.dto.dataport.DataPortRow> rows, String fieldKey) {
+        java.util.Set<String> invoiceNos = new java.util.LinkedHashSet<>();
+        for (com.billing.dto.dataport.DataPortRow row : rows) {
+            String invoiceNo = row.value(fieldKey);
+            if (!invoiceNo.isBlank()) {
+                invoiceNos.add(invoiceNo.trim().toLowerCase(java.util.Locale.ROOT));
+            }
+        }
+        Map<String, List<Invoice>> matchesByNumber = new java.util.HashMap<>();
+        List<String> pendingNos = new java.util.ArrayList<>(invoiceNos);
+        for (int start = 0; start < pendingNos.size(); start += INVOICE_LOOKUP_BATCH) {
+            List<String> batchNos = pendingNos.subList(start, Math.min(start + INVOICE_LOOKUP_BATCH, pendingNos.size()));
+            for (Invoice invoice : invoiceRepository.findActiveByInvoiceNoLowerIn(batchNos)) {
+                String matchKey = invoice.getInvoiceNo().trim().toLowerCase(java.util.Locale.ROOT);
+                matchesByNumber.computeIfAbsent(matchKey, ignored -> new java.util.ArrayList<>()).add(invoice);
+            }
+        }
+        return invoiceNo -> {
+            if (invoiceNo == null || invoiceNo.isBlank()) {
+                return Optional.empty();
+            }
+            List<Invoice> matches = matchesByNumber.getOrDefault(invoiceNo.trim().toLowerCase(java.util.Locale.ROOT), List.of());
+            return matches.size() == 1 ? Optional.of(matches.get(0)) : Optional.empty();
+        };
     }
 
     /** "+91 98765-43210" -> "9876543210" (frontend customerValidation jaisa). */

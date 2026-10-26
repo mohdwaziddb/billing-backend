@@ -28,6 +28,14 @@ public class PaymentRestController {
         return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", paymentService.page(param, authentication.getName())), HttpStatus.OK);
     }
 
+    // KPI cards ke liye aggregate (list jaise hi filters) — saare pages laane ki zaroorat nahi.
+    @GetMapping("/summary")
+    @com.billing.security.RequiresPermission(menu = "PAYMENTS", action = "VIEW")
+    public ResponseEntity<?> summary(@RequestParam(required = false) Map<String, Object> param, Authentication authentication, HttpServletRequest req) {
+        param = SanitizeData.sanitizeMapObj(param);
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", paymentService.summary(param, authentication.getName())), HttpStatus.OK);
+    }
+
     @GetMapping("/{paymentId}")
     @com.billing.security.RequiresPermission(menu = "PAYMENTS", action = "VIEW")
     public ResponseEntity<?> get(Authentication authentication, @PathVariable Long paymentId, HttpServletRequest req) {

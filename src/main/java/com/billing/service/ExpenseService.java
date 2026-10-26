@@ -39,6 +39,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
 
 @Service
@@ -75,6 +76,8 @@ public class ExpenseService {
                                                int size) {
         User user = accessControlService.getCurrentUser(email);
         Company company = accessControlService.requireCompany(user);
+        // Ek page me createdBy/updatedBy wahi users repeat hote hain: naam ek hi baar DB se.
+        UnaryOperator<String> auditNames = auditNameResolver.memoized();
         return PageResponse.from(expenseRepository.searchExpenses(
                 company,
                 blankToNull(search),
@@ -87,7 +90,35 @@ public class ExpenseService {
                 createdByRole,
                 deleted,
                 pageRequest(page, size)
-        ).map(this::toResponse));
+        ).map(expense -> toResponse(expense, auditNames)));
+    }
+
+    /**
+     * Expenses page ke 4 KPI cards (Total / This Month / Today / Category). Pehle UI
+     * 1000 rows mangwa ke JS me jodta tha — ab SQL aggregate, aur 1000+ par bhi sahi total.
+     * today / monthStart client bhejta hai (browser ka din, pehle jaisa); na aaye to IST.
+     */
+    @Transactional(readOnly = true)
+    public Map<String, Object> summary(Map<String, Object> param, String email) {
+        accessControlService.getCurrentCompany(email);
+        LocalDate today = DataTypeUtility.parseFlexibleDate(param, "today");
+        if (today == null) {
+            today = com.billing.core.AppDateTime.istToday();
+        }
+        LocalDate monthStart = DataTypeUtility.parseFlexibleDate(param, "monthStart");
+        if (monthStart == null) {
+            monthStart = today.withDayOfMonth(1);
+        }
+        Long categoryId = DataTypeUtility.getForeignKeyValue(param.get("categoryId"));
+        BigDecimal totalAmount = expenseRepository.sumActiveAmount(null, null, null);
+        BigDecimal categoryAmount = categoryId == null ? totalAmount : expenseRepository.sumActiveAmount(null, null, categoryId);
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("total", scale(totalAmount));
+        summary.put("thisMonth", scale(expenseRepository.sumActiveAmount(monthStart, today, null)));
+        summary.put("today", scale(expenseRepository.sumActiveAmount(today, today, null)));
+        summary.put("category", scale(categoryAmount));
+        summary.put("categoryCount", expenseRepository.countActiveByCategory(categoryId));
+        return summary;
     }
 
     @Transactional(readOnly = true)
@@ -202,10 +233,8 @@ public class ExpenseService {
                 .map(ExpenseService::revenueOf)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal costOfGoodsSold = invoiceItemAllocationRepository.sumActiveCostByCustomer(company, customerId, startDate, endDate);
-        BigDecimal expense = expenseRepository.findInRange(startDate, endDate).stream()
-                .filter(item -> item.getCustomer() != null && item.getCustomer().getId().equals(customerId))
-                .map(Expense::getAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        // SQL sum (pehle range ke SAARE expenses graph samet memory me aate the, phir Java filter).
+        BigDecimal expense = expenseRepository.sumActiveAmountByCustomer(customerId, startDate, endDate);
         return profitability(customerId, customer.getName(), revenue, costOfGoodsSold, expense);
     }
 
@@ -288,6 +317,19 @@ public class ExpenseService {
         Map<YearMonth, BigDecimal> expenseByMonth = expenses.stream()
                 .collect(Collectors.groupingBy(item -> YearMonth.from(item.getExpenseDate()), Collectors.reducing(BigDecimal.ZERO, Expense::getAmount, BigDecimal::add)));
 
+        // Month-wise COGS ek GROUP BY query me; query khud startDate/endDate tak clip karti hai,
+        // isliye har mahine ki alag (monthStart..monthEnd) query jaisa hi result.
+        Map<YearMonth, BigDecimal> cogsByMonth = new LinkedHashMap<>();
+        for (Object[] monthCogsRow : invoiceItemAllocationRepository.sumActiveCostFilteredByMonth(customerId, invoiceId, startDate, endDate)) {
+            int cogsYear = DataTypeUtility.integerValue(monthCogsRow[0]);
+            int cogsMonth = DataTypeUtility.integerValue(monthCogsRow[1]);
+            if (cogsYear <= 0 || cogsMonth < 1 || cogsMonth > 12) {
+                continue;
+            }
+            BigDecimal monthCost = monthCogsRow[2] instanceof BigDecimal monthCostValue ? monthCostValue : new BigDecimal(String.valueOf(monthCogsRow[2]));
+            cogsByMonth.put(YearMonth.of(cogsYear, cogsMonth), monthCost);
+        }
+
         List<ProfitLossPointResponse> revenueVsExpense = java.util.stream.Stream.concat(revenueByMonth.keySet().stream(), java.util.stream.Stream.concat(collectionByMonth.keySet().stream(), expenseByMonth.keySet().stream()))
                 .distinct()
                 .sorted(Comparator.naturalOrder())
@@ -297,9 +339,7 @@ public class ExpenseService {
                     BigDecimal monthExpense = expenseByMonth.getOrDefault(month, BigDecimal.ZERO);
                     // Chart ka "Net profit" cards jaisa hi ho: revenue − COGS − expense. Pehle yahan
                     // collections − expense (cash) tha — card ₹70K, chart ₹2.83L dikhata tha.
-                    java.time.LocalDate monthStart = startDate != null && startDate.isAfter(month.atDay(1)) ? startDate : month.atDay(1);
-                    java.time.LocalDate monthEnd = endDate != null && endDate.isBefore(month.atEndOfMonth()) ? endDate : month.atEndOfMonth();
-                    BigDecimal monthCogs = scale(invoiceItemAllocationRepository.sumActiveCostFiltered(customerId, invoiceId, monthStart, monthEnd));
+                    BigDecimal monthCogs = scale(cogsByMonth.getOrDefault(month, BigDecimal.ZERO));
                     return ProfitLossPointResponse.builder()
                             .label(month.format(MONTH_LABEL_FORMAT))
                             .revenue(scale(monthRevenue))
@@ -417,6 +457,10 @@ public class ExpenseService {
     }
 
     private ExpenseResponse toResponse(Expense expense) {
+        return toResponse(expense, auditNameResolver::displayName);
+    }
+
+    private ExpenseResponse toResponse(Expense expense, UnaryOperator<String> auditNames) {
         return ExpenseResponse.builder()
                 .id(expense.getId())
                 .expenseType(expense.getExpenseType().name())
@@ -433,8 +477,8 @@ public class ExpenseService {
                 .deleted(expense.isDeleted())
                 .createdAt(expense.getCreatedAt())
                 .updatedAt(expense.getUpdatedAt())
-                .createdBy(auditNameResolver.displayName(expense.getCreatedBy()))
-                .updatedBy(auditNameResolver.displayName(expense.getUpdatedBy()))
+                .createdBy(auditNames.apply(expense.getCreatedBy()))
+                .updatedBy(auditNames.apply(expense.getUpdatedBy()))
                 .build();
     }
 

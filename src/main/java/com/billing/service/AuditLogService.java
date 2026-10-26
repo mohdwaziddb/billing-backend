@@ -156,6 +156,38 @@ public class AuditLogService {
         return page(email, moduleNameValue, entityIdValue, userIdValue, actionTypeValue, startDateValue, endDateValue, searchValue, pageValue, sizeValue);
     }
 
+    /**
+     * Ek module ke kai entities ka log count (entityIds = "1,2,3", max 200). List pages par
+     * pehle har row ke liye alag /audit-logs call hoti thi (20 rows = 20 requests).
+     * Jawab: { entityId: count } — har maange gaye id ke saath (0 bhi).
+     */
+    @Transactional(readOnly = true)
+    public Map<Long, Long> entityLogCounts(Map<String, Object> param, String email) {
+        String moduleNameValue = DataTypeUtility.stringValue(param.get("moduleName"));
+        accessControlService.requireCompany(accessControlService.getCurrentUser(email));
+        requireRowLogPermission(email, moduleNameValue);
+        List<Long> entityIds = new ArrayList<>();
+        for (String entityIdText : DataTypeUtility.stringValue(param.get("entityIds")).split(",")) {
+            Long entityId = DataTypeUtility.getForeignKeyValue(entityIdText);
+            if (entityId != null && !entityIds.contains(entityId) && entityIds.size() < 200) {
+                entityIds.add(entityId);
+            }
+        }
+        Map<Long, Long> logCounts = new LinkedHashMap<>();
+        if (entityIds.isEmpty()) {
+            return logCounts;
+        }
+        entityIds.forEach(entityId -> logCounts.put(entityId, 0L));
+        for (Object[] countRow : auditLogRepository.countByModuleNamesAndEntityIds(moduleNameAliases(moduleNameValue), entityIds)) {
+            Long entityId = DataTypeUtility.longValue(countRow[0]);
+            Long logCount = DataTypeUtility.longValue(countRow[1]);
+            if (entityId != null) {
+                logCounts.put(entityId, logCount == null ? 0L : logCount);
+            }
+        }
+        return logCounts;
+    }
+
     @Transactional(readOnly = true)
     public List<AuditUserOptionResponse> users(Map<String, Object> param, String email) {
         if (param == null) {

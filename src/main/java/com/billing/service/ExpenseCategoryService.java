@@ -16,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.function.UnaryOperator;
 
 @Service
 @RequiredArgsConstructor
@@ -33,7 +34,7 @@ public class ExpenseCategoryService {
     public PageResponse<ExpenseCategoryResponse> page(String email, String search, Boolean active, int page, int size) {
         Company company = accessControlService.getCurrentCompany(email);
         return PageResponse.from(expenseCategoryRepository.findPageByCompanyWithFilters(company, active, normalizeSearch(search), pageRequest(page, size))
-                .map(this::toResponse));
+                .map(memoizedResponse()));
     }
 
     @Transactional(readOnly = true)
@@ -138,6 +139,19 @@ public class ExpenseCategoryService {
     }
 
     private ExpenseCategoryResponse toResponse(ExpenseCategory category) {
+        return toResponse(category, auditNameResolver::displayName);
+    }
+
+    /**
+     * List ke liye: createdBy/updatedBy naam ek hi baar DB se. Expenses page 1000 categories
+     * mangwata hai — pehle har row par 2 users SELECT (2000 tak queries) chalte the.
+     */
+    private java.util.function.Function<ExpenseCategory, ExpenseCategoryResponse> memoizedResponse() {
+        UnaryOperator<String> auditNames = auditNameResolver.memoized();
+        return category -> toResponse(category, auditNames);
+    }
+
+    private ExpenseCategoryResponse toResponse(ExpenseCategory category, UnaryOperator<String> auditNames) {
         return ExpenseCategoryResponse.builder()
                 .id(category.getId())
                 .categoryName(category.getCategoryName())
@@ -145,8 +159,8 @@ public class ExpenseCategoryService {
                 .active(category.isActive())
                 .createdAt(category.getCreatedAt())
                 .updatedAt(category.getUpdatedAt())
-                .createdBy(auditNameResolver.displayName(category.getCreatedBy()))
-                .updatedBy(auditNameResolver.displayName(category.getUpdatedBy()))
+                .createdBy(auditNames.apply(category.getCreatedBy()))
+                .updatedBy(auditNames.apply(category.getUpdatedBy()))
                 .build();
     }
 

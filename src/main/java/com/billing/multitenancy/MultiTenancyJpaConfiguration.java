@@ -55,7 +55,9 @@ public class MultiTenancyJpaConfiguration {
         config.setDriverClassName(driverClassName);
         config.setMinimumIdle(0);
         config.setMaximumPoolSize(20);
-        config.setIdleTimeout(60000);
+        // 60s idle par saare connections band ho jaate the: user 1 minute ruk kar click
+        // kare to har baar naya MySQL handshake (RDS par slow). 5 minute tak warm rakho.
+        config.setIdleTimeout(300000);
         config.setConnectionTimeout(10000);
         config.setMaxLifetime(900000);
         config.setInitializationFailTimeout(10000);
@@ -231,6 +233,9 @@ public class MultiTenancyJpaConfiguration {
         hibernateProps.put("hibernate.hbm2ddl.auto", Registry.IS_ONLINE ? "none" : "update");
         hibernateProps.put("hibernate.dialect", "org.hibernate.dialect.MySQLDialect");
         hibernateProps.put("hibernate.enable_lazy_load_no_trans", "true");
+        // List pages par har row ka lazy relation (customer/product/category...) alag
+        // SELECT banta tha (N+1). Batch fetch: ek IN(...) query me 50 tak ek saath.
+        hibernateProps.putIfAbsent("hibernate.default_batch_fetch_size", "50");
         hibernateProps.put("hibernate.physical_naming_strategy", "org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy");
         hibernateProps.put("hibernate.implicit_naming_strategy", "org.springframework.boot.orm.jpa.hibernate.SpringImplicitNamingStrategy");
 

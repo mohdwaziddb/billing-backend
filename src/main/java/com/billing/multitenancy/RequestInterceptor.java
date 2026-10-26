@@ -560,7 +560,11 @@ public class RequestInterceptor implements HandlerInterceptor {
             cfgW.setMaximumPoolSize(20);
             cfgW.setPoolName(tenant + "-WRITE");
             cfgW.setConnectionTimeout(10000);
-            cfgW.setIdleTimeout(60000);
+            // Boot-time pools (MultiTenancyJpaConfiguration) jaisi settings: 5 min warm
+            // connections + prepared statement cache (pehle lazy pools me nahi tha).
+            cfgW.setIdleTimeout(300000);
+            cfgW.setMaxLifetime(900000);
+            applyStatementCache(cfgW);
 
             HikariConfig cfgR = new HikariConfig();
             cfgR.setJdbcUrl(jdbcBase + tenant);
@@ -574,6 +578,9 @@ public class RequestInterceptor implements HandlerInterceptor {
                 cfgR.setReadOnly(true);
             }
             cfgR.setConnectionTimeout(10000);
+            cfgR.setIdleTimeout(300000);
+            cfgR.setMaxLifetime(900000);
+            applyStatementCache(cfgR);
 
             if (!dataSourcesMtApp.containsKey(tenant)) {
                 dataSourcesMtApp.put(tenant, new HikariDataSource(cfgW));
@@ -594,6 +601,13 @@ public class RequestInterceptor implements HandlerInterceptor {
             }
         }
         }
+    }
+
+    private void applyStatementCache(HikariConfig hikariConfig) {
+        hikariConfig.addDataSourceProperty("cachePrepStmts", "true");
+        hikariConfig.addDataSourceProperty("prepStmtCacheSize", "250");
+        hikariConfig.addDataSourceProperty("prepStmtCacheSqlLimit", "2048");
+        hikariConfig.addDataSourceProperty("useServerPrepStmts", "true");
     }
 
     @Override

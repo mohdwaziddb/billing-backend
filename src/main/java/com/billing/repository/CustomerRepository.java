@@ -16,6 +16,14 @@ import java.util.Optional;
 public interface CustomerRepository extends JpaRepository<Customer, Long> {
 
     long countByCurrentBalanceGreaterThan(java.math.BigDecimal amount);
+
+    // Dashboard/Analytics outstanding (aaj tak): saare customers ka balance DB me jodo.
+    @Query("select coalesce(sum(c.currentBalance), 0) from Customer c")
+    BigDecimal sumCurrentBalance();
+
+    // New customers count: sirf createdAt column (IST date conversion Java me), poori entity nahi.
+    @Query("select c.createdAt from Customer c where c.createdAt is not null")
+    List<java.time.LocalDateTime> findAllCreatedAt();
     List<Customer> findAllByOrderByCreatedAtDesc();
     List<Customer> findByActiveTrueOrderByCreatedAtDesc();
     long count();

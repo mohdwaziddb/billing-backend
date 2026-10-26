@@ -11,18 +11,16 @@ import com.billing.dto.analytics.SalesChartPointResponse;
 import com.billing.dto.analytics.SalesTrendStatus;
 import com.billing.dto.analytics.TopSellingProductResponse;
 import com.billing.entity.Company;
-import com.billing.entity.Customer;
 import com.billing.entity.Expense;
-import com.billing.entity.Invoice;
-import com.billing.entity.InvoiceItem;
-import com.billing.entity.Payment;
 import com.billing.entity.Product;
 import com.billing.entity.ProductCategory;
 import com.billing.entity.User;
 import com.billing.repository.CustomerRepository;
 import com.billing.repository.ExpenseRepository;
+import com.billing.repository.InvoiceItemRepository;
 import com.billing.repository.InvoiceRepository;
 import com.billing.repository.PaymentRepository;
+import com.billing.repository.ProductBatchRepository;
 import com.billing.repository.ProductCategoryRepository;
 import com.billing.repository.ProductRepository;
 import com.billing.util.DataTypeUtility;
@@ -51,6 +49,8 @@ public class AnalyticsService {
 
     private final AccessControlService accessControlService;
     private final InvoiceRepository invoiceRepository;
+    private final InvoiceItemRepository invoiceItemRepository;
+    private final ProductBatchRepository productBatchRepository;
     private final ProductRepository productRepository;
     private final ProductCategoryRepository productCategoryRepository;
     private final CustomerRepository customerRepository;
@@ -64,46 +64,34 @@ public class AnalyticsService {
         User user = accessControlService.getCurrentUser(email);
         Company company = accessControlService.requireCompany(user);
         LocalDate today = com.billing.core.AppDateTime.istToday();
-        // Totals ke liye items nahi chahiye, aur endDate/aaj ke baad ka data bhi nahi.
-        // Pehle har call par poori invoices table items samet memory me aati thi.
+        // Perf: pehle endDate/aaj tak ki POORI invoices + payments history, saare customers aur
+        // saare product batches entity bana kar memory me aate the. Ab sab SQL aggregate.
+        // loadUntil: pehle itni history load hoti thi, "is mahine" ka jod usi tak (behaviour same).
         LocalDate loadUntil = endDate == null ? null : (endDate.isAfter(today) ? endDate : today);
-        List<Invoice> invoices = invoiceRepository.findActiveInRange(null, loadUntil);
-        List<Payment> payments = paymentRepository.findActiveInRange(null, loadUntil);
-        List<Customer> customers = customersFor(company);
 
         LocalDate yesterday = today.minusDays(1);
         YearMonth thisMonth = YearMonth.from(today);
         YearMonth lastMonth = thisMonth.minusMonths(1);
 
-        List<Invoice> filteredInvoices = invoices.stream()
-                .filter(invoice -> isWithinRange(invoice.getInvoiceDate(), startDate, endDate))
-                .toList();
-        List<Payment> filteredPayments = payments.stream()
-                .filter(payment -> isWithinRange(payment.getPaymentDate(), startDate, endDate))
-                .toList();
-
-        BigDecimal todaySales = sumInvoiceSalesForDate(invoices, today);
-        BigDecimal yesterdaySales = sumInvoiceSalesForDate(invoices, yesterday);
-        BigDecimal thisMonthSales = sumInvoiceSalesForMonth(invoices, thisMonth);
-        BigDecimal lastMonthSales = sumInvoiceSalesForMonth(invoices, lastMonth);
-        BigDecimal outstanding = calculateOutstandingAsOf(customers, invoices, payments, endDate);
-        List<Product> products = productsFor(company);
-        Map<Long, InventoryService.ProductInventorySnapshot> inventoryByProduct = inventoryService.summarize(company, products, false);
-        long lowStockCount = products.stream()
+        Object[] rangeSummary = firstRow(invoiceRepository.summarizeActiveInRange(startDate, endDate), 3);
+        BigDecimal todaySales = salesInRange(today, today);
+        BigDecimal yesterdaySales = salesInRange(yesterday, yesterday);
+        BigDecimal thisMonthSales = salesInRange(thisMonth.atDay(1), earlierOf(thisMonth.atEndOfMonth(), loadUntil));
+        BigDecimal lastMonthSales = salesInRange(lastMonth.atDay(1), lastMonth.atEndOfMonth());
+        BigDecimal outstanding = calculateOutstandingAsOf(endDate);
+        Map<Long, Integer> stockByProduct = currentStockByProduct();
+        long lowStockCount = productsFor(company).stream()
                 .filter(Product::isActive)
-                .filter(product -> inventoryByProduct.getOrDefault(product.getId(), InventoryService.ProductInventorySnapshot.empty()).getCurrentStock() <= product.getMinStockQty())
+                .filter(product -> stockByProduct.getOrDefault(product.getId(), 0) <= DataTypeUtility.integerValue(product.getMinStockQty()))
                 .count();
-        long dueCustomers = customers.stream().filter(customer -> scale(customer.getCurrentBalance()).compareTo(BigDecimal.ZERO) > 0).count();
-        long newCustomers = customers.stream()
-                .filter(customer -> customer.getCreatedAt() != null && isWithinRange(com.billing.core.AppDateTime.toIstDate(customer.getCreatedAt()), startDate, endDate))
+        long dueCustomers = customerRepository.countByCurrentBalanceGreaterThan(BigDecimal.ZERO);
+        long newCustomers = customerCreatedDates().stream()
+                .filter(createdDate -> isWithinRange(createdDate, startDate, endDate))
                 .count();
 
-        BigDecimal totalSales = filteredInvoices.stream()
-                .map(Invoice::getTotalAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal totalCollection = filteredPayments.stream()
-                .map(Payment::getAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalSales = amountOf(rangeSummary[0]);
+        long totalInvoices = countOf(rangeSummary[1]);
+        BigDecimal totalCollection = amountOf(paymentRepository.sumActiveAmountInRange(startDate, endDate));
 
         return AnalyticsSummaryResponse.builder()
                 .startDate(startDate)
@@ -116,7 +104,7 @@ public class AnalyticsService {
                 .totalCollection(scale(totalCollection))
                 .totalOutstandingBalance(scale(outstanding))
                 .newCustomers(newCustomers)
-                .totalInvoices(filteredInvoices.size())
+                .totalInvoices(totalInvoices)
                 .lowStockProducts(lowStockCount)
                 .dueCustomers(dueCustomers)
                 .salesTrendPercentage(calculateTrendPercentage(thisMonthSales, lastMonthSales))
@@ -233,15 +221,13 @@ public class AnalyticsService {
     @Transactional(readOnly = true)
     public List<SalesChartPointResponse> dayWiseSales(String email, int year, int month) {
         YearMonth selectedMonth = YearMonth.of(year, month);
-        List<Invoice> invoices = invoicesInRange(email, selectedMonth.atDay(1), selectedMonth.atEndOfMonth());
+        // Din-wise jod SQL group by se (pehle mahine ke invoices entity bana kar har din par loop).
+        Map<LocalDate, BigDecimal> salesByDate = salesByDateInRange(email, selectedMonth.atDay(1), selectedMonth.atEndOfMonth());
         List<SalesChartPointResponse> points = new ArrayList<>();
 
         for (int day = 1; day <= selectedMonth.lengthOfMonth(); day++) {
             LocalDate date = selectedMonth.atDay(day);
-            BigDecimal amount = invoices.stream()
-                    .filter(invoice -> invoice.getInvoiceDate().equals(date))
-                    .map(Invoice::getTotalAmount)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal amount = salesByDate.getOrDefault(date, BigDecimal.ZERO);
 
             points.add(SalesChartPointResponse.builder()
                     .label(String.valueOf(day))
@@ -255,12 +241,12 @@ public class AnalyticsService {
 
     @Transactional(readOnly = true)
     public List<SalesChartPointResponse> monthWiseSales(String email, int year) {
-        List<Invoice> invoices = invoicesInRange(email, LocalDate.of(year, 1, 1), LocalDate.of(year, 12, 31));
+        Map<YearMonth, BigDecimal> salesByMonth = sumByMonth(salesByDateInRange(email, LocalDate.of(year, 1, 1), LocalDate.of(year, 12, 31)));
         List<SalesChartPointResponse> points = new ArrayList<>();
 
         for (int month = 1; month <= 12; month++) {
             YearMonth targetMonth = YearMonth.of(year, month);
-            BigDecimal amount = sumInvoiceSalesForMonth(invoices, targetMonth);
+            BigDecimal amount = salesByMonth.getOrDefault(targetMonth, BigDecimal.ZERO);
             points.add(SalesChartPointResponse.builder()
                     .label(targetMonth.getMonth().getDisplayName(TextStyle.SHORT, Locale.ENGLISH))
                     .index(month)
@@ -277,38 +263,50 @@ public class AnalyticsService {
         Company company = accessControlService.requireCompany(user);
         Pageable pageable = pageRequest(page, size);
         String normalizedSearch = blankToNull(search);
-        List<Invoice> invoices = invoiceRepository.findActiveInRangeWithItems(startDate, endDate);
-        Map<Long, ProductSalesAggregate> aggregates = new HashMap<>();
-
-        for (Invoice invoice : invoices) {
-            for (InvoiceItem item : invoice.getItems()) {
-                aggregates.compute(item.getProduct().getId(), (productId, current) -> {
-                    ProductSalesAggregate next = current == null
-                            ? new ProductSalesAggregate(item.getProduct(), 0, BigDecimal.ZERO)
-                            : current;
-                    next.totalQty += item.getQty();
-                    next.totalSales = scale(next.totalSales.add(item.getLineTotal()));
-                    return next;
-                });
+        // Perf: product-wise qty/sales SQL group by se. Pehle range ke saare invoices items samet
+        // memory me aate the, aur HAR product (sirf page wale nahi) ke liye alag stock query (N+1).
+        List<Object[]> salesRows = invoiceItemRepository.sumActiveSalesByProduct(startDate, endDate);
+        List<Long> productIds = salesRows.stream()
+                .map(row -> DataTypeUtility.longValue(row[0]))
+                .filter(java.util.Objects::nonNull)
+                .toList();
+        Map<Long, Product> productsById = new HashMap<>();
+        for (Product product : productRepository.findAllById(productIds)) {
+            productsById.put(product.getId(), product);
+        }
+        List<ProductSalesAggregate> aggregates = new ArrayList<>();
+        for (Object[] row : salesRows) {
+            Product product = productsById.get(DataTypeUtility.longValue(row[0]));
+            if (product == null) {
+                continue;
             }
+            aggregates.add(new ProductSalesAggregate(product, DataTypeUtility.integerValue(row[1]), scale(amountOf(row[2]))));
         }
 
-        List<TopSellingProductResponse> allRecords = aggregates.values().stream()
+        List<ProductSalesAggregate> sortedAggregates = aggregates.stream()
                 .filter(aggregate -> normalizedSearch == null
                         || containsIgnoreCase(aggregate.product.getName(), normalizedSearch)
                         || containsIgnoreCase(aggregate.product.getSku(), normalizedSearch))
                 .sorted(Comparator.comparing(ProductSalesAggregate::getTotalSales, Comparator.reverseOrder())
                         .thenComparing(ProductSalesAggregate::getTotalQty, Comparator.reverseOrder()))
+                .toList();
+        // Stock sirf current page ke products ka, ek batch query me.
+        int fromIndex = Math.min((int) pageable.getOffset(), sortedAggregates.size());
+        int toIndex = Math.min(fromIndex + pageable.getPageSize(), sortedAggregates.size());
+        List<ProductSalesAggregate> pageAggregates = sortedAggregates.subList(fromIndex, toIndex);
+        Map<Long, InventoryService.ProductInventorySnapshot> inventoryByProduct = inventoryService.summarize(company,
+                pageAggregates.stream().map(aggregate -> aggregate.product).toList(), false);
+        List<TopSellingProductResponse> pageRecords = pageAggregates.stream()
                 .map(aggregate -> TopSellingProductResponse.builder()
                         .productId(aggregate.product.getId())
                         .productName(aggregate.product.getName())
                         .sku(aggregate.product.getSku())
                         .totalQtySold(aggregate.totalQty)
                         .totalSalesAmount(scale(aggregate.totalSales))
-                        .currentStockQty(inventoryService.summarize(company, aggregate.product, false).getCurrentStock())
+                        .currentStockQty(inventoryByProduct.getOrDefault(aggregate.product.getId(), InventoryService.ProductInventorySnapshot.empty()).getCurrentStock())
                         .build())
                 .toList();
-        return page(allRecords, pageable);
+        return PageResponse.from(new PageImpl<>(pageRecords, pageable, sortedAggregates.size()));
     }
 
     @Transactional(readOnly = true)
@@ -328,27 +326,19 @@ public class AnalyticsService {
         Company company = accessControlService.requireCompany(user);
         String normalizedSearch = blankToNull(search);
         List<ProductCategory> categories = categoriesFor(company);
-        List<Invoice> invoices = invoiceRepository.findActiveInRangeWithItems(startDate, endDate);
         Map<Long, CategorySalesAggregate> aggregates = new HashMap<>();
 
         for (ProductCategory category : categories) {
             aggregates.put(category.getId(), new CategorySalesAggregate(category, BigDecimal.ZERO));
         }
 
-        for (Invoice invoice : invoices) {
-            for (InvoiceItem item : invoice.getItems()) {
-                ProductCategory category = item.getProduct().getProductCategory();
-                if (category == null || !aggregates.containsKey(category.getId())) {
-                    continue;
-                }
-                aggregates.compute(category.getId(), (categoryId, current) -> {
-                    CategorySalesAggregate next = current == null
-                            ? new CategorySalesAggregate(category, BigDecimal.ZERO)
-                            : current;
-                    next.totalSales = scale(next.totalSales.add(item.getLineTotal()));
-                    return next;
-                });
+        // Category-wise jod SQL group by se (pehle range ke saare invoices items samet memory me).
+        for (Object[] row : invoiceItemRepository.sumActiveSalesByCategory(startDate, endDate)) {
+            CategorySalesAggregate aggregate = aggregates.get(DataTypeUtility.longValue(row[0]));
+            if (aggregate == null) {
+                continue;
             }
+            aggregate.totalSales = scale(aggregate.totalSales.add(amountOf(row[1])));
         }
 
         BigDecimal totalSales = aggregates.values().stream()
@@ -373,15 +363,18 @@ public class AnalyticsService {
         User user = accessControlService.getCurrentUser(email);
         Company company = accessControlService.requireCompany(user);
         Pageable pageable = pageRequest(page, size);
+        // Perf: pehle har product ke liye summarize() 3 baar (filter + sort comparator ke andar
+        // har comparison par + map) = hazaron queries. Ab saare products ka stock ek group-by query se.
+        Map<Long, Integer> stockByProduct = currentStockByProduct();
         List<LowStockProductResponse> allRecords = productsFor(company).stream()
                 .filter(Product::isActive)
-                .filter(product -> inventoryService.summarize(company, product, false).getCurrentStock() <= product.getMinStockQty())
-                .sorted(Comparator.comparing((Product product) -> inventoryService.summarize(company, product, false).getCurrentStock()).thenComparing(Product::getName))
+                .filter(product -> stockByProduct.getOrDefault(product.getId(), 0) <= DataTypeUtility.integerValue(product.getMinStockQty()))
+                .sorted(Comparator.comparing((Product product) -> stockByProduct.getOrDefault(product.getId(), 0)).thenComparing(Product::getName))
                 .map(product -> LowStockProductResponse.builder()
                         .productId(product.getId())
                         .productName(product.getName())
                         .sku(product.getSku())
-                        .stockQty(inventoryService.summarize(company, product, false).getCurrentStock())
+                        .stockQty(stockByProduct.getOrDefault(product.getId(), 0))
                         .minStockQty(product.getMinStockQty())
                         .active(product.isActive())
                         .build())
@@ -409,35 +402,29 @@ public class AnalyticsService {
         Company company = accessControlService.requireCompany(user);
         LocalDate safeEnd = endDate != null ? endDate : com.billing.core.AppDateTime.istToday();
         LocalDate safeStart = startDate != null ? startDate : safeEnd.minusDays(29);
-        // Opening/as-of outstanding aur 12-month trend ko safeEnd tak ki history
-        // chahiye (bina items); expenses sirf range ke. Pehle sab tables poori aati thi.
-        List<Invoice> invoices = invoiceRepository.findActiveInRange(null, safeEnd);
-        List<Payment> payments = paymentRepository.findActiveInRange(null, safeEnd);
-        List<Customer> customers = customersFor(company);
+        // Perf: pehle safeEnd tak ki POORI invoices + payments history aur saare customers entity
+        // bana kar aate the (Dashboard + Analytics dono har load par ye call karte hain).
+        // Ab range ke din-wise jod, opening/as-of outstanding aur 12-month trend SQL aggregate se;
+        // expenses (category naam chahiye) sirf range ke.
+        Map<LocalDate, BigDecimal> salesByDate = amountByDate(invoiceRepository.sumActiveTotalByDate(safeStart, safeEnd));
+        Map<LocalDate, BigDecimal> collectionByDate = amountByDate(paymentRepository.sumActiveAmountByDate(safeStart, safeEnd));
+        Object[] rangeSummary = firstRow(invoiceRepository.summarizeActiveInRange(safeStart, safeEnd), 3);
+        List<LocalDate> customerCreatedDates = customerCreatedDates();
         List<Expense> expenses = expenseRepository.findInRange(safeStart, safeEnd);
 
-        List<Invoice> filteredInvoices = invoices.stream()
-                .filter(invoice -> isWithinRange(invoice.getInvoiceDate(), safeStart, safeEnd))
-                .toList();
-        List<Payment> filteredPayments = payments.stream()
-                .filter(payment -> isWithinRange(payment.getPaymentDate(), safeStart, safeEnd))
-                .toList();
         List<Expense> filteredExpenses = expenses.stream()
                 .filter(expense -> isWithinRange(expense.getExpenseDate(), safeStart, safeEnd))
                 .toList();
 
-        BigDecimal totalSales = filteredInvoices.stream()
-                .map(Invoice::getTotalAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal totalCollection = filteredPayments.stream()
-                .map(Payment::getAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalSales = amountOf(rangeSummary[0]);
+        long totalInvoices = countOf(rangeSummary[1]);
+        BigDecimal totalCollection = sumBetween(collectionByDate, safeStart, safeEnd);
         BigDecimal totalExpense = filteredExpenses.stream()
                 .map(Expense::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal outstandingAmount = calculateOutstandingAsOf(customers, invoices, payments, safeEnd);
-        long newCustomers = customers.stream()
-                .filter(customer -> customer.getCreatedAt() != null && isWithinRange(com.billing.core.AppDateTime.toIstDate(customer.getCreatedAt()), safeStart, safeEnd))
+        BigDecimal outstandingAmount = calculateOutstandingAsOf(safeEnd);
+        long newCustomers = customerCreatedDates.stream()
+                .filter(createdDate -> isWithinRange(createdDate, safeStart, safeEnd))
                 .count();
 
         List<LocalDate> periodStarts = buildPeriodStarts(safeStart, safeEnd);
@@ -449,27 +436,21 @@ public class AnalyticsService {
         List<MetricPointResponse> outstandingTrend = new ArrayList<>();
         List<MetricPointResponse> customerGrowthTrend = new ArrayList<>();
 
-        BigDecimal openingOutstanding = calculateOutstandingBefore(invoices, payments, safeStart);
+        BigDecimal openingOutstanding = calculateOutstandingBefore(safeStart, safeEnd);
         BigDecimal runningOutstanding = openingOutstanding;
         long runningCustomers = 0L;
         int index = 1;
 
         for (LocalDate periodStart : periodStarts) {
             LocalDate periodEnd = resolvePeriodEnd(periodStart, safeEnd, useDailyBuckets);
-            BigDecimal periodSales = filteredInvoices.stream()
-                    .filter(invoice -> isWithinRange(invoice.getInvoiceDate(), periodStart, periodEnd))
-                    .map(Invoice::getTotalAmount)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-            BigDecimal periodCollection = filteredPayments.stream()
-                    .filter(payment -> isWithinRange(payment.getPaymentDate(), periodStart, periodEnd))
-                    .map(Payment::getAmount)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal periodSales = sumBetween(salesByDate, periodStart, periodEnd);
+            BigDecimal periodCollection = sumBetween(collectionByDate, periodStart, periodEnd);
             BigDecimal periodExpense = filteredExpenses.stream()
                     .filter(expense -> isWithinRange(expense.getExpenseDate(), periodStart, periodEnd))
                     .map(Expense::getAmount)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
-            long periodNewCustomers = customers.stream()
-                    .filter(customer -> customer.getCreatedAt() != null && isWithinRange(com.billing.core.AppDateTime.toIstDate(customer.getCreatedAt()), periodStart, periodEnd))
+            long periodNewCustomers = customerCreatedDates.stream()
+                    .filter(createdDate -> isWithinRange(createdDate, periodStart, periodEnd))
                     .count();
 
             runningOutstanding = scale(runningOutstanding.add(periodSales).subtract(periodCollection));
@@ -485,7 +466,7 @@ public class AnalyticsService {
             index++;
         }
 
-        List<MetricPointResponse> monthlyRevenue = buildMonthlyRevenueTrend(invoices, safeEnd);
+        List<MetricPointResponse> monthlyRevenue = buildMonthlyRevenueTrend(safeEnd);
         List<MetricPointResponse> expenseByCategory = buildExpenseByCategory(filteredExpenses);
 
         return OwnerAnalyticsResponse.builder()
@@ -497,7 +478,7 @@ public class AnalyticsService {
                 .netRevenue(revenueCalculationService.netRevenue(totalCollection, totalExpense))
                 .outstandingAmount(scale(outstandingAmount))
                 .newCustomers(newCustomers)
-                .totalInvoices(filteredInvoices.size())
+                .totalInvoices(totalInvoices)
                 .salesTrend(salesTrend)
                 .collectionTrend(collectionTrend)
                 .expenseTrend(expenseTrend)
@@ -527,46 +508,118 @@ public class AnalyticsService {
         return points;
     }
 
-    private List<MetricPointResponse> buildMonthlyRevenueTrend(List<Invoice> invoices, LocalDate endDate) {
+    // 12 mahine (endDate wale mahine tak, endDate ke baad ka nahi): ek din-wise group-by query.
+    private List<MetricPointResponse> buildMonthlyRevenueTrend(LocalDate endDate) {
         List<MetricPointResponse> points = new ArrayList<>();
         YearMonth endMonth = YearMonth.from(endDate);
+        Map<YearMonth, BigDecimal> salesByMonth = sumByMonth(amountByDate(invoiceRepository.sumActiveTotalByDate(endMonth.minusMonths(11).atDay(1), endDate)));
         for (int i = 11; i >= 0; i--) {
             YearMonth month = endMonth.minusMonths(i);
-            BigDecimal amount = sumInvoiceSalesForMonth(invoices, month);
+            BigDecimal amount = salesByMonth.getOrDefault(month, BigDecimal.ZERO);
             points.add(point(month.getMonth().getDisplayName(TextStyle.SHORT, Locale.ENGLISH) + " " + month.getYear(), 12 - i, amount));
         }
         return points;
     }
 
-    private BigDecimal calculateOutstandingBefore(List<Invoice> invoices, List<Payment> payments, LocalDate startDate) {
-        BigDecimal historicalSales = invoices.stream()
-                .filter(invoice -> invoice.getInvoiceDate().isBefore(startDate))
-                .map(Invoice::getTotalAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal historicalCollections = payments.stream()
-                .filter(payment -> payment.getPaymentDate().isBefore(startDate))
-                .map(Payment::getAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    // startDate se pehle tak ka (aur historyEndDate se aage nahi) sales − collections, SQL sum se.
+    private BigDecimal calculateOutstandingBefore(LocalDate startDate, LocalDate historyEndDate) {
+        LocalDate beforeStart = earlierOf(startDate.minusDays(1), historyEndDate);
+        BigDecimal historicalSales = salesInRange(null, beforeStart);
+        BigDecimal historicalCollections = amountOf(paymentRepository.sumActiveAmountInRange(null, beforeStart));
         return scale(historicalSales.subtract(historicalCollections));
     }
 
-    private BigDecimal calculateOutstandingAsOf(List<Customer> customers, List<Invoice> invoices, List<Payment> payments, LocalDate endDate) {
+    private BigDecimal calculateOutstandingAsOf(LocalDate endDate) {
         if (endDate == null || !endDate.isBefore(com.billing.core.AppDateTime.istToday())) {
-            return customers.stream()
-                    .map(Customer::getCurrentBalance)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            return amountOf(customerRepository.sumCurrentBalance());
         }
 
-        BigDecimal salesUntilEnd = invoices.stream()
-                .filter(invoice -> invoice.getInvoiceDate() != null && !invoice.getInvoiceDate().isAfter(endDate))
-                .map(Invoice::getTotalAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal collectionsUntilEnd = payments.stream()
-                .filter(payment -> payment.getPaymentDate() != null && !payment.getPaymentDate().isAfter(endDate))
-                .map(Payment::getAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal salesUntilEnd = salesInRange(null, endDate);
+        BigDecimal collectionsUntilEnd = amountOf(paymentRepository.sumActiveAmountInRange(null, endDate));
 
         return scale(salesUntilEnd.subtract(collectionsUntilEnd));
+    }
+
+    private BigDecimal salesInRange(LocalDate startDate, LocalDate endDate) {
+        return amountOf(firstRow(invoiceRepository.summarizeActiveInRange(startDate, endDate), 3)[0]);
+    }
+
+    // Saare products ka current stock (sum remainingQty) ek group-by query se.
+    private Map<Long, Integer> currentStockByProduct() {
+        Map<Long, Integer> stockByProduct = new HashMap<>();
+        for (Object[] row : productBatchRepository.sumRemainingQtyGroupByProduct()) {
+            Long productId = DataTypeUtility.longValue(row[0]);
+            if (productId != null) {
+                stockByProduct.put(productId, DataTypeUtility.integerValue(row[1]));
+            }
+        }
+        return stockByProduct;
+    }
+
+    // Customer createdAt (UTC wall-time) -> IST date; sirf ek column load hota hai.
+    private List<LocalDate> customerCreatedDates() {
+        return customerRepository.findAllCreatedAt().stream()
+                .map(com.billing.core.AppDateTime::toIstDate)
+                .filter(java.util.Objects::nonNull)
+                .toList();
+    }
+
+    private Map<LocalDate, BigDecimal> amountByDate(List<Object[]> rows) {
+        Map<LocalDate, BigDecimal> amountByDate = new HashMap<>();
+        for (Object[] row : rows) {
+            if (row[0] == null) {
+                continue;
+            }
+            amountByDate.put((LocalDate) row[0], amountOf(row[1]));
+        }
+        return amountByDate;
+    }
+
+    private Map<YearMonth, BigDecimal> sumByMonth(Map<LocalDate, BigDecimal> amountByDate) {
+        Map<YearMonth, BigDecimal> amountByMonth = new HashMap<>();
+        for (Map.Entry<LocalDate, BigDecimal> entry : amountByDate.entrySet()) {
+            amountByMonth.merge(YearMonth.from(entry.getKey()), entry.getValue(), BigDecimal::add);
+        }
+        return amountByMonth;
+    }
+
+    private BigDecimal sumBetween(Map<LocalDate, BigDecimal> amountByDate, LocalDate startDate, LocalDate endDate) {
+        BigDecimal total = BigDecimal.ZERO;
+        for (Map.Entry<LocalDate, BigDecimal> entry : amountByDate.entrySet()) {
+            if (isWithinRange(entry.getKey(), startDate, endDate)) {
+                total = total.add(entry.getValue());
+            }
+        }
+        return total;
+    }
+
+    // Do upper bounds me se pehla (null = koi limit nahi).
+    private LocalDate earlierOf(LocalDate firstDate, LocalDate secondDate) {
+        if (firstDate == null) {
+            return secondDate;
+        }
+        if (secondDate == null) {
+            return firstDate;
+        }
+        return firstDate.isBefore(secondDate) ? firstDate : secondDate;
+    }
+
+    // Aggregate query ki pehli row; khali result par zero-filled row.
+    private Object[] firstRow(List<Object[]> rows, int columnCount) {
+        if (rows == null || rows.isEmpty() || rows.get(0) == null) {
+            return new Object[columnCount];
+        }
+        return rows.get(0);
+    }
+
+    private BigDecimal amountOf(Object value) {
+        BigDecimal amount = DataTypeUtility.bigDecimalObjectValue(value);
+        return amount == null ? BigDecimal.ZERO : amount;
+    }
+
+    private long countOf(Object value) {
+        Long count = DataTypeUtility.longValue(value);
+        return count == null ? 0L : count;
     }
 
     private List<LocalDate> buildPeriodStarts(LocalDate startDate, LocalDate endDate) {
@@ -614,20 +667,6 @@ public class AnalyticsService {
                 .index(index)
                 .value(scale(value))
                 .build();
-    }
-
-    private BigDecimal sumInvoiceSalesForDate(List<Invoice> invoices, LocalDate date) {
-        return invoices.stream()
-                .filter(invoice -> invoice.getInvoiceDate().equals(date))
-                .map(Invoice::getTotalAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-    }
-
-    private BigDecimal sumInvoiceSalesForMonth(List<Invoice> invoices, YearMonth yearMonth) {
-        return invoices.stream()
-                .filter(invoice -> YearMonth.from(invoice.getInvoiceDate()).equals(yearMonth))
-                .map(Invoice::getTotalAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     private boolean isWithinRange(LocalDate value, LocalDate startDate, LocalDate endDate) {
@@ -697,14 +736,10 @@ public class AnalyticsService {
         return value != null && value.toLowerCase(Locale.ENGLISH).contains(search.toLowerCase(Locale.ENGLISH));
     }
 
-    // Charts: sirf us mahine/saal ke invoices, bina items (sirf totals chahiye).
-    private List<Invoice> invoicesInRange(String email, LocalDate startDate, LocalDate endDate) {
+    // Charts: sirf us mahine/saal ka din-wise jod (SQL group by, entities nahi).
+    private Map<LocalDate, BigDecimal> salesByDateInRange(String email, LocalDate startDate, LocalDate endDate) {
         accessControlService.requireCompany(accessControlService.getCurrentUser(email));
-        return invoiceRepository.findActiveInRange(startDate, endDate);
-    }
-
-    private List<Customer> customersFor(Company company) {
-        return customerRepository.findAllByOrderByCreatedAtDesc();
+        return amountByDate(invoiceRepository.sumActiveTotalByDate(startDate, endDate));
     }
 
     private List<Product> productsFor(Company company) {

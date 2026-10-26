@@ -110,6 +110,8 @@ public class PaymentDataPortModule implements DataPortModule<PaymentDataPortModu
 
     @Override
     public void validate(List<DataPortRow> rows, Context context) {
+        // Saare invoice numbers ek query me (pehle har row par alag query).
+        java.util.function.Function<String, Optional<Invoice>> invoiceByNumber = lookups.invoicesByNumber(rows, "invoiceNo");
         // Poori file ke payments milake outstanding se zyada na hon.
         Map<Long, BigDecimal> customerLeft = new HashMap<>();
         Map<Long, BigDecimal> invoiceLeft = new HashMap<>();
@@ -128,7 +130,7 @@ public class PaymentDataPortModule implements DataPortModule<PaymentDataPortModu
             }
             Invoice invoice = null;
             if (!row.value("invoiceNo").isEmpty()) {
-                Optional<Invoice> found = lookups.invoiceByNumber(row.value("invoiceNo"));
+                Optional<Invoice> found = invoiceByNumber.apply(row.value("invoiceNo"));
                 if (found.isEmpty()) {
                     row.error("invoiceNo", "Invoice not found");
                 } else if (customer != null && !customer.getId().equals(found.get().getCustomer().getId())) {

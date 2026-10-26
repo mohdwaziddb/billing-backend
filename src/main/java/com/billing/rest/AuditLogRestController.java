@@ -28,6 +28,12 @@ public class AuditLogRestController {
         return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", auditLogService.users(param, authentication.getName())), HttpStatus.OK);
     }
 
+    @GetMapping("/counts")
+    public ResponseEntity<?> counts(@RequestParam(required = false) Map<String, Object> param, Authentication authentication, HttpServletRequest req) {
+        param = SanitizeData.sanitizeMapObj(param);
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", auditLogService.entityLogCounts(param, authentication.getName())), HttpStatus.OK);
+    }
+
     @GetMapping
     public ResponseEntity<?> list(@RequestParam(required = false) Map<String, Object> param, Authentication authentication, HttpServletRequest req) {
         param = SanitizeData.sanitizeMapObj(param);

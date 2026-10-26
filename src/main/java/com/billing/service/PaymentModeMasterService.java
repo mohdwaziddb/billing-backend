@@ -20,10 +20,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.text.Normalizer;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.function.Function;
 
 @Service
 @RequiredArgsConstructor
@@ -50,19 +52,23 @@ public class PaymentModeMasterService {
     @Transactional(readOnly = true)
     public List<PaymentModeResponse> list(String email, String search, Boolean active) {
         Company company = accessControlService.getCurrentCompany(email);
+        Function<String, String> auditNames = auditNameLookup();
         return paymentModeMasterRepository.findAllByCompanyWithFilters(company, active, normalizeSearch(search)).stream()
-                .map(this::toResponse)
+                .map(mode -> toResponse(mode, auditNames))
                 .toList();
     }
 
     @Transactional(readOnly = true)
     public PageResponse<PaymentModeResponse> page(String email, String search, Boolean active, int page, int size) {
         Company company = accessControlService.getCurrentCompany(email);
+        // createdBy/updatedBy har row par 2 user lookup karte the; same users ka naam ek hi baar.
+        Function<String, String> auditNames = auditNameLookup();
         return PageResponse.from(paymentModeMasterRepository.findPageByCompanyWithFilters(company, active, normalizeSearch(search), pageRequest(page, size))
-                .map(this::toResponse));
+                .map(mode -> toResponse(mode, auditNames)));
     }
 
-    @Transactional
+    // GET (list) path: read-only tx (pehle read-write tx khulta tha read pool par).
+    @Transactional(readOnly = true)
     public PageResponse<PaymentModeResponse> page(Map<String, Object> param, String email) {
         String search = DataTypeUtility.stringValue(param.get("search"));
         if (search.length() == 0) {
@@ -254,6 +260,10 @@ public class PaymentModeMasterService {
     }
 
     private PaymentModeResponse toResponse(PaymentModeMaster mode) {
+        return toResponse(mode, auditNameResolver::displayName);
+    }
+
+    private PaymentModeResponse toResponse(PaymentModeMaster mode, Function<String, String> auditNames) {
         return PaymentModeResponse.builder()
                 .id(mode.getId())
                 .modeName(mode.getModeName())
@@ -264,9 +274,23 @@ public class PaymentModeMasterService {
                 .requiresReference(mode.isRequiresReference())
                 .createdAt(mode.getCreatedAt())
                 .updatedAt(mode.getUpdatedAt())
-                .createdBy(auditNameResolver.displayName(mode.getCreatedBy()))
-                .updatedBy(auditNameResolver.displayName(mode.getUpdatedBy()))
+                .createdBy(auditNames.apply(mode.getCreatedBy()))
+                .updatedBy(auditNames.apply(mode.getUpdatedBy()))
                 .build();
+    }
+
+    // Request-local memo: same audit value (user id / email) ka naam ek hi baar resolve ho.
+    private Function<String, String> auditNameLookup() {
+        Map<String, String> resolvedNames = new HashMap<>();
+        return auditValue -> {
+            if (auditValue == null) {
+                return null;
+            }
+            if (!resolvedNames.containsKey(auditValue)) {
+                resolvedNames.put(auditValue, auditNameResolver.displayName(auditValue));
+            }
+            return resolvedNames.get(auditValue);
+        };
     }
 
     private Map<String, Object> snapshot(PaymentModeMaster mode) {
@@ -332,7 +356,7 @@ public class PaymentModeMasterService {
     }
 
     private PageRequest pageRequest(int page, int size) {
-        return PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 100)));
+        return PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 1000)));
     }
 
     private PaymentModeRequest mapToPaymentModeRequest(Map<String, Object> param) {

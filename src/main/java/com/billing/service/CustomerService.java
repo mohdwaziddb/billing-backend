@@ -50,6 +50,9 @@ public class CustomerService {
     private final StateMasterService stateMasterService;
     private final EntityManager entityManager;
 
+    // Metrics IN (...) query ka chunk size (outstanding list me sau-hazaar customers bhi ho sakte hain).
+    private static final int METRICS_ID_CHUNK_SIZE = 1000;
+
     @Transactional
     public CustomerResponse create(Map<String, Object> param, String email) {
         CustomerRequest customerRequest = mapToRequest(param);
@@ -212,7 +215,9 @@ public class CustomerService {
         Company company = companyScope(email);
         Page<Customer> customers = customerRepository.findPageByCompanyWithFilters(company, active, normalizeSearch(search), pageRequest(page, size));
         Map<Long, CustomerSummaryMetrics> metricsByCustomer = loadMetrics(company, customers.getContent());
-        return PageResponse.from(customers.map(customer -> toResponse(customer, metricsByCustomer.get(customer.getId()))));
+        // createdBy/updatedBy ka naam ek request me ek hi baar resolve ho (har row par user lookup nahi).
+        Map<String, String> auditNameCache = new HashMap<>();
+        return PageResponse.from(customers.map(customer -> toResponse(customer, metricsByCustomer.get(customer.getId()), auditNameCache)));
     }
 
     @Transactional(readOnly = true)
@@ -383,11 +388,26 @@ public class CustomerService {
         Customer customer = getCustomerOrThrow(company, customerId);
         int safePage = Math.max(page, 0);
         int safeSize = Math.max(1, Math.min(size, 100));
-        Page<Invoice> invoices = invoiceRepository.findByCompanyAndCustomer(
-                company,
+        // Pehle items collection fetch + Pageable: Hibernate customer ke saare invoices (items samet)
+        // laakar memory me page karta tha. Ab pehle ids ka page DB me, phir sirf unke details.
+        Page<Long> invoiceIdPage = invoiceRepository.findIdPageByCustomer(
                 customer,
                 PageRequest.of(safePage, safeSize, Sort.by(Sort.Direction.DESC, "invoiceDate").and(Sort.by(Sort.Direction.DESC, "id")))
         );
+        List<Invoice> pageInvoices = new ArrayList<>();
+        if (!invoiceIdPage.getContent().isEmpty()) {
+            Map<Long, Invoice> invoiceById = new HashMap<>();
+            for (Invoice invoice : invoiceRepository.findWithDetailsByIdIn(invoiceIdPage.getContent())) {
+                invoiceById.put(invoice.getId(), invoice);
+            }
+            // Page wala order (invoiceDate desc, id desc) hi rakho.
+            for (Long invoiceId : invoiceIdPage.getContent()) {
+                Invoice invoice = invoiceById.get(invoiceId);
+                if (invoice != null) {
+                    pageInvoices.add(invoice);
+                }
+            }
+        }
         CustomerSummaryMetrics summary = loadMetrics(company, List.of(customer)).get(customer.getId());
 
         return CustomerPurchaseHistoryResponse.builder()
@@ -396,11 +416,11 @@ public class CustomerService {
                 .mobile(customer.getMobile())
                 .address(customer.getAddress())
                 .summary(summary)
-                .invoices(invoices.getContent().stream().map(this::toInvoiceResponse).toList())
-                .page(invoices.getNumber())
-                .size(invoices.getSize())
-                .totalRecords(invoices.getTotalElements())
-                .totalPages(invoices.getTotalPages())
+                .invoices(pageInvoices.stream().map(this::toInvoiceResponse).toList())
+                .page(invoiceIdPage.getNumber())
+                .size(invoiceIdPage.getSize())
+                .totalRecords(invoiceIdPage.getTotalElements())
+                .totalPages(invoiceIdPage.getTotalPages())
                 .build();
     }
 
@@ -445,8 +465,9 @@ public class CustomerService {
 
     private List<CustomerResponse> toResponses(Company company, List<Customer> customers) {
         Map<Long, CustomerSummaryMetrics> metricsByCustomer = loadMetrics(company, customers);
+        Map<String, String> auditNameCache = new HashMap<>();
         return customers.stream()
-                .map(customer -> toResponse(customer, metricsByCustomer.get(customer.getId())))
+                .map(customer -> toResponse(customer, metricsByCustomer.get(customer.getId()), auditNameCache))
                 .toList();
     }
 
@@ -459,27 +480,30 @@ public class CustomerService {
             return Map.of();
         }
 
-        List<Invoice> invoices = invoiceRepository.findByCompanyOrderByInvoiceDateDescIdDesc(company);
-        for (Invoice invoice : invoices) {
-            CustomerSummaryMetricsBuilderState state = states.get(invoice.getCustomer().getId());
-            if (state == null) {
-                continue;
+        // Pehle har list/get/update par POORI invoices table (items, products, tax samet) aur
+        // poori payments table memory me aati thi, sirf is page ke 20 customers ka jod nikalne ke liye.
+        // Ab sirf in customers ka SQL aggregate (customer_id index), totals wahi rehte hain.
+        List<Long> customerIds = new ArrayList<>(states.keySet());
+        for (int fromIndex = 0; fromIndex < customerIds.size(); fromIndex += METRICS_ID_CHUNK_SIZE) {
+            List<Long> customerIdChunk = customerIds.subList(fromIndex, Math.min(fromIndex + METRICS_ID_CHUNK_SIZE, customerIds.size()));
+            for (Object[] invoiceSummaryRow : invoiceRepository.summarizeActiveByCustomerIds(customerIdChunk)) {
+                CustomerSummaryMetricsBuilderState state = states.get(DataTypeUtility.longValue(invoiceSummaryRow[0]));
+                if (state == null) {
+                    continue;
+                }
+                state.totalPurchaseAmount = scale(DataTypeUtility.bigDecimalObjectValue(invoiceSummaryRow[1]));
+                state.totalDiscountGiven = scale(DataTypeUtility.bigDecimalObjectValue(invoiceSummaryRow[2]));
+                state.lastPurchaseDate = invoiceSummaryRow[3] instanceof LocalDate lastInvoiceDate ? lastInvoiceDate : null;
+                Long invoiceCount = DataTypeUtility.longValue(invoiceSummaryRow[4]);
+                state.hasPurchaseHistory = invoiceCount != null && invoiceCount > 0;
             }
-            state.totalPurchaseAmount = state.totalPurchaseAmount.add(scale(invoice.getTotalAmount()));
-            state.totalDiscountGiven = state.totalDiscountGiven.add(scale(invoice.getDiscountAmount()));
-            state.hasPurchaseHistory = true;
-            if (state.lastPurchaseDate == null || invoice.getInvoiceDate().isAfter(state.lastPurchaseDate)) {
-                state.lastPurchaseDate = invoice.getInvoiceDate();
+            for (Object[] paymentSummaryRow : paymentRepository.sumActiveAmountByCustomerIds(customerIdChunk)) {
+                CustomerSummaryMetricsBuilderState state = states.get(DataTypeUtility.longValue(paymentSummaryRow[0]));
+                if (state == null) {
+                    continue;
+                }
+                state.totalPaidAmount = scale(DataTypeUtility.bigDecimalObjectValue(paymentSummaryRow[1]));
             }
-        }
-
-        List<Payment> payments = paymentRepository.findByCompanyOrderByPaymentDateDescIdDesc(company);
-        for (Payment payment : payments) {
-            CustomerSummaryMetricsBuilderState state = states.get(payment.getCustomer().getId());
-            if (state == null) {
-                continue;
-            }
-            state.totalPaidAmount = state.totalPaidAmount.add(scale(payment.getAmount()));
         }
 
         Map<Long, CustomerSummaryMetrics> metricsByCustomer = new HashMap<>();
@@ -530,6 +554,10 @@ public class CustomerService {
     }
 
     private CustomerResponse toResponse(Customer customer, CustomerSummaryMetrics metrics) {
+        return toResponse(customer, metrics, new HashMap<>());
+    }
+
+    private CustomerResponse toResponse(Customer customer, CustomerSummaryMetrics metrics, Map<String, String> auditNameCache) {
         CustomerSummaryMetrics safeMetrics = metrics == null ? emptyMetrics(customer) : metrics;
         return CustomerResponse.builder()
                 .id(customer.getId())
@@ -555,9 +583,16 @@ public class CustomerService {
                 .active(customer.isActive())
                 .createdAt(customer.getCreatedAt())
                 .updatedAt(customer.getUpdatedAt())
-                .createdBy(auditNameResolver.displayName(customer.getCreatedBy()))
-                .updatedBy(auditNameResolver.displayName(customer.getUpdatedBy()))
+                .createdBy(cachedAuditName(customer.getCreatedBy(), auditNameCache))
+                .updatedBy(cachedAuditName(customer.getUpdatedBy(), auditNameCache))
                 .build();
+    }
+
+    private String cachedAuditName(String auditValue, Map<String, String> auditNameCache) {
+        if (auditValue == null || auditValue.isBlank()) {
+            return auditNameResolver.displayName(auditValue);
+        }
+        return auditNameCache.computeIfAbsent(auditValue, auditNameResolver::displayName);
     }
 
     private InvoiceResponse toInvoiceResponse(Invoice invoice) {

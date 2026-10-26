@@ -58,6 +58,20 @@ public class InvoiceTemplateRenderService {
     private static final DateTimeFormatter INDIAN_DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("dd-MM-yyyy hh:mm a");
     private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
     private static final long MAX_REMOTE_IMAGE_BYTES = 5L * 1024L * 1024L;
+    // Logo/signature (S3) har render par HTTP se aata tha: detail page, har template thumbnail,
+    // live preview ki har keystroke = 1-2 remote fetch (10s timeout tak). Chhota TTL cache.
+    private static final long REMOTE_IMAGE_CACHE_TTL_MILLIS = 10L * 60L * 1000L;
+    private static final long REMOTE_IMAGE_FAILURE_TTL_MILLIS = 60L * 1000L;
+    private static final int REMOTE_IMAGE_CACHE_MAX_ENTRIES = 200;
+    private static final long REMOTE_IMAGE_CACHE_MAX_BYTES = 1024L * 1024L;
+    // Ek hi engine: pehle har render par naya TemplateEngine + template parse hota tha.
+    // Template text hi cache key hai (registry ke templates static hain).
+    private static final TemplateEngine TEMPLATE_ENGINE = buildTemplateEngine();
+
+    private final Map<String, CachedRemoteImage> remoteImageCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private record CachedRemoteImage(String dataUrl, long expiresAtMillis) {
+    }
 
     private final AccessControlService accessControlService;
     private final InvoiceService invoiceService;
@@ -114,7 +128,7 @@ public class InvoiceTemplateRenderService {
     @Transactional(readOnly = true)
     public InvoiceRenderResponse renderInvoice(String email, Long invoiceId, String requestedTemplateId) {
         Company company = accessControlService.getCurrentCompany(email);
-        Invoice invoice = invoiceService.getInvoiceOrThrow(company, invoiceId);
+        Invoice invoice = invoiceService.getInvoiceWithDetailsOrThrow(company, invoiceId);
         CompanyInvoiceSetting settings = companyInvoiceSettingsService.resolveForCompany(company);
         // Saved default ka folder hat gaya ho to bhi print/PDF chale (fallback template);
         // explicitly maanga gaya galat id abhi bhi 400 deta hai.
@@ -153,7 +167,7 @@ public class InvoiceTemplateRenderService {
         InvoiceTemplateDefinition definition = invoiceTemplateRegistryService.getOrThrow(templateId);
         Map<String, Object> model = invoiceId == null
                 ? buildSampleModel(company, settings, definition)
-                : buildInvoiceModel(company, invoiceService.getInvoiceOrThrow(company, invoiceId), settings, definition);
+                : buildInvoiceModel(company, invoiceService.getInvoiceWithDetailsOrThrow(company, invoiceId), settings, definition);
         String html = render(definition, model);
         return InvoiceRenderResponse.builder()
                 .invoiceId(invoiceId)
@@ -172,7 +186,7 @@ public class InvoiceTemplateRenderService {
         Long invoiceId = request == null ? null : request.getInvoiceId();
         Map<String, Object> model = invoiceId == null
                 ? buildSampleModel(company, settings, definition)
-                : buildInvoiceModel(company, invoiceService.getInvoiceOrThrow(company, invoiceId), settings, definition);
+                : buildInvoiceModel(company, invoiceService.getInvoiceWithDetailsOrThrow(company, invoiceId), settings, definition);
         String html = render(definition, model);
         return InvoiceRenderResponse.builder()
                 .invoiceId(invoiceId)
@@ -208,18 +222,21 @@ public class InvoiceTemplateRenderService {
     }
 
     private String render(InvoiceTemplateDefinition definition, Map<String, Object> model) {
-        StringTemplateResolver resolver = new StringTemplateResolver();
-        resolver.setTemplateMode("HTML");
-        resolver.setCacheable(false);
-        TemplateEngine engine = new TemplateEngine();
-        engine.setTemplateResolver(resolver);
-
         String htmlTemplate = definition.getHtmlTemplate()
                 .replace("</head>", "<style>\n" + definition.getCssTemplate() + "\n</style>\n</head>");
 
         Context context = new Context(Locale.ENGLISH);
         context.setVariables(model);
-        return engine.process(htmlTemplate, context);
+        return TEMPLATE_ENGINE.process(htmlTemplate, context);
+    }
+
+    private static TemplateEngine buildTemplateEngine() {
+        StringTemplateResolver resolver = new StringTemplateResolver();
+        resolver.setTemplateMode("HTML");
+        resolver.setCacheable(true);
+        TemplateEngine engine = new TemplateEngine();
+        engine.setTemplateResolver(resolver);
+        return engine;
     }
 
     private Map<String, Object> buildInvoiceModel(Company company, Invoice invoice, CompanyInvoiceSetting settings, InvoiceTemplateDefinition definition) {
@@ -785,8 +802,29 @@ public class InvoiceTemplateRenderService {
         }
     }
 
-    /** Fetch an S3 (or any https) image URL for invoice/PDF embedding. Never throws. */
+    /** Fetch an S3 (or any https) image URL for invoice/PDF embedding. Never throws. Short TTL cache. */
     private String remoteUrlToDataUrl(String url) {
+        long nowMillis = System.currentTimeMillis();
+        CachedRemoteImage cachedImage = remoteImageCache.get(url);
+        if (cachedImage != null && cachedImage.expiresAtMillis() > nowMillis) {
+            return cachedImage.dataUrl();
+        }
+        String dataUrl = fetchRemoteUrlAsDataUrl(url);
+        if (dataUrl == null || dataUrl.length() <= REMOTE_IMAGE_CACHE_MAX_BYTES) {
+            if (remoteImageCache.size() >= REMOTE_IMAGE_CACHE_MAX_ENTRIES) {
+                remoteImageCache.values().removeIf(entry -> entry.expiresAtMillis() <= nowMillis);
+                if (remoteImageCache.size() >= REMOTE_IMAGE_CACHE_MAX_ENTRIES) {
+                    remoteImageCache.clear();
+                }
+            }
+            // Fail (timeout/404) bhi thodi der yaad: warna har preview par phir 10s ruke.
+            long ttlMillis = dataUrl == null ? REMOTE_IMAGE_FAILURE_TTL_MILLIS : REMOTE_IMAGE_CACHE_TTL_MILLIS;
+            remoteImageCache.put(url, new CachedRemoteImage(dataUrl, nowMillis + ttlMillis));
+        }
+        return dataUrl;
+    }
+
+    private String fetchRemoteUrlAsDataUrl(String url) {
         try {
             // Logo URL tenant set kar sakta hai: internal address par fetch nahi (SSRF).
             HttpRequest request = HttpRequest.newBuilder(OutboundUrlGuard.requirePublicUrl(url))

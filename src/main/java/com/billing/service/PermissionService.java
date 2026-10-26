@@ -75,7 +75,9 @@ public class PermissionService {
         User user = accessControlService.getCurrentUser(email);
         // DATABASE-per-tenant: User.company is @Transient, resolve from tenant connection.
         Company company = accessControlService.requireCompany(user);
-        return hasPermission(user.getId(), company.getId(), menuCode, actionCode);
+        // Har @RequiresPermission call par chalta hai: user/company dobara fetch mat karo
+        // (pehle hasPermission(id, id) user + company phir se laata tha, isCompanyOwner ek baar aur).
+        return evaluatePermission(user, company, menuCode, actionCode);
     }
 
     @Transactional(readOnly = true)
@@ -87,7 +89,11 @@ public class PermissionService {
         if (!company.getId().equals(companyId)) {
             return false;
         }
+        return evaluatePermission(user, company, menuCode, actionCode);
+    }
 
+    /** user + company pehle se resolved (requireCompany ho chuka) — sirf menu/action/role checks. */
+    private boolean evaluatePermission(User user, Company company, String menuCode, String actionCode) {
         AppMenu menu = appMenuRepository.findByMenuCode(menuCode).orElse(null);
         if (menu == null || !menu.isActive() || isLegacySuperAdminMenu(menu)) {
             return false;
@@ -96,7 +102,8 @@ public class PermissionService {
         if (action == null || !action.isActive()) {
             return false;
         }
-        if (accessControlService.isCompanyOwner(user)) {
+        // = accessControlService.isCompanyOwner(user); company caller resolve kar chuka hai.
+        if (user.isActive() && user.getRole() == RoleName.OWNER) {
             return true;
         }
         RoleMaster role = roleMasterRepository.findByRoleCode(roleCode(user)).orElse(null);

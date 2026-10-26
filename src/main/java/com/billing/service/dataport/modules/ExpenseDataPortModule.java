@@ -108,6 +108,8 @@ public class ExpenseDataPortModule implements DataPortModule<ExpenseDataPortModu
 
     @Override
     public void validate(List<DataPortRow> rows, Context context) {
+        // Saare invoice numbers ek query me (pehle har row par alag query).
+        java.util.function.Function<String, Optional<Invoice>> invoiceByNumber = lookups.invoicesByNumber(rows, "invoiceNo");
         for (DataPortRow row : rows) {
             if (!row.value("category").isEmpty()) {
                 ExpenseCategory category = context.categories().get(DataPortValues.key(row.value("category")));
@@ -153,7 +155,7 @@ public class ExpenseDataPortModule implements DataPortModule<ExpenseDataPortModu
                 if (row.value("invoiceNo").isEmpty()) {
                     row.error("invoiceNo", "Invoice No is required for Invoice Related expense");
                 } else {
-                    Optional<Invoice> invoice = lookups.invoiceByNumber(row.value("invoiceNo"));
+                    Optional<Invoice> invoice = invoiceByNumber.apply(row.value("invoiceNo"));
                     if (invoice.isEmpty()) {
                         row.error("invoiceNo", "Invoice not found");
                     } else if (customer != null && !customer.getId().equals(invoice.get().getCustomer().getId())) {

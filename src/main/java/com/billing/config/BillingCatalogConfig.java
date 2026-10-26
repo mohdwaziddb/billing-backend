@@ -38,11 +38,12 @@ public class BillingCatalogConfig {
         config.setUsername(username);
         config.setPassword(password);
         config.setDriverClassName("com.mysql.cj.jdbc.Driver");
-        config.setMinimumIdle(0);
+        // Registry lookups (RequestInterceptor) isi pool se: ek connection warm rakho.
+        config.setMinimumIdle(1);
         config.setMaximumPoolSize(5);
         config.setPoolName("billing_common");
         config.setConnectionTimeout(10000);
-        config.setIdleTimeout(60000);
+        config.setIdleTimeout(300000);
         return new HikariDataSource(config);
     }
 

@@ -34,6 +34,38 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long> {
             """)
     List<Expense> findInRange(@Param("startDate") java.time.LocalDate startDate, @Param("endDate") java.time.LocalDate endDate);
 
+    // Payment hierarchy: invoice-linked expense ka customer bhi saath (warna har invoice par alag lazy select).
+    @EntityGraph(attributePaths = {"category", "customer", "invoice", "invoice.customer"})
+    @Query("""
+            select e from Expense e
+            where e.deleted = false
+              and (:startDate is null or e.expenseDate >= :startDate)
+              and (:endDate is null or e.expenseDate <= :endDate)
+            order by e.expenseDate desc, e.id desc
+            """)
+    List<Expense> findInRangeWithInvoiceCustomer(@Param("startDate") java.time.LocalDate startDate, @Param("endDate") java.time.LocalDate endDate);
+
+    // Dashboard KPI: range ka kul kharcha DB me (entity + category/customer/invoice graph load kiye bina).
+    @Query("""
+            select coalesce(sum(e.amount), 0)
+            from Expense e
+            where e.deleted = false
+              and (:startDate is null or e.expenseDate >= :startDate)
+              and (:endDate is null or e.expenseDate <= :endDate)
+            """)
+    BigDecimal sumActiveAmountInRange(@Param("startDate") java.time.LocalDate startDate, @Param("endDate") java.time.LocalDate endDate);
+
+    // Dashboard net revenue card: din-wise [expenseDate, sum(amount)].
+    @Query("""
+            select e.expenseDate, coalesce(sum(e.amount), 0)
+            from Expense e
+            where e.deleted = false
+              and (:startDate is null or e.expenseDate >= :startDate)
+              and (:endDate is null or e.expenseDate <= :endDate)
+            group by e.expenseDate
+            """)
+    List<Object[]> sumActiveAmountByDate(@Param("startDate") java.time.LocalDate startDate, @Param("endDate") java.time.LocalDate endDate);
+
     @EntityGraph(attributePaths = {"category", "customer", "invoice"})
     @Query("select e from Expense e where e.deleted = false order by e.expenseDate desc, e.id desc")
     List<Expense> findAllByOrderByExpenseDateDescIdDesc();
@@ -41,7 +73,46 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long> {
     @Query("select coalesce(sum(e.amount), 0) from Expense e where e.deleted = false")
     BigDecimal sumTotalAmount();
 
-    /** deleted: false = sirf active (default), true = sirf deleted, null = sab. */
+    /**
+     * Expenses page ke KPI cards: SQL aggregate (pehle UI 1000 rows mangwa ke JS me jodta tha —
+     * 1000 se zyada kharche par total galat + bhaari payload). Null param = filter nahi.
+     */
+    @Query("""
+            select coalesce(sum(e.amount), 0) from Expense e
+            where e.deleted = false
+              and (:startDate is null or e.expenseDate >= :startDate)
+              and (:endDate is null or e.expenseDate <= :endDate)
+              and (:categoryId is null or e.category.id = :categoryId)
+            """)
+    BigDecimal sumActiveAmount(@Param("startDate") LocalDate startDate,
+                               @Param("endDate") LocalDate endDate,
+                               @Param("categoryId") Long categoryId);
+
+    @Query("""
+            select count(e) from Expense e
+            where e.deleted = false
+              and (:categoryId is null or e.category.id = :categoryId)
+            """)
+    long countActiveByCategory(@Param("categoryId") Long categoryId);
+
+    /** Customer profitability: customer ka kharcha seedha SQL sum (pehle range ke saare expenses Java me filter hote the). */
+    @Query("""
+            select coalesce(sum(e.amount), 0) from Expense e
+            where e.deleted = false
+              and e.customer.id = :customerId
+              and (:startDate is null or e.expenseDate >= :startDate)
+              and (:endDate is null or e.expenseDate <= :endDate)
+            """)
+    BigDecimal sumActiveAmountByCustomer(@Param("customerId") Long customerId,
+                                         @Param("startDate") LocalDate startDate,
+                                         @Param("endDate") LocalDate endDate);
+
+    /**
+     * deleted: false = sirf active (default), true = sirf deleted, null = sab.
+     * EntityGraph: list me har row ka category/customer/invoice naam chahiye — bina iske
+     * har row par 3 alag SELECT (N+1) chalte the.
+     */
+    @EntityGraph(attributePaths = {"category", "customer", "invoice"})
     @Query(
             value = """
                     select e from Expense e

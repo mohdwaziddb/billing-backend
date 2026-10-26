@@ -6,6 +6,7 @@ import com.billing.entity.Product;
 import com.billing.entity.Purchase;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -39,6 +40,41 @@ public interface InventoryLedgerRepository extends JpaRepository<InventoryLedger
                                       @Param("endDate") LocalDate endDate,
                                       @Param("search") String search,
                                       Pageable pageable);
+
+    // Stock Ledger page: search() jaisa hi filter/order, par product + batch saath me fetch.
+    // Pehle har row par productName / batchNo ke liye alag lazy query (N+1) chalti thi.
+    @EntityGraph(attributePaths = {"product", "productBatch"})
+    @Query(value = """
+            select l from InventoryLedgerEntry l
+            where (:company is null or 1=1) and (:productId is null or l.product.id = :productId)
+              and (:startDate is null or l.entryDate >= :startDate)
+              and (:endDate is null or l.entryDate <= :endDate)
+              and (:search is null
+                or lower(l.product.name) like lower(concat('%', :search, '%'))
+                or lower(coalesce(l.referenceNo, '')) like lower(concat('%', :search, '%'))
+                or lower(coalesce(l.remarks, '')) like lower(concat('%', :search, '%'))
+                or str(l.entryDate) like concat('%', :search, '%')
+                or cast(function('date_format', l.entryDate, '%d-%m-%Y') as string) like concat('%', :search, '%'))
+            order by l.entryDate desc, l.id desc
+            """,
+            countQuery = """
+            select count(l) from InventoryLedgerEntry l
+            where (:company is null or 1=1) and (:productId is null or l.product.id = :productId)
+              and (:startDate is null or l.entryDate >= :startDate)
+              and (:endDate is null or l.entryDate <= :endDate)
+              and (:search is null
+                or lower(l.product.name) like lower(concat('%', :search, '%'))
+                or lower(coalesce(l.referenceNo, '')) like lower(concat('%', :search, '%'))
+                or lower(coalesce(l.remarks, '')) like lower(concat('%', :search, '%'))
+                or str(l.entryDate) like concat('%', :search, '%')
+                or cast(function('date_format', l.entryDate, '%d-%m-%Y') as string) like concat('%', :search, '%'))
+            """)
+    Page<InventoryLedgerEntry> searchWithProductAndBatch(@Param("company") Company company,
+                                                         @Param("productId") Long productId,
+                                                         @Param("startDate") LocalDate startDate,
+                                                         @Param("endDate") LocalDate endDate,
+                                                         @Param("search") String search,
+                                                         Pageable pageable);
 
     @Query("""
             select l from InventoryLedgerEntry l

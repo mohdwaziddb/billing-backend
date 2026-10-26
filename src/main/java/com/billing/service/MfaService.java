@@ -273,7 +273,14 @@ public class MfaService {
         LocalDateTime now = LocalDateTime.now();
         int maxAttempts = 0;
         for (UserMfaDevice device : devices) {
-            int attempts = device.getFailedAttempts() + 1;
+            // 15 min ka lock khatam: naye 5 attempts. Pehle counter 5 par hi atka rehta tha,
+            // isliye unlock ke baad pehla hi galat code phir se 15 min lock laga deta tha.
+            int previousAttempts = device.getFailedAttempts();
+            if (device.getLockedUntil() != null && !device.getLockedUntil().isAfter(now)) {
+                previousAttempts = 0;
+                device.setLockedUntil(null);
+            }
+            int attempts = previousAttempts + 1;
             device.setFailedAttempts(attempts);
             if (attempts >= MAX_FAILED_ATTEMPTS) {
                 device.setLockedUntil(now.plusMinutes(LOCK_MINUTES));

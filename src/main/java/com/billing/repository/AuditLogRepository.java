@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 
 public interface AuditLogRepository extends JpaRepository<AuditLog, Long>, JpaSpecificationExecutor<AuditLog> {
@@ -22,4 +23,8 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, Long>, JpaSp
 
     @Query("select distinct log.userId, log.userName from AuditLog log where log.userId is not null order by log.userName asc")
     List<Object[]> findDistinctUsers();
+
+    /** List pages ka "Show Logs" button: ek page ke saare rows ka log count ek query me (pehle har row ki alag API call). */
+    @Query("select a.entityId, count(a) from AuditLog a where lower(a.moduleName) in :moduleNames and a.entityId in :entityIds group by a.entityId")
+    List<Object[]> countByModuleNamesAndEntityIds(@Param("moduleNames") Collection<String> moduleNames, @Param("entityIds") Collection<Long> entityIds);
 }

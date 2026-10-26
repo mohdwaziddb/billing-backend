@@ -80,6 +80,14 @@ public class UserRestController {
         return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", userService.pageCompanyUsers(param, authentication.getName())), HttpStatus.OK);
     }
 
+    // Users page role chips ke counts ek hi call me (list jaisa hi USERS:VIEW permission).
+    @GetMapping("/role-counts")
+    @com.billing.security.RequiresPermission(menu = "USERS", action = "VIEW")
+    public ResponseEntity<?> companyUserRoleCounts(@RequestParam(required = false) Map<String, Object> param, Authentication authentication, HttpServletRequest req) {
+        param = SanitizeData.sanitizeMapObj(param);
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", userService.companyUserRoleCounts(param, authentication.getName())), HttpStatus.OK);
+    }
+
     @PostMapping
     @com.billing.security.RequiresPermission(menu = "USERS", action = "ADD")
     public ResponseEntity<?> createCompanyUser(@RequestBody Map<String, Object> param, Authentication authentication, HttpServletRequest request) {

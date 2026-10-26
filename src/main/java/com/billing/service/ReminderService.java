@@ -77,10 +77,12 @@ public class ReminderService {
 
         // Pehle DB page lekar baad me (bina outstanding invoice wale) customers hatate
         // the: pages chhote aate aur total galat. Ab pehle filter, phir page.
-        List<OverdueCustomerResponse> allRecords = buildOverdueCustomers(company, normalizedSearch, scaledMinBalance, overdueDays);
-        int fromIndex = Math.min((int) pageable.getOffset(), allRecords.size());
-        int toIndex = Math.min(fromIndex + pageable.getPageSize(), allRecords.size());
-        return PageResponse.from(new PageImpl<>(allRecords.subList(fromIndex, toIndex), pageable, allRecords.size()));
+        // Filter/sort halki rows par; invoice no/total aur last reminder sirf is page ke customers ke liye.
+        List<OverdueCustomerRow> allRows = buildOverdueRows(normalizedSearch, scaledMinBalance, overdueDays);
+        int fromIndex = Math.min((int) pageable.getOffset(), allRows.size());
+        int toIndex = Math.min(fromIndex + pageable.getPageSize(), allRows.size());
+        List<OverdueCustomerResponse> pageRecords = toOverdueCustomerResponses(allRows.subList(fromIndex, toIndex));
+        return PageResponse.from(new PageImpl<>(pageRecords, pageable, allRows.size()));
     }
 
     /** Cards ke liye poori list ka total (pehle sirf current page jodta tha). */
@@ -88,12 +90,13 @@ public class ReminderService {
     public Map<String, Object> getOverdueSummary(Map<String, Object> param, String email) {
         Company company = accessControlService.getCurrentCompany(email);
         OverdueFilters filters = overdueFilters(param);
-        List<OverdueCustomerResponse> records = buildOverdueCustomers(company, normalizeSearch(filters.search()),
+        // Cards ko invoice no / reminder detail nahi chahiye: sirf halki rows (pehle har row ka poora response banta tha).
+        List<OverdueCustomerRow> rows = buildOverdueRows(normalizeSearch(filters.search()),
                 scaleNullable(filters.minBalance()), filters.overdueDays());
         Map<String, Object> summary = new LinkedHashMap<>();
-        summary.put("customerCount", records.size());
-        summary.put("totalDue", scale(records.stream().map(OverdueCustomerResponse::getCurrentBalance).reduce(BigDecimal.ZERO, BigDecimal::add)));
-        summary.put("maxOverdueDays", records.stream().mapToInt(OverdueCustomerResponse::getOverdueDays).max().orElse(0));
+        summary.put("customerCount", rows.size());
+        summary.put("totalDue", scale(rows.stream().map(OverdueCustomerRow::currentBalance).reduce(BigDecimal.ZERO, BigDecimal::add)));
+        summary.put("maxOverdueDays", rows.stream().mapToInt(OverdueCustomerRow::overdueDays).max().orElse(0));
         return summary;
     }
 
@@ -325,54 +328,78 @@ public class ReminderService {
         return reminderSendRequest;
     }
 
-    private List<OverdueCustomerResponse> buildOverdueCustomers(Company company, String search, BigDecimal minBalance, Integer overdueDays) {
+    /** Filter/sort ke liye halki row: customer + sabse purani baaki invoice ki date. */
+    private record OverdueCustomerRow(Customer customer, BigDecimal currentBalance, LocalDate oldestOutstandingDate, int overdueDays) {
+    }
+
+    private List<OverdueCustomerRow> buildOverdueRows(String search, BigDecimal minBalance, Integer overdueDays) {
         LocalDate today = com.billing.core.AppDateTime.istToday();
 
-        // Saare unpaid invoices aur har customer ka latest reminder ek-ek query me
-        // (pehle har customer par 2 queries chalti thin).
-        Map<Long, Invoice> oldestByCustomer = new java.util.HashMap<>();
-        for (Invoice invoice : invoiceRepository.findAllWithOutstandingBalance()) {
-            oldestByCustomer.merge(invoice.getCustomer().getId(), invoice, (left, right) ->
-                    Comparator.comparing(Invoice::getInvoiceDate, Comparator.nullsLast(LocalDate::compareTo)).compare(right, left) < 0 ? right : left);
-        }
-        Map<Long, ReminderLog> latestReminderByCustomer = new java.util.HashMap<>();
-        for (ReminderLog reminder : reminderLogRepository.findLatestPerCustomer()) {
-            latestReminderByCustomer.putIfAbsent(reminder.getCustomer().getId(), reminder);
+        // Pehle saare unpaid invoices ki poori entities aur saare customers ke latest reminder
+        // har request (list + summary = 2 baar) me load hote the. Ab sirf customer-wise
+        // MIN(invoice_date) SQL me; invoice detail/reminder sirf page rows ke liye (toOverdueCustomerResponses).
+        Map<Long, LocalDate> oldestDateByCustomer = new java.util.HashMap<>();
+        for (Object[] oldestRow : invoiceRepository.findOldestOutstandingDatePerCustomer()) {
+            Long customerId = DataTypeUtility.longValue(oldestRow[0]);
+            if (customerId == null) {
+                continue;
+            }
+            oldestDateByCustomer.put(customerId, oldestRow[1] instanceof LocalDate oldestDate ? oldestDate : null);
         }
 
         return customerRepository.findByCurrentBalanceGreaterThanOrderByCurrentBalanceDesc( BigDecimal.ZERO).stream()
-                .map(customer -> toOverdueCustomerResponse(customer, oldestByCustomer.get(customer.getId()),
-                        latestReminderByCustomer.get(customer.getId()), today).orElse(null))
-                .filter(Objects::nonNull)
-                .filter(item -> search == null || matchesSearch(item, search))
-                .filter(item -> minBalance == null || item.getCurrentBalance().compareTo(minBalance) >= 0)
-                .filter(item -> overdueDays == null || item.getOverdueDays() >= overdueDays)
-                .sorted(Comparator.comparing(OverdueCustomerResponse::getCurrentBalance).reversed())
+                .filter(customer -> oldestDateByCustomer.containsKey(customer.getId()))
+                .map(customer -> {
+                    LocalDate oldestInvoiceDate = oldestDateByCustomer.get(customer.getId());
+                    LocalDate oldestOutstandingDate = oldestInvoiceDate != null ? oldestInvoiceDate : today;
+                    int customerOverdueDays = (int) ChronoUnit.DAYS.between(oldestOutstandingDate, today);
+                    return new OverdueCustomerRow(customer, scale(customer.getCurrentBalance()), oldestOutstandingDate, customerOverdueDays);
+                })
+                .filter(row -> search == null || matchesSearch(row.customer(), search))
+                .filter(row -> minBalance == null || row.currentBalance().compareTo(minBalance) >= 0)
+                .filter(row -> overdueDays == null || row.overdueDays() >= overdueDays)
+                .sorted(Comparator.comparing(OverdueCustomerRow::currentBalance).reversed())
                 .toList();
     }
 
-    private java.util.Optional<OverdueCustomerResponse> toOverdueCustomerResponse(Customer customer, Invoice invoice, ReminderLog latestReminder, LocalDate today) {
-        if (invoice == null) {
-            return java.util.Optional.empty();
+    private List<OverdueCustomerResponse> toOverdueCustomerResponses(List<OverdueCustomerRow> pageRows) {
+        if (pageRows.isEmpty()) {
+            return List.of();
+        }
+        List<Long> pageCustomerIds = pageRows.stream().map(row -> row.customer().getId()).toList();
+
+        // Sabse purani baaki invoice (date asc, id asc order me pehli) sirf page ke customers ki.
+        Map<Long, Invoice> oldestInvoiceByCustomer = new java.util.HashMap<>();
+        for (Invoice invoice : invoiceRepository.findOutstandingByCustomerIds(pageCustomerIds)) {
+            oldestInvoiceByCustomer.putIfAbsent(invoice.getCustomer().getId(), invoice);
+        }
+        Map<Long, ReminderLog> latestReminderByCustomer = new java.util.HashMap<>();
+        for (ReminderLog reminder : reminderLogRepository.findLatestForCustomerIds(pageCustomerIds)) {
+            latestReminderByCustomer.putIfAbsent(reminder.getCustomer().getId(), reminder);
         }
 
-        LocalDate oldestOutstandingDate = invoice.getInvoiceDate() != null ? invoice.getInvoiceDate() : today;
-        int customerOverdueDays = (int) ChronoUnit.DAYS.between(oldestOutstandingDate, today);
+        return pageRows.stream()
+                .map(row -> toOverdueCustomerResponse(row, oldestInvoiceByCustomer.get(row.customer().getId()),
+                        latestReminderByCustomer.get(row.customer().getId())))
+                .toList();
+    }
 
-        return java.util.Optional.of(OverdueCustomerResponse.builder()
+    private OverdueCustomerResponse toOverdueCustomerResponse(OverdueCustomerRow row, Invoice invoice, ReminderLog latestReminder) {
+        Customer customer = row.customer();
+        return OverdueCustomerResponse.builder()
                 .customerId(customer.getId())
                 .customerName(customer.getName())
                 .active(customer.isActive())
                 .mobile(customer.getMobile())
                 .email(customer.getEmail())
-                .currentBalance(scale(customer.getCurrentBalance()))
-                .overdueDays(customerOverdueDays)
-                .oldestOutstandingInvoiceDate(oldestOutstandingDate)
-                .oldestOutstandingInvoiceNo(invoice.getInvoiceNo())
-                .oldestOutstandingInvoiceTotal(scale(invoice.getGrandTotal()))
+                .currentBalance(row.currentBalance())
+                .overdueDays(row.overdueDays())
+                .oldestOutstandingInvoiceDate(row.oldestOutstandingDate())
+                .oldestOutstandingInvoiceNo(invoice != null ? invoice.getInvoiceNo() : null)
+                .oldestOutstandingInvoiceTotal(scale(invoice != null ? invoice.getGrandTotal() : null))
                 .lastReminderAt(latestReminder != null ? latestReminder.getCreatedAt() : null)
                 .lastReminderStatus(latestReminder != null ? latestReminder.getStatus().name() : null)
-                .build());
+                .build();
     }
 
     private java.util.Optional<Invoice> oldestOutstandingInvoice(Customer customer) {
@@ -439,8 +466,8 @@ public class ReminderService {
                 .build();
     }
 
-    private boolean matchesSearch(OverdueCustomerResponse item, String search) {
-        return Stream.of(item.getCustomerName(), item.getMobile(), item.getEmail())
+    private boolean matchesSearch(Customer customer, String search) {
+        return Stream.of(customer.getName(), customer.getMobile(), customer.getEmail())
                 .filter(Objects::nonNull)
                 .map(value -> value.toLowerCase(Locale.ENGLISH))
                 .anyMatch(value -> value.contains(search));

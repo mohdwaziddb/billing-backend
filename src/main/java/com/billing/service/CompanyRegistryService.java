@@ -7,6 +7,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 
 @Service
 public class CompanyRegistryService {
@@ -15,10 +17,49 @@ public class CompanyRegistryService {
     @Qualifier("billingCommonJdbcTemplate")
     private JdbcTemplate jdbcTemplate;
 
+    // RequestInterceptor har API call par 5-6 registry lookups karta tha (status x2,
+    // dbName, dbHost x2, INFORMATION_SCHEMA) — page ki har call se pehle. Chhota TTL
+    // cache: sirf FOUND result cache hota hai (not-found / DB error har baar dobara
+    // check, pehle jaisa). Status badalne par PlatformAdminService evictLookupCache() karta hai.
+    private static final long LOOKUP_CACHE_TTL_MILLIS = 15_000L;
+    private static final int LOOKUP_CACHE_MAX_ENTRIES = 5_000;
+    private final ConcurrentHashMap<String, CachedLookup> lookupCache = new ConcurrentHashMap<>();
+
+    private record CachedLookup(Object value, long expiresAtMillis) {
+    }
+
+    @SuppressWarnings("unchecked")
+    private <T> T cachedLookup(String cacheKey, Supplier<T> loader) {
+        long nowMillis = System.currentTimeMillis();
+        CachedLookup cachedEntry = lookupCache.get(cacheKey);
+        if (cachedEntry != null && cachedEntry.expiresAtMillis() > nowMillis) {
+            return (T) cachedEntry.value();
+        }
+        T loadedValue = loader.get();
+        if (loadedValue != null) {
+            if (lookupCache.size() >= LOOKUP_CACHE_MAX_ENTRIES) {
+                lookupCache.clear();
+            }
+            lookupCache.put(cacheKey, new CachedLookup(loadedValue, nowMillis + LOOKUP_CACHE_TTL_MILLIS));
+        } else {
+            lookupCache.remove(cacheKey);
+        }
+        return loadedValue;
+    }
+
+    /** Registry row badli (status/naya tenant): agli request fresh DB se padhe. */
+    public void evictLookupCache() {
+        lookupCache.clear();
+    }
+
     public String resolveDbName(String companyCode) {
         if (companyCode == null || companyCode.trim().isEmpty()) {
             return null;
         }
+        return cachedLookup("dbName:" + companyCode.trim(), () -> loadDbName(companyCode));
+    }
+
+    private String loadDbName(String companyCode) {
         try {
             String sql = "SELECT database_name FROM billing_common.company_registry WHERE company_code=? AND status='ACTIVE' LIMIT 1";
             try {
@@ -32,6 +73,13 @@ public class CompanyRegistryService {
     }
 
     private Map<String, Object> getCompanyInfo(String companyCode) {
+        if (companyCode == null || companyCode.trim().isEmpty()) {
+            return null;
+        }
+        return cachedLookup("info:" + companyCode.trim(), () -> loadCompanyInfo(companyCode));
+    }
+
+    private Map<String, Object> loadCompanyInfo(String companyCode) {
         try {
             String sql = "SELECT company_code, company_name, database_name, db_host, status, domain FROM billing_common.company_registry WHERE company_code=? LIMIT 1";
             try {
@@ -67,6 +115,10 @@ public class CompanyRegistryService {
         if (com.billing.core.AppDomains.isMainDomain(domain.trim().split(":")[0])) {
             return null;
         }
+        return cachedLookup("dbNameByDomain:" + domain.trim(), () -> loadDbNameByDomain(domain));
+    }
+
+    private String loadDbNameByDomain(String domain) {
         try {
             String sql = "SELECT database_name FROM billing_common.company_registry WHERE domain=? AND status='ACTIVE' LIMIT 1";
             try {
@@ -87,6 +139,14 @@ public class CompanyRegistryService {
         if (domain != null && com.billing.core.AppDomains.isMainDomain(domain.trim().split(":")[0])) {
             return "localhost:3306";
         }
+        if (domain == null || domain.trim().isEmpty()) {
+            return "localhost:3306";
+        }
+        String host = cachedLookup("dbHostByDomain:" + domain.trim(), () -> loadDbHostByDomain(domain));
+        return host != null ? host : "localhost:3306";
+    }
+
+    private String loadDbHostByDomain(String domain) {
         try {
             String sql = "SELECT db_host FROM billing_common.company_registry WHERE domain=? LIMIT 1";
             String host = null;
@@ -102,7 +162,7 @@ public class CompanyRegistryService {
         } catch (Exception e) {
             // ignore
         }
-        return "localhost:3306";
+        return null;
     }
 
     /**
@@ -115,6 +175,11 @@ public class CompanyRegistryService {
         if (databaseName == null || databaseName.trim().isEmpty()) {
             return "localhost:3306";
         }
+        String host = cachedLookup("dbHostByDb:" + databaseName.trim(), () -> loadDbHostByDatabase(databaseName));
+        return host != null ? host : "localhost:3306";
+    }
+
+    private String loadDbHostByDatabase(String databaseName) {
         try {
             String host = jdbcTemplate.queryForObject(
                     "SELECT db_host FROM billing_common.company_registry WHERE database_name=? LIMIT 1",
@@ -125,7 +190,7 @@ public class CompanyRegistryService {
         } catch (Exception e) {
             // ignore
         }
-        return "localhost:3306";
+        return null;
     }
 
     /**
@@ -157,6 +222,10 @@ public class CompanyRegistryService {
         if (companyCode == null || companyCode.trim().isEmpty()) {
             return null;
         }
+        return cachedLookup("statusByCode:" + companyCode.trim(), () -> loadStatusByCode(companyCode));
+    }
+
+    private String loadStatusByCode(String companyCode) {
         try {
             String sql = "SELECT status FROM billing_common.company_registry WHERE company_code=? LIMIT 1";
             try {
@@ -177,6 +246,10 @@ public class CompanyRegistryService {
         if (domain == null || domain.trim().isEmpty()) {
             return null;
         }
+        return cachedLookup("statusByDomain:" + domain.trim(), () -> loadStatusByDomain(domain));
+    }
+
+    private String loadStatusByDomain(String domain) {
         try {
             String sql = "SELECT status FROM billing_common.company_registry WHERE domain=? LIMIT 1";
             try {
@@ -199,6 +272,13 @@ public class CompanyRegistryService {
         if (databaseName == null || databaseName.trim().isEmpty()) {
             return false;
         }
+        // Sirf "exists" cache hota hai: DB missing / error har baar dobara check.
+        Boolean exists = cachedLookup("dbExists:" + databaseName.trim(),
+                () -> loadDatabaseExists(databaseName) ? Boolean.TRUE : null);
+        return exists != null;
+    }
+
+    private boolean loadDatabaseExists(String databaseName) {
         try {
             Integer count = jdbcTemplate.queryForObject(
                     "SELECT COUNT(*) FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME=?",
@@ -219,6 +299,12 @@ public class CompanyRegistryService {
         if (databaseName == null || databaseName.trim().isEmpty()) {
             return false;
         }
+        Boolean valid = cachedLookup("validDb:" + databaseName.trim(),
+                () -> loadIsValidDatabase(databaseName) ? Boolean.TRUE : null);
+        return valid != null;
+    }
+
+    private boolean loadIsValidDatabase(String databaseName) {
         try {
             Integer count = jdbcTemplate.queryForObject(
                     "SELECT COUNT(*) FROM billing_common.company_registry WHERE database_name=?",
@@ -251,6 +337,10 @@ public class CompanyRegistryService {
         if (companyCode == null || companyCode.trim().isEmpty()) {
             return null;
         }
+        return cachedLookup("dbNameAnyStatus:" + companyCode.trim(), () -> loadDbNameByCodeAnyStatus(companyCode));
+    }
+
+    private String loadDbNameByCodeAnyStatus(String companyCode) {
         try {
             String sql = "SELECT database_name FROM billing_common.company_registry WHERE company_code=? LIMIT 1";
             try {

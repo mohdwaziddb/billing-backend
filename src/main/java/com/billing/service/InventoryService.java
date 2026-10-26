@@ -68,8 +68,10 @@ public class InventoryService {
 
     @Transactional(readOnly = true)
     public PageResponse<InventoryLedgerEntryResponse> ledgerPage(String email, Company company, Long productId, LocalDate startDate, LocalDate endDate, String search, int page, int size) {
-        return PageResponse.from(inventoryLedgerRepository.search(company, productId, startDate, endDate, normalizeSearch(search), PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 100))))
-                .map(this::toLedgerResponse));
+        // Product + batch ek hi query me (N+1 nahi); createdBy naam page ke andar ek user par ek hi baar resolve.
+        Map<String, String> auditDisplayNames = new HashMap<>();
+        return PageResponse.from(inventoryLedgerRepository.searchWithProductAndBatch(company, productId, startDate, endDate, normalizeSearch(search), PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 100))))
+                .map(entry -> toLedgerResponse(entry, auditDisplayNames)));
     }
 
     @Transactional(readOnly = true)
@@ -82,33 +84,46 @@ public class InventoryService {
         if (products.isEmpty()) {
             return Map.of();
         }
-        List<ProductBatch> batches = productBatchRepository.findByCompanyAndProductInOrderByProductIdAscBatchDateAscIdAsc(company, products);
-        Map<Long, List<ProductBatch>> grouped = new LinkedHashMap<>();
-        for (Product product : products) {
-            grouped.put(product.getId(), new ArrayList<>());
+        List<Long> productIds = products.stream().map(Product::getId).distinct().toList();
+        Map<Long, List<BatchStockRow>> stockRowsByProduct = new LinkedHashMap<>();
+        Map<Long, List<ProductBatch>> batchEntitiesByProduct = new HashMap<>();
+        for (Long productId : productIds) {
+            stockRowsByProduct.put(productId, new ArrayList<>());
         }
-        for (ProductBatch batch : batches) {
-            grouped.computeIfAbsent(batch.getProduct().getId(), ignored -> new ArrayList<>()).add(batch);
+        if (includeBatches) {
+            // Detail page: batch history chahiye — entities purchase ke saath ek hi query me.
+            for (ProductBatch batch : productBatchRepository.findWithPurchaseByProductIdIn(productIds)) {
+                Long batchProductId = batch.getProduct().getId();
+                batchEntitiesByProduct.computeIfAbsent(batchProductId, ignored -> new ArrayList<>()).add(batch);
+                stockRowsByProduct.computeIfAbsent(batchProductId, ignored -> new ArrayList<>())
+                        .add(new BatchStockRow(batch.getId(), batch.getBatchDate(), batch.getRemainingQty(), batch.getPurchaseRate(), batch.getSellingRate()));
+            }
+        } else {
+            // List / dropdown: sirf scalar columns (entity hydration nahi) — same order, same maths.
+            for (ProductBatchRepository.ProductBatchStockRow stockRow : productBatchRepository.findStockRowsByProductIdIn(productIds)) {
+                stockRowsByProduct.computeIfAbsent(stockRow.getProductId(), ignored -> new ArrayList<>())
+                        .add(new BatchStockRow(stockRow.getBatchId(), stockRow.getBatchDate(), stockRow.getRemainingQty(), stockRow.getPurchaseRate(), stockRow.getSellingRate()));
+            }
         }
 
         Map<Long, ProductInventorySnapshot> response = new HashMap<>();
-        for (Product product : products) {
-            List<ProductBatch> productBatches = grouped.getOrDefault(product.getId(), List.of());
-            int currentStock = productBatches.stream().mapToInt(ProductBatch::getRemainingQty).sum();
+        for (Long productId : productIds) {
+            List<BatchStockRow> productBatches = stockRowsByProduct.getOrDefault(productId, List.of());
+            int currentStock = productBatches.stream().mapToInt(BatchStockRow::remainingQty).sum();
             BigDecimal inventoryValue = productBatches.stream()
-                    .map(batch -> scale(batch.getPurchaseRate()).multiply(BigDecimal.valueOf(batch.getRemainingQty())))
+                    .map(batch -> scale(batch.purchaseRate()).multiply(BigDecimal.valueOf(batch.remainingQty())))
                     .reduce(zero(), BigDecimal::add);
-            ProductBatch latestBatch = productBatches.stream()
-                    .max(Comparator.comparing(ProductBatch::getBatchDate).thenComparing(ProductBatch::getId))
+            BatchStockRow latestBatch = productBatches.stream()
+                    .max(Comparator.comparing(BatchStockRow::batchDate).thenComparing(BatchStockRow::batchId))
                     .orElse(null);
             // CURRENT_BATCH_SELLING_PRICE follows the batch that the next invoice will
             // actually reduce: FIFO -> oldest in-stock batch, LIFO -> newest in-stock
             // batch (list is batchDate asc, id asc). Falls back to the newest batch
             // when nothing is in stock. LATEST/MANUAL keep the newest batch value.
-            ProductBatch pricingBatch = latestBatch;
+            BatchStockRow pricingBatch = latestBatch;
             if (company.getInventoryPricingPolicy() == InventoryPricingPolicy.CURRENT_BATCH_SELLING_PRICE) {
-                List<ProductBatch> availableBatches = productBatches.stream()
-                        .filter(batch -> batch.getRemainingQty() > 0)
+                List<BatchStockRow> availableBatches = productBatches.stream()
+                        .filter(batch -> batch.remainingQty() > 0)
                         .toList();
                 if (!availableBatches.isEmpty()) {
                     pricingBatch = company.getInventoryConsumptionMethod() == InventoryConsumptionMethod.LIFO
@@ -117,19 +132,23 @@ public class InventoryService {
                 }
             }
             List<ProductBatchSummaryResponse> batchResponses = includeBatches
-                    ? productBatches.stream()
+                    ? batchEntitiesByProduct.getOrDefault(productId, List.of()).stream()
                     .sorted(Comparator.comparing(ProductBatch::getBatchDate).reversed().thenComparing(ProductBatch::getId, Comparator.reverseOrder()))
                     .map(this::toBatchResponse)
                     .toList()
                     : List.of();
-            response.put(product.getId(), ProductInventorySnapshot.builder()
+            response.put(productId, ProductInventorySnapshot.builder()
                     .currentStock(currentStock)
                     .inventoryValue(scale(inventoryValue))
-                    .defaultSellingPrice(scale(pricingBatch != null ? pricingBatch.getSellingRate() : zero()))
+                    .defaultSellingPrice(scale(pricingBatch != null ? pricingBatch.sellingRate() : zero()))
                     .batches(batchResponses)
                     .build());
         }
         return response;
+    }
+
+    // summarize() ke liye ek batch ki stock maths wali values (entity ya projection, dono se banti hai).
+    private record BatchStockRow(Long batchId, LocalDate batchDate, int remainingQty, BigDecimal purchaseRate, BigDecimal sellingRate) {
     }
 
     @Transactional(readOnly = true)
@@ -318,7 +337,7 @@ public class InventoryService {
                 .build();
     }
 
-    private InventoryLedgerEntryResponse toLedgerResponse(InventoryLedgerEntry entry) {
+    private InventoryLedgerEntryResponse toLedgerResponse(InventoryLedgerEntry entry, Map<String, String> auditDisplayNames) {
         return InventoryLedgerEntryResponse.builder()
                 .id(entry.getId())
                 .entryDate(entry.getEntryDate())
@@ -335,8 +354,19 @@ public class InventoryService {
                 .referenceNo(entry.getReferenceNo())
                 .remarks(entry.getRemarks())
                 .createdAt(entry.getCreatedAt())
-                .createdBy(auditNameResolver.displayName(entry.getCreatedBy()))
+                .createdBy(resolveAuditName(entry.getCreatedBy(), auditDisplayNames))
                 .build();
+    }
+
+    // Same createdBy value (user id / "system") har row par dobara DB lookup na kare.
+    private String resolveAuditName(String auditValue, Map<String, String> auditDisplayNames) {
+        if (auditValue == null) {
+            return null;
+        }
+        if (!auditDisplayNames.containsKey(auditValue)) {
+            auditDisplayNames.put(auditValue, auditNameResolver.displayName(auditValue));
+        }
+        return auditDisplayNames.get(auditValue);
     }
 
     private BigDecimal scale(BigDecimal value) {

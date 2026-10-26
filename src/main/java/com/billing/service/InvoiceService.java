@@ -3,6 +3,7 @@ package com.billing.service;
 import com.billing.dto.PageResponse;
 import com.billing.dto.invoice.InvoiceItemRequest;
 import com.billing.dto.invoice.InvoiceItemResponse;
+import com.billing.dto.invoice.InvoiceListSummaryResponse;
 import com.billing.dto.invoice.InvoiceRequest;
 import com.billing.dto.invoice.InvoiceResponse;
 import com.billing.entity.Company;
@@ -180,6 +181,140 @@ public class InvoiceService {
 
     @Transactional(readOnly = true)
     public PageResponse<InvoiceResponse> page(Map<String, Object> param, String email) {
+        InvoiceListFilter listFilter = listFilter(param);
+        int page = DataTypeUtility.integerValue(param.get("page"));
+        int size = DataTypeUtility.integerValue(param.get("size"));
+        if (size == 0) {
+            size = 20;
+        }
+        return page(email, listFilter.customerId(), listFilter.search(), listFilter.invoiceStatus(), listFilter.paymentStatus(),
+                listFilter.startDate(), listFilter.endDate(), listFilter.outstandingFilter(), listFilter.minAmount(), listFilter.maxAmount(),
+                listFilter.categoryId(), listFilter.createdByRole(), listFilter.recordStatus(), page, size);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<InvoiceResponse> page(String email,
+                                              Long customerId,
+                                              String search,
+                                              String invoiceStatus,
+                                              String paymentStatus,
+                                              LocalDate startDate,
+                                              LocalDate endDate,
+                                              String outstandingFilter,
+                                              BigDecimal minAmount,
+                                              BigDecimal maxAmount,
+                                              Long categoryId,
+                                              RoleName createdByRole,
+                                              String recordStatus,
+                                              int page,
+                                              int size) {
+        User user = accessControlService.getCurrentUser(email);
+        Company company = accessControlService.requireCompany(user);
+        int safeSize = Math.max(1, Math.min(size, 1000));
+        PageRequest pageable = PageRequest.of(Math.max(0, page), safeSize, Sort.by(Sort.Direction.DESC, "invoiceDate").and(Sort.by(Sort.Direction.DESC, "id")));
+        InvoiceStatus resolvedStatus = resolveFilterStatus(invoiceStatus, paymentStatus);
+        if (isUnsupportedInvoiceStatus(invoiceStatus)) {
+            return PageResponse.<InvoiceResponse>builder().records(List.of()).page(Math.max(0, page)).size(safeSize).totalRecords(0).totalPages(0).build();
+        }
+        // Galat customerId par pehle jaisa hi 404 (filter khud customer id se lagta hai).
+        if (company != null && customerId != null) {
+            customerService.getCustomerOrThrow(company, customerId);
+        }
+        // Pehle: page query entities laati, phir har invoice par customer/items/product/tax/createdBy
+        // ki alag queries (20 rows = ~150 queries, 1000 rows = hazaaron). Ab: sorted ids ka page +
+        // ek detail query + createdBy naam har distinct user par ek baar.
+        Page<Long> invoiceIdPage = invoiceRepository.searchInvoiceIds(
+                customerId,
+                resolveDeletedFilter(recordStatus),
+                blankToNull(search),
+                resolvedStatus,
+                startDate,
+                endDate,
+                normalizeOutstandingFilter(outstandingFilter),
+                minAmount,
+                maxAmount,
+                categoryId,
+                createdByRole,
+                pageable
+        );
+        return PageResponse.<InvoiceResponse>builder()
+                .records(toResponsesInOrder(invoiceIdPage.getContent()))
+                .page(invoiceIdPage.getNumber())
+                .size(invoiceIdPage.getSize())
+                .totalRecords(invoiceIdPage.getTotalElements())
+                .totalPages(invoiceIdPage.getTotalPages())
+                .build();
+    }
+
+    /**
+     * Invoice list KPI cards: list wale hi filters, SQL group-by se. Pehle page load par
+     * frontend 1000-1000 ke pages me 50k tak invoice (items samet) laata tha sirf ginne ke liye.
+     */
+    @Transactional(readOnly = true)
+    public InvoiceListSummaryResponse summary(Map<String, Object> param, String email) {
+        User user = accessControlService.getCurrentUser(email);
+        Company company = accessControlService.requireCompany(user);
+        InvoiceListFilter listFilter = listFilter(param);
+        Boolean deletedFilter = resolveDeletedFilter(listFilter.recordStatus());
+        if (isUnsupportedInvoiceStatus(listFilter.invoiceStatus())) {
+            return InvoiceListSummaryResponse.builder().outstandingAmount(zero()).trend(List.of()).build();
+        }
+        if (company != null && listFilter.customerId() != null) {
+            customerService.getCustomerOrThrow(company, listFilter.customerId());
+        }
+        List<Object[]> summaryRows = invoiceRepository.summarizeInvoices(
+                listFilter.customerId(),
+                deletedFilter,
+                blankToNull(listFilter.search()),
+                resolveFilterStatus(listFilter.invoiceStatus(), listFilter.paymentStatus()),
+                listFilter.startDate(),
+                listFilter.endDate(),
+                normalizeOutstandingFilter(listFilter.outstandingFilter()),
+                listFilter.minAmount(),
+                listFilter.maxAmount(),
+                listFilter.categoryId(),
+                listFilter.createdByRole()
+        );
+        long totalInvoices = 0;
+        long paidInvoices = 0;
+        long pendingInvoices = 0;
+        long partialInvoices = 0;
+        BigDecimal outstandingAmount = BigDecimal.ZERO;
+        List<InvoiceListSummaryResponse.TrendPoint> trendPoints = new ArrayList<>();
+        for (Object[] summaryRow : summaryRows) {
+            LocalDate invoiceDate = (LocalDate) summaryRow[0];
+            InvoiceStatus rowStatus = (InvoiceStatus) summaryRow[1];
+            Long invoiceCountValue = DataTypeUtility.longValue(summaryRow[2]);
+            long invoiceCount = invoiceCountValue == null ? 0 : invoiceCountValue;
+            BigDecimal balanceAmount = scale(DataTypeUtility.bigDecimalObjectValue(summaryRow[3]));
+            totalInvoices += invoiceCount;
+            if (rowStatus == InvoiceStatus.PAID) {
+                paidInvoices += invoiceCount;
+            } else if (rowStatus == InvoiceStatus.UNPAID) {
+                pendingInvoices += invoiceCount;
+            } else if (rowStatus == InvoiceStatus.PARTIAL) {
+                partialInvoices += invoiceCount;
+            }
+            outstandingAmount = outstandingAmount.add(balanceAmount);
+            trendPoints.add(InvoiceListSummaryResponse.TrendPoint.builder()
+                    .invoiceDate(invoiceDate)
+                    .paymentStatus(rowStatus == null ? null : rowStatus.name())
+                    .invoiceCount(invoiceCount)
+                    .balanceAmount(balanceAmount)
+                    .build());
+        }
+        return InvoiceListSummaryResponse.builder()
+                .totalInvoices(totalInvoices)
+                .paidInvoices(paidInvoices)
+                .pendingInvoices(pendingInvoices)
+                .partialInvoices(partialInvoices)
+                .outstandingAmount(scale(outstandingAmount))
+                .trend(trendPoints)
+                .build();
+    }
+
+    /** List + summary dono ke filter params ek jagah parse (dono hamesha same filter lagayein). */
+    private InvoiceListFilter listFilter(Map<String, Object> param) {
         Long customerId = DataTypeUtility.getForeignKeyValue(param.get("customerId"));
         String search = DataTypeUtility.stringValue(param.get("search"));
         if (search.length() == 0) {
@@ -214,63 +349,64 @@ public class InvoiceService {
         if (recordStatus.length() == 0) {
             recordStatus = "ACTIVE";
         }
-        int page = DataTypeUtility.integerValue(param.get("page"));
-        int size = DataTypeUtility.integerValue(param.get("size"));
-        if (size == 0) {
-            size = 20;
-        }
-        return page(email, customerId, search, invoiceStatus, paymentStatus, startDate, endDate, outstandingFilter, minAmount, maxAmount, categoryId, createdByRole, recordStatus, page, size);
+        return new InvoiceListFilter(customerId, search, invoiceStatus, paymentStatus, startDate, endDate, outstandingFilter,
+                minAmount, maxAmount, categoryId, createdByRole, recordStatus);
     }
 
-    @Transactional(readOnly = true)
-    public PageResponse<InvoiceResponse> page(String email,
-                                              Long customerId,
-                                              String search,
-                                              String invoiceStatus,
-                                              String paymentStatus,
-                                              LocalDate startDate,
-                                              LocalDate endDate,
-                                              String outstandingFilter,
-                                              BigDecimal minAmount,
-                                              BigDecimal maxAmount,
-                                              Long categoryId,
-                                              RoleName createdByRole,
-                                              String recordStatus,
-                                              int page,
-                                              int size) {
-        User user = accessControlService.getCurrentUser(email);
-        Company company = accessControlService.requireCompany(user);
-        int safeSize = Math.max(1, Math.min(size, 1000));
-        PageRequest pageable = PageRequest.of(Math.max(0, page), safeSize, Sort.by(Sort.Direction.DESC, "invoiceDate").and(Sort.by(Sort.Direction.DESC, "id")));
-        InvoiceStatus resolvedStatus = resolveFilterStatus(invoiceStatus, paymentStatus);
-        if (isUnsupportedInvoiceStatus(invoiceStatus)) {
-            return PageResponse.<InvoiceResponse>builder().records(List.of()).page(Math.max(0, page)).size(safeSize).totalRecords(0).totalPages(0).build();
+    private record InvoiceListFilter(Long customerId,
+                                     String search,
+                                     String invoiceStatus,
+                                     String paymentStatus,
+                                     LocalDate startDate,
+                                     LocalDate endDate,
+                                     String outstandingFilter,
+                                     BigDecimal minAmount,
+                                     BigDecimal maxAmount,
+                                     Long categoryId,
+                                     RoleName createdByRole,
+                                     String recordStatus) {
+    }
+
+    /** Ids ke order me (list ka sort) poore graph wale invoices; createdBy/updatedBy naam memo. */
+    private List<InvoiceResponse> toResponsesInOrder(List<Long> invoiceIds) {
+        if (invoiceIds.isEmpty()) {
+            return List.of();
         }
-        Customer customer = company == null || customerId == null ? null : customerService.getCustomerOrThrow(company, customerId);
-        Page<Invoice> invoices = invoiceRepository.searchInvoices(
-                company,
-                customer,
-                customerId,
-                resolveDeletedFilter(recordStatus),
-                blankToNull(search),
-                resolvedStatus,
-                startDate,
-                endDate,
-                normalizeOutstandingFilter(outstandingFilter),
-                minAmount,
-                maxAmount,
-                categoryId,
-                createdByRole,
-                pageable
-        );
-        return PageResponse.from(invoices.map(this::toResponse));
+        Map<Long, Invoice> invoicesById = new java.util.HashMap<>();
+        invoiceRepository.findAllWithDetailsByIdIn(invoiceIds).forEach(invoice -> invoicesById.put(invoice.getId(), invoice));
+        // Har row par createdBy + updatedBy ke liye user query hoti thi; ek page me users gine-chune hote hain.
+        Map<String, String> auditDisplayNames = new java.util.HashMap<>();
+        java.util.function.Function<String, String> auditNameLookup = auditValue -> {
+            if (auditValue == null) {
+                return null;
+            }
+            if (!auditDisplayNames.containsKey(auditValue)) {
+                auditDisplayNames.put(auditValue, auditNameResolver.displayName(auditValue));
+            }
+            return auditDisplayNames.get(auditValue);
+        };
+        List<InvoiceResponse> responses = new ArrayList<>();
+        for (Long invoiceId : invoiceIds) {
+            Invoice invoice = invoicesById.get(invoiceId);
+            if (invoice != null) {
+                responses.add(toResponse(invoice, auditNameLookup));
+            }
+        }
+        return responses;
     }
 
     @Transactional(readOnly = true)
     public InvoiceResponse get(String email, Long invoiceId) {
         User user = accessControlService.getCurrentUser(email);
         Company company = accessControlService.requireCompany(user);
-        return toResponse(getInvoiceOrThrow(company, invoiceId));
+        return toResponse(getInvoiceWithDetailsOrThrow(company, invoiceId));
+    }
+
+    /** PDF download ka file name: sirf header row (pehle poora get() = items/tax/audit-name queries dobara). */
+    @Transactional(readOnly = true)
+    public String invoiceNumber(String email, Long invoiceId) {
+        Company company = accessControlService.getCurrentCompany(email);
+        return getInvoiceOrThrow(company, invoiceId).getInvoiceNo();
     }
 
     @Transactional
@@ -365,6 +501,16 @@ public class InvoiceService {
                 .orElseThrow(() -> new ResourceNotFoundException("Invoice not found"));
         // Soft-deleted rows must behave as not-found so enumeration of
         // deleted IDs does not leak existence/timing info.
+        if (invoice.isDeleted()) {
+            throw new ResourceNotFoundException("Invoice not found");
+        }
+        return invoice;
+    }
+
+    /** Detail / print / PDF: items + product + tax + customer ek query me (lazy N+1 nahi). */
+    public Invoice getInvoiceWithDetailsOrThrow(Company company, Long invoiceId) {
+        Invoice invoice = invoiceRepository.findWithDetailsById(invoiceId)
+                .orElseThrow(() -> new ResourceNotFoundException("Invoice not found"));
         if (invoice.isDeleted()) {
             throw new ResourceNotFoundException("Invoice not found");
         }
@@ -680,6 +826,10 @@ public class InvoiceService {
     }
 
     private InvoiceResponse toResponse(Invoice invoice) {
+        return toResponse(invoice, auditNameResolver::displayName);
+    }
+
+    private InvoiceResponse toResponse(Invoice invoice, java.util.function.Function<String, String> auditNameLookup) {
         return InvoiceResponse.builder()
                 .id(invoice.getId())
                 .invoiceNo(invoice.getInvoiceNo())
@@ -711,8 +861,8 @@ public class InvoiceService {
                 .deleted(invoice.isDeleted())
                 .createdAt(invoice.getCreatedAt())
                 .updatedAt(invoice.getUpdatedAt())
-                .createdBy(auditNameResolver.displayName(invoice.getCreatedBy()))
-                .updatedBy(auditNameResolver.displayName(invoice.getUpdatedBy()))
+                .createdBy(auditNameLookup.apply(invoice.getCreatedBy()))
+                .updatedBy(auditNameLookup.apply(invoice.getUpdatedBy()))
                 .items(invoice.getItems().stream().map(item -> InvoiceItemResponse.builder()
                         .id(item.getId())
                         .productId(item.getProduct().getId())

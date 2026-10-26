@@ -62,4 +62,36 @@ public interface UserRepository extends JpaRepository<User, Long> {
                                   @Param("role") RoleName role,
                                   @Param("active") Boolean active,
                                   Pageable pageable);
+
+    // Platform admin company list: owner ke naam bina poori users table entities load kiye.
+    @Query("select u.fullName from User u where u.role = :role")
+    List<String> findFullNamesByRole(@Param("role") RoleName role);
+
+    // Platform admin: tenant ke users ka role-wise count (GROUP BY), poori table load kiye bina.
+    @Query("select u.role, count(u) from User u group by u.role")
+    List<Object[]> countUsersGroupedByRole();
+
+    // Users page ke role chips: searchCompanyUsers wale hi filters (role chhodkar), ek GROUP BY
+    // query me har role ka count. Pehle har chip ke liye alag /v1/users?size=1 call (4 requests) jaati thi.
+    @Query("""
+            select u.role, count(u) from User u
+            where (:company is null or 1=1) and (:name is null or lower(u.fullName) like lower(concat('%', :name, '%')))
+              and (:username is null or lower(u.username) like lower(concat('%', :username, '%')))
+              and (:mobileNumber is null or u.mobileNumber like concat('%', :mobileNumber, '%'))
+              and (:email is null or lower(u.email) like lower(concat('%', :email, '%')))
+              and (:search is null
+                or lower(u.fullName) like lower(concat('%', :search, '%'))
+                or lower(u.username) like lower(concat('%', :search, '%'))
+                or u.mobileNumber like concat('%', :search, '%')
+                or lower(u.email) like lower(concat('%', :search, '%')))
+              and (:active is null or u.active = :active)
+            group by u.role
+            """)
+    List<Object[]> countCompanyUsersByRole(@Param("company") Company company,
+                                           @Param("name") String name,
+                                           @Param("username") String username,
+                                           @Param("mobileNumber") String mobileNumber,
+                                           @Param("email") String email,
+                                           @Param("search") String search,
+                                           @Param("active") Boolean active);
 }

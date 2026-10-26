@@ -97,7 +97,7 @@ public class UserService {
                                                               String userEmail, String search,
                                                               RoleName role, Boolean active) {
         Company company = accessControlService.getCurrentCompany(email);
-        PageRequest pageable = PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 100)));
+        PageRequest pageable = PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 1000)));
         return PageResponse.from(userRepository.searchCompanyUsers(
                 company,
                 blankToNull(name),
@@ -166,6 +166,58 @@ public class UserService {
             pageSize = 20;
         }
         return pageCompanyUsers(email, pageNumber, pageSize, nameFilter, usernameFilter, mobileNumberFilter, userEmailFilter, searchFilter, roleValue, activeStatus);
+    }
+
+    /**
+     * Users page ke role chips: list wale hi filters (role ignore) par har role ka total,
+     * ek GROUP BY query me. Response: {ALL, OWNER, ADMIN, USER} -> count.
+     * Pehle frontend 4 alag /v1/users?size=1 calls karta tha (har ek me permission check + page + count query).
+     */
+    @Transactional(readOnly = true)
+    public Map<String, Long> companyUserRoleCounts(Map<String, Object> param, String email) {
+        Company company = accessControlService.getCurrentCompany(email);
+        String nameFilter = blankToNull(DataTypeUtility.stringValue(param.get("name")));
+        String usernameFilter = blankToNull(DataTypeUtility.stringValue(param.get("username")));
+        String mobileNumberFilter = DataTypeUtility.stringValue(param.get("mobileNumber"));
+        if (mobileNumberFilter.length() == 0) {
+            mobileNumberFilter = DataTypeUtility.stringValue(param.get("mobile_number"));
+        }
+        if (mobileNumberFilter.length() == 0) {
+            mobileNumberFilter = DataTypeUtility.stringValue(param.get("mobile"));
+        }
+        mobileNumberFilter = blankToNull(mobileNumberFilter);
+        String userEmailFilter = blankToNull(DataTypeUtility.stringValue(param.get("email")));
+        String searchFilter = blankToNull(DataTypeUtility.stringValue(param.get("search")));
+        Boolean activeStatus = null;
+        Object activeObject = param.get("active");
+        if (activeObject != null) {
+            if (activeObject instanceof Boolean) {
+                activeStatus = (Boolean) activeObject;
+            } else {
+                String activeString = DataTypeUtility.stringValue(activeObject);
+                if (activeString.length() > 0) {
+                    activeStatus = DataTypeUtility.booleanValue(activeString);
+                }
+            }
+        }
+        Map<String, Long> roleCounts = new LinkedHashMap<>();
+        roleCounts.put("ALL", 0L);
+        for (RoleName roleName : RoleName.values()) {
+            roleCounts.put(roleName.name(), 0L);
+        }
+        long totalUsers = 0L;
+        List<Object[]> roleCountRows = userRepository.countCompanyUsersByRole(company, nameFilter, usernameFilter,
+                mobileNumberFilter, userEmailFilter, searchFilter, activeStatus);
+        for (Object[] roleCountRow : roleCountRows) {
+            Long roleCountValue = DataTypeUtility.longValue(roleCountRow[1]);
+            long roleTotal = roleCountValue == null ? 0L : roleCountValue;
+            totalUsers += roleTotal;
+            if (roleCountRow[0] instanceof RoleName roleName) {
+                roleCounts.put(roleName.name(), roleTotal);
+            }
+        }
+        roleCounts.put("ALL", totalUsers);
+        return roleCounts;
     }
 
     @Transactional(readOnly = true)

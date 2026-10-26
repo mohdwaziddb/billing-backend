@@ -29,6 +29,14 @@ public class InvoiceRestController {
         return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", invoiceService.page(param, authentication.getName())), HttpStatus.OK);
     }
 
+    // List page ke KPI cards (list wale hi filters). Pehle browser saare invoices laa kar ginta tha.
+    @GetMapping("/summary")
+    @com.billing.security.RequiresPermission(menu = "INVOICES", action = "VIEW")
+    public ResponseEntity<?> summary(@RequestParam(required = false) Map<String, Object> param, Authentication authentication, HttpServletRequest req) {
+        param = SanitizeData.sanitizeMapObj(param);
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", invoiceService.summary(param, authentication.getName())), HttpStatus.OK);
+    }
+
     @GetMapping("/{invoiceId}")
     @com.billing.security.RequiresPermission(menu = "INVOICES", action = "VIEW")
     public ResponseEntity<?> get(Authentication authentication, @PathVariable Long invoiceId) {
@@ -50,7 +58,7 @@ public class InvoiceRestController {
         param = SanitizeData.sanitizeMapObj(param);
         invoiceId = DataTypeUtility.getForeignKeyValue(invoiceId);
         byte[] pdfContent = invoiceTemplateRenderService.pdf(param, authentication.getName(), invoiceId);
-        String invoiceNo = invoiceService.get(authentication.getName(), invoiceId).getInvoiceNo();
+        String invoiceNo = invoiceService.invoiceNumber(authentication.getName(), invoiceId);
         return ResponseEntity.ok()
         .header("Content-Type", "application/pdf")
         // Invoice no me "/" hota hai (INV/2627/00001); filename me allowed nahi.

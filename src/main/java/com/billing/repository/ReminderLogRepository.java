@@ -21,4 +21,8 @@ public interface ReminderLogRepository extends JpaRepository<ReminderLog, Long> 
     /** Har customer ka sabse naya reminder, ek query me (Outstanding list). */
     @Query("select e from ReminderLog e where e.createdAt = (select max(x.createdAt) from ReminderLog x where x.customer = e.customer)")
     List<ReminderLog> findLatestPerCustomer();
+
+    /** Outstanding list: sirf current page ke customers ka latest reminder (poori reminder_logs nahi). */
+    @Query("select e from ReminderLog e where e.customer.id in :customerIds and e.createdAt = (select max(x.createdAt) from ReminderLog x where x.customer = e.customer)")
+    List<ReminderLog> findLatestForCustomerIds(@Param("customerIds") java.util.Collection<Long> customerIds);
 }

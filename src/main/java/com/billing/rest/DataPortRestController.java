@@ -2,7 +2,6 @@ package com.billing.rest;
 
 import com.billing.dto.dataport.DataPortRow;
 import com.billing.service.PermissionService;
-import com.billing.service.dataport.DataPortField;
 import com.billing.service.dataport.DataPortModule;
 import com.billing.service.dataport.DataPortModuleService;
 import com.billing.service.dataport.ExcelReaderService;
@@ -48,11 +47,8 @@ public class DataPortRestController {
 
     @GetMapping("/modules")
     public ResponseEntity<?> modules(Authentication authentication) {
-        List<Map<String, Object>> modules = dataPortModuleService
-                .modules(module -> permissionService.has(authentication, module.menuCode(), "VIEW"))
-                .stream()
-                .map(module -> describe(module, authentication))
-                .toList();
+        // Permission checks + describe service me ek read-only transaction me.
+        List<Map<String, Object>> modules = dataPortModuleService.describeModules(authentication);
         return ResponseEntity.ok(new GeneralResponse<>(true, "Successfully", modules));
     }
 
@@ -92,31 +88,6 @@ public class DataPortRestController {
         if (!permissionService.has(authentication, module.menuCode(), action)) {
             throw new AccessDeniedException("Permission denied");
         }
-    }
-
-    private Map<String, Object> describe(DataPortModule<?> module, Authentication authentication) {
-        Map<String, Object> data = new LinkedHashMap<>();
-        data.put("key", module.key());
-        data.put("menuCode", module.menuCode());
-        data.put("title", module.title());
-        data.put("description", module.description());
-        data.put("order", module.order());
-        data.put("notes", module.notes());
-        data.put("groupField", module.groupField());
-        data.put("canImport", permissionService.has(authentication, module.menuCode(), "ADD"));
-        List<Map<String, Object>> fields = new ArrayList<>();
-        for (DataPortField field : module.fields()) {
-            Map<String, Object> fieldData = new LinkedHashMap<>();
-            fieldData.put("key", field.key());
-            fieldData.put("header", field.header());
-            fieldData.put("required", field.required());
-            fieldData.put("type", field.type().name());
-            fieldData.put("options", field.options());
-            fieldData.put("hint", field.hint());
-            fields.add(fieldData);
-        }
-        data.put("fields", fields);
-        return data;
     }
 
     private List<DataPortRow> rows(Map<String, Object> param) {

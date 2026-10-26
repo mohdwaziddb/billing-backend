@@ -5,6 +5,7 @@ import lombok.Getter;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 @Getter
 @Builder
@@ -19,4 +20,6 @@ public class PaymentHierarchyResponse {
     private BigDecimal netRevenue;
     private List<PaymentHierarchyNodeResponse> nodes;
     private List<PaymentHierarchyRecordResponse> records;
+    // Sirf company node par: metric card id -> child count (pehle har metric ki alag call).
+    private Map<String, Integer> metricCounts;
 }

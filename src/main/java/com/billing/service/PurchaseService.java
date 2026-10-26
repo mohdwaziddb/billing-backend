@@ -30,6 +30,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -122,8 +123,17 @@ public class PurchaseService {
     @Transactional(readOnly = true)
     public PageResponse<PurchaseResponse> page(String email, Boolean active, String search, LocalDate startDate, LocalDate endDate, int page, int size) {
         Company company = accessControlService.getCurrentCompany(email);
-        return PageResponse.from(purchaseRepository.search(company, active, normalizeSearch(search), startDate, endDate, org.springframework.data.domain.PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 100))))
-                .map(purchase -> toResponse(purchase, Map.of())));
+        org.springframework.data.domain.Page<Purchase> purchasePage = purchaseRepository.search(company, active, normalizeSearch(search), startDate, endDate, org.springframework.data.domain.PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 100))));
+        // Page ki purchases ke items + product ek query me load (row-wise lazy load = N+1 tha).
+        Map<Long, Purchase> purchasesWithItemsById = new HashMap<>();
+        List<Long> purchaseIds = purchasePage.getContent().stream().map(Purchase::getId).toList();
+        if (!purchaseIds.isEmpty()) {
+            for (Purchase purchaseWithItems : purchaseRepository.findAllWithItemsByIdIn(purchaseIds)) {
+                purchasesWithItemsById.put(purchaseWithItems.getId(), purchaseWithItems);
+            }
+        }
+        return PageResponse.from(purchasePage
+                .map(purchase -> toResponse(purchasesWithItemsById.getOrDefault(purchase.getId(), purchase), Map.of())));
     }
 
     @Transactional(readOnly = true)

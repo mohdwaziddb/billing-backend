@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.UnaryOperator;
 
 @Service
 @RequiredArgsConstructor
@@ -34,7 +35,7 @@ public class SmsTemplateService {
     public PageResponse<SmsTemplateResponse> page(String email, String search, Boolean active, int page, int size) {
         Company company = accessControlService.getCurrentCompany(email);
         return PageResponse.from(smsTemplateRepository.findPageByCompanyWithFilters(company, active, normalizeSearch(search), PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 100))))
-                .map(this::toResponse));
+                .map(memoizedResponse()));
     }
 
     @Transactional(readOnly = true)
@@ -66,7 +67,7 @@ public class SmsTemplateService {
     @Transactional(readOnly = true)
     public List<SmsTemplateResponse> activeTemplates(String email) {
         Company company = accessControlService.getCurrentCompany(email);
-        return smsTemplateRepository.findByCompanyAndActiveTrueOrderByTemplateNameAsc(company).stream().map(this::toResponse).toList();
+        return smsTemplateRepository.findByCompanyAndActiveTrueOrderByTemplateNameAsc(company).stream().map(memoizedResponse()).toList();
     }
 
     @Transactional(readOnly = true)
@@ -257,12 +258,22 @@ public class SmsTemplateService {
     }
 
     private SmsTemplateResponse toResponse(SmsTemplate template) {
+        return toResponse(template, auditNameResolver::displayName);
+    }
+
+    /** List ke liye: createdBy naam ek hi baar DB se (har row par users SELECT nahi). */
+    private java.util.function.Function<SmsTemplate, SmsTemplateResponse> memoizedResponse() {
+        UnaryOperator<String> auditNames = auditNameResolver.memoized();
+        return template -> toResponse(template, auditNames);
+    }
+
+    private SmsTemplateResponse toResponse(SmsTemplate template, UnaryOperator<String> auditNames) {
         return SmsTemplateResponse.builder()
                 .id(template.getId())
                 .templateName(template.getTemplateName())
                 .templateBody(template.getTemplateBody())
                 .active(template.isActive())
-                .createdBy(auditNameResolver.displayName(template.getCreatedBy()))
+                .createdBy(auditNames.apply(template.getCreatedBy()))
                 .createdAt(template.getCreatedAt())
                 .updatedAt(template.getUpdatedAt())
                 .build();

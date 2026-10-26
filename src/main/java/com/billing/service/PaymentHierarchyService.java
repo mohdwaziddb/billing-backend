@@ -23,11 +23,13 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.format.TextStyle;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
@@ -40,6 +42,9 @@ public class PaymentHierarchyService {
     private final ExpenseRepository expenseRepository;
     private final AuditNameResolver auditNameResolver;
     private final RevenueCalculationService revenueCalculationService;
+
+    // Company level par dikhne wale metric cards (frontend summaryMetricNodes ke same ids).
+    private static final List<String> SUMMARY_METRIC_IDS = List.of("total-sales", "total-collection", "total-outstanding", "total-expense", "net-revenue");
 
     @Transactional(readOnly = true)
     public PaymentHierarchyResponse children(String email,
@@ -56,10 +61,12 @@ public class PaymentHierarchyService {
                                              String collectedBy) {
         Company company = accessControlService.getCurrentCompany(email);
         DateRange range = resolveRange(startDate, endDate, financialYear);
+        // Request-local naam cache: collectedBy filter + records me har payment par user lookup hota tha.
+        Function<String, String> collectorNames = collectorNameLookup();
         // Date range DB me filter (pehle poori tables memory me aati thi).
         List<Invoice> invoices = filterInvoices(invoiceRepository.findActiveInRange(range.startDate(), range.endDate()), range, customerId);
-        List<Payment> payments = filterPayments(paymentRepository.findActiveInRange(range.startDate(), range.endDate()), range, mode, customerId, collectedBy);
-        List<Expense> expenses = filterExpenses(expenseRepository.findInRange(range.startDate(), range.endDate()), range, customerId);
+        List<Payment> payments = filterPayments(paymentRepository.findActiveInRange(range.startDate(), range.endDate()), range, mode, customerId, collectedBy, collectorNames);
+        List<Expense> expenses = filterExpenses(expenseRepository.findInRangeWithInvoiceCustomer(range.startDate(), range.endDate()), range, customerId);
         Summary summary = summary(invoices, payments, expenses);
         String resolvedType = nodeType == null || nodeType.isBlank() ? "company" : nodeType.trim();
 
@@ -120,8 +127,30 @@ public class PaymentHierarchyService {
                 .totalExpense(summary.totalExpense())
                 .netRevenue(summary.netRevenue())
                 .nodes(nodes)
-                .records("invoice".equals(resolvedType) ? paymentRecords(paymentsForInvoice(payments, invoiceIdFromNode(nodeId))) : List.of())
+                .records("invoice".equals(resolvedType) ? paymentRecords(paymentsForInvoice(payments, invoiceIdFromNode(nodeId)), collectorNames) : List.of())
+                // Company load par har metric card ka child count isi response me (pehle frontend
+                // har metric ke liye alag call karta tha = same data 5 baar DB se).
+                .metricCounts("company".equals(resolvedType) ? metricChildCounts(summary, invoices, payments, expenses, range) : null)
                 .build();
+    }
+
+    private Map<String, Integer> metricChildCounts(Summary summary, List<Invoice> invoices, List<Payment> payments, List<Expense> expenses, DateRange range) {
+        Map<String, BigDecimal> metricAmounts = new LinkedHashMap<>();
+        metricAmounts.put("total-sales", summary.totalReceivable());
+        metricAmounts.put("total-collection", summary.totalCollected());
+        metricAmounts.put("total-outstanding", summary.totalOutstanding());
+        metricAmounts.put("total-expense", summary.totalExpense());
+        metricAmounts.put("net-revenue", summary.netRevenue());
+        Map<String, Integer> metricCounts = new LinkedHashMap<>();
+        for (String metricId : SUMMARY_METRIC_IDS) {
+            BigDecimal metricAmount = metricAmounts.get(metricId);
+            // Frontend zero-amount metric card dikhata hi nahi; uska count compute karna bekaar.
+            if (metricAmount == null || metricAmount.abs().compareTo(new BigDecimal("0.005")) <= 0) {
+                continue;
+            }
+            metricCounts.put(metricId, metricTopLevelNodes(metricId, invoices, payments, expenses, range).size());
+        }
+        return metricCounts;
     }
 
     @Transactional(readOnly = true)
@@ -134,10 +163,11 @@ public class PaymentHierarchyService {
                                             String collectedBy) {
         Company company = accessControlService.getCurrentCompany(email);
         DateRange range = resolveRange(startDate, endDate, financialYear);
+        Function<String, String> collectorNames = collectorNameLookup();
         // Date range DB me filter (pehle poori tables memory me aati thi).
         List<Invoice> invoices = filterInvoices(invoiceRepository.findActiveInRange(range.startDate(), range.endDate()), range, customerId);
-        List<Payment> payments = filterPayments(paymentRepository.findActiveInRange(range.startDate(), range.endDate()), range, mode, customerId, collectedBy);
-        List<Expense> expenses = filterExpenses(expenseRepository.findInRange(range.startDate(), range.endDate()), range, customerId);
+        List<Payment> payments = filterPayments(paymentRepository.findActiveInRange(range.startDate(), range.endDate()), range, mode, customerId, collectedBy, collectorNames);
+        List<Expense> expenses = filterExpenses(expenseRepository.findInRangeWithInvoiceCustomer(range.startDate(), range.endDate()), range, customerId);
         Summary summary = summary(invoices, payments, expenses);
         return PaymentHierarchyResponse.builder()
                 .nodeId("summary")
@@ -149,7 +179,7 @@ public class PaymentHierarchyService {
                 .totalExpense(summary.totalExpense())
                 .netRevenue(summary.netRevenue())
                 .nodes(List.of())
-                .records(paymentRecords(payments))
+                .records(paymentRecords(payments, collectorNames))
                 .build();
     }
 
@@ -300,6 +330,8 @@ public class PaymentHierarchyService {
     }
 
     private List<PaymentHierarchyNodeResponse> metricCustomerNodes(String metric, List<Invoice> invoices, List<Payment> payments, String parentId) {
+        Map<Long, List<Payment>> paymentsByCustomerId = payments.stream()
+                .collect(Collectors.groupingBy(payment -> payment.getCustomer().getId()));
         return invoices.stream()
                 .collect(Collectors.groupingBy(Invoice::getCustomer, LinkedHashMap::new, Collectors.toList()))
                 .entrySet()
@@ -307,12 +339,8 @@ public class PaymentHierarchyService {
                 .sorted(Comparator.comparing(entry -> entry.getKey().getName()))
                 .map(entry -> {
                     Customer customer = entry.getKey();
-                    List<Invoice> customerInvoices = metricInvoices(metric, entry.getValue(), payments.stream()
-                            .filter(payment -> payment.getCustomer().getId().equals(customer.getId()))
-                            .toList());
-                    List<Payment> customerPayments = payments.stream()
-                            .filter(payment -> payment.getCustomer().getId().equals(customer.getId()))
-                            .toList();
+                    List<Payment> customerPayments = paymentsByCustomerId.getOrDefault(customer.getId(), List.of());
+                    List<Invoice> customerInvoices = metricInvoices(metric, entry.getValue(), customerPayments);
                     BigDecimal amount = sumInvoiceMetric(customerInvoices, customerPayments, metric);
                     BigDecimal total = sumInvoices(customerInvoices);
                     BigDecimal collected = sumPayments(customerPayments);
@@ -325,10 +353,11 @@ public class PaymentHierarchyService {
     }
 
     private List<PaymentHierarchyNodeResponse> metricInvoiceNodes(String metric, List<Invoice> invoices, List<Payment> payments, String parentId) {
+        Map<Long, List<Payment>> paymentsByInvoiceId = paymentsByInvoiceId(payments);
         return invoices.stream()
                 .sorted(Comparator.comparing(Invoice::getInvoiceDate, Comparator.nullsLast(Comparator.naturalOrder())).reversed())
                 .map(invoice -> {
-                    List<Payment> invoicePayments = paymentsForInvoice(payments, invoice.getId());
+                    List<Payment> invoicePayments = paymentsByInvoiceId.getOrDefault(invoice.getId(), List.of());
                     BigDecimal total = scale(invoice.getTotalAmount());
                     BigDecimal collected = sumPayments(invoicePayments);
                     BigDecimal outstanding = invoiceOutstanding(invoice, invoicePayments);
@@ -815,6 +844,20 @@ public class PaymentHierarchyService {
         return payments.stream().filter(payment -> payment.getPaymentDate() != null && YearMonth.from(payment.getPaymentDate()).equals(month)).toList();
     }
 
+    /*
+     * Invoice id -> uske payments (encounter order same). Pehle har invoice ke liye poori payments
+     * list scan hoti thi (invoices x payments = O(n^2)); bade tenant par yahi page ko minutes tak le jaata tha.
+     */
+    private Map<Long, List<Payment>> paymentsByInvoiceId(List<Payment> payments) {
+        Map<Long, List<Payment>> paymentsByInvoice = new HashMap<>();
+        for (Payment payment : payments) {
+            if (payment.getInvoice() != null) {
+                paymentsByInvoice.computeIfAbsent(payment.getInvoice().getId(), invoiceId -> new java.util.ArrayList<>()).add(payment);
+            }
+        }
+        return paymentsByInvoice;
+    }
+
     private List<Payment> paymentsForInvoice(List<Payment> payments, Long invoiceId) {
         if (invoiceId == null) {
             return List.of();
@@ -896,7 +939,7 @@ public class PaymentHierarchyService {
                 .toList();
     }
 
-    private List<Payment> filterPayments(List<Payment> payments, DateRange range, String mode, Long customerId, String collectedBy) {
+    private List<Payment> filterPayments(List<Payment> payments, DateRange range, String mode, Long customerId, String collectedBy, Function<String, String> collectorNames) {
         String normalizedMode = normalizeMode(mode);
         String normalizedCollector = collectedBy == null || collectedBy.isBlank() ? null : collectedBy.trim();
         return payments.stream()
@@ -904,7 +947,7 @@ public class PaymentHierarchyService {
                 .filter(payment -> payment.getInvoice() == null || !payment.getInvoice().isDeleted())
                 .filter(payment -> normalizedMode == null || normalizedMode.equalsIgnoreCase(payment.getMode()))
                 .filter(payment -> customerId == null || payment.getCustomer().getId().equals(customerId))
-                .filter(payment -> normalizedCollector == null || matchesCollector(payment, normalizedCollector))
+                .filter(payment -> normalizedCollector == null || matchesCollector(payment, normalizedCollector, collectorNames))
                 .toList();
     }
 
@@ -917,7 +960,7 @@ public class PaymentHierarchyService {
                 .toList();
     }
 
-    private List<PaymentHierarchyRecordResponse> paymentRecords(List<Payment> payments) {
+    private List<PaymentHierarchyRecordResponse> paymentRecords(List<Payment> payments, Function<String, String> collectorNames) {
         return payments.stream()
                 .sorted(Comparator.comparing(Payment::getPaymentDate, Comparator.nullsLast(Comparator.naturalOrder())).reversed()
                         .thenComparing(Payment::getId, Comparator.reverseOrder()))
@@ -926,7 +969,7 @@ public class PaymentHierarchyService {
                         .invoiceNo(payment.getInvoice() == null ? "--" : payment.getInvoice().getInvoiceNo())
                         .customerName(payment.getCustomer().getName())
                         .amount(scale(payment.getAmount()))
-                        .collectedBy(auditNameResolver.displayName(payment.getCreatedBy()))
+                        .collectedBy(collectorNames.apply(payment.getCreatedBy()))
                         .paymentMode(label(payment.getMode()))
                         .paymentDate(payment.getPaymentDate())
                         .build())
@@ -957,14 +1000,16 @@ public class PaymentHierarchyService {
     }
 
     private BigDecimal sumOutstanding(List<Invoice> invoices, List<Payment> payments) {
+        Map<Long, List<Payment>> paymentsByInvoiceId = paymentsByInvoiceId(payments);
         return scale(invoices.stream()
-                .map(invoice -> invoiceOutstanding(invoice, paymentsForInvoice(payments, invoice.getId())))
+                .map(invoice -> invoiceOutstanding(invoice, paymentsByInvoiceId.getOrDefault(invoice.getId(), List.of())))
                 .reduce(BigDecimal.ZERO, BigDecimal::add));
     }
 
     private BigDecimal sumInvoiceMetric(List<Invoice> invoices, List<Payment> payments, String metric) {
+        Map<Long, List<Payment>> paymentsByInvoiceId = paymentsByInvoiceId(payments);
         return scale(invoices.stream()
-                .map(invoice -> invoiceMetricAmount(invoice, paymentsForInvoice(payments, invoice.getId()), metric))
+                .map(invoice -> invoiceMetricAmount(invoice, paymentsByInvoiceId.getOrDefault(invoice.getId(), List.of()), metric))
                 .reduce(BigDecimal.ZERO, BigDecimal::add));
     }
 
@@ -987,8 +1032,12 @@ public class PaymentHierarchyService {
     }
 
     private List<Payment> metricPayments(String metric, List<Payment> payments) {
+        if (!"total-outstanding".equals(metric)) {
+            return payments;
+        }
+        Map<Long, List<Payment>> paymentsByInvoiceId = paymentsByInvoiceId(payments);
         return payments.stream()
-                .filter(payment -> !"total-outstanding".equals(metric) || (payment.getInvoice() != null && invoiceOutstanding(payment.getInvoice(), paymentsForInvoice(payments, payment.getInvoice().getId())).compareTo(BigDecimal.ZERO) > 0))
+                .filter(payment -> payment.getInvoice() != null && invoiceOutstanding(payment.getInvoice(), paymentsByInvoiceId.getOrDefault(payment.getInvoice().getId(), List.of())).compareTo(BigDecimal.ZERO) > 0)
                 .toList();
     }
 
@@ -996,9 +1045,10 @@ public class PaymentHierarchyService {
         List<Invoice> scoped = "total-collection".equals(metric)
                 ? includePaymentInvoices(List.of(), payments)
                 : includePaymentInvoices(invoices, payments);
+        Map<Long, List<Payment>> paymentsByInvoiceId = paymentsByInvoiceId(payments);
         return scoped.stream()
                 .filter(invoice -> {
-                    BigDecimal amount = invoiceMetricAmount(invoice, paymentsForInvoice(payments, invoice.getId()), metric);
+                    BigDecimal amount = invoiceMetricAmount(invoice, paymentsByInvoiceId.getOrDefault(invoice.getId(), List.of()), metric);
                     return amount.compareTo(BigDecimal.ZERO) != 0;
                 })
                 .toList();
@@ -1145,11 +1195,25 @@ public class PaymentHierarchyService {
         return description == null || description.isBlank() ? date : date + " - " + description;
     }
 
-    private boolean matchesCollector(Payment payment, String normalizedCollector) {
+    private boolean matchesCollector(Payment payment, String normalizedCollector, Function<String, String> collectorNames) {
         String rawCreatedBy = payment.getCreatedBy();
-        String displayName = auditNameResolver.displayName(rawCreatedBy);
+        String displayName = collectorNames.apply(rawCreatedBy);
         return (rawCreatedBy != null && rawCreatedBy.equalsIgnoreCase(normalizedCollector))
                 || (displayName != null && displayName.equalsIgnoreCase(normalizedCollector));
+    }
+
+    // Request-local memo: same createdBy (user id / email) ka naam ek hi baar DB se resolve ho.
+    private Function<String, String> collectorNameLookup() {
+        Map<String, String> resolvedNames = new HashMap<>();
+        return createdBy -> {
+            if (createdBy == null) {
+                return null;
+            }
+            if (!resolvedNames.containsKey(createdBy)) {
+                resolvedNames.put(createdBy, auditNameResolver.displayName(createdBy));
+            }
+            return resolvedNames.get(createdBy);
+        };
     }
 
     private HierarchyDepth hierarchyDepth(DateRange range) {

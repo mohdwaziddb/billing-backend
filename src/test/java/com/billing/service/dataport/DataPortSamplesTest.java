@@ -94,7 +94,7 @@ class DataPortSamplesTest {
 
     @Test
     void sampleValuesMatchTheirColumnFormat() throws Exception {
-        DataPortModuleService service = new DataPortModuleService(null, excel, modules);
+        DataPortModuleService service = new DataPortModuleService(null, excel, null, modules);
         var checkFormats = DataPortModuleService.class.getDeclaredMethod("checkFormats", DataPortRow.class, List.class);
         checkFormats.setAccessible(true);
         for (DataPortModule<?> module : modules) {

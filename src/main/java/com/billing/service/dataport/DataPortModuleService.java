@@ -6,6 +6,9 @@ import com.billing.dto.dataport.ImportResult;
 import com.billing.entity.Company;
 import com.billing.exception.BadRequestException;
 import com.billing.service.AccessControlService;
+import com.billing.service.PermissionService;
+import org.springframework.security.core.Authentication;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -29,13 +32,16 @@ public class DataPortModuleService {
 
     private final AccessControlService accessControlService;
     private final ExcelReaderService excelReaderService;
+    private final PermissionService permissionService;
     private final Map<String, DataPortModule<?>> modules = new LinkedHashMap<>();
 
     public DataPortModuleService(AccessControlService accessControlService,
                                  ExcelReaderService excelReaderService,
+                                 PermissionService permissionService,
                                  List<DataPortModule<?>> dataPortModules) {
         this.accessControlService = accessControlService;
         this.excelReaderService = excelReaderService;
+        this.permissionService = permissionService;
         dataPortModules.stream()
                 .sorted(Comparator.comparingInt(DataPortModule::order))
                 .forEach(module -> modules.put(module.key(), module));
@@ -43,6 +49,48 @@ public class DataPortModuleService {
 
     public List<DataPortModule<?>> modules(Predicate<DataPortModule<?>> visible) {
         return modules.values().stream().filter(visible).toList();
+    }
+
+    /**
+     * DataPort hub / page ke cards: user ko dikhne wale modules + canImport.
+     * Ek hi read-only transaction me — pehle har module ke VIEW + ADD check (≈18 calls)
+     * alag-alag transaction/connection kholte the (controller me loop tha).
+     */
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> describeModules(Authentication authentication) {
+        List<Map<String, Object>> visibleModules = new ArrayList<>();
+        for (DataPortModule<?> module : modules.values()) {
+            if (!permissionService.has(authentication, module.menuCode(), "VIEW")) {
+                continue;
+            }
+            visibleModules.add(describe(module, permissionService.has(authentication, module.menuCode(), "ADD")));
+        }
+        return visibleModules;
+    }
+
+    private Map<String, Object> describe(DataPortModule<?> module, boolean canImport) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("key", module.key());
+        data.put("menuCode", module.menuCode());
+        data.put("title", module.title());
+        data.put("description", module.description());
+        data.put("order", module.order());
+        data.put("notes", module.notes());
+        data.put("groupField", module.groupField());
+        data.put("canImport", canImport);
+        List<Map<String, Object>> fields = new ArrayList<>();
+        for (DataPortField field : module.fields()) {
+            Map<String, Object> fieldData = new LinkedHashMap<>();
+            fieldData.put("key", field.key());
+            fieldData.put("header", field.header());
+            fieldData.put("required", field.required());
+            fieldData.put("type", field.type().name());
+            fieldData.put("options", field.options());
+            fieldData.put("hint", field.hint());
+            fields.add(fieldData);
+        }
+        data.put("fields", fields);
+        return data;
     }
 
     public DataPortModule<?> module(String key) {

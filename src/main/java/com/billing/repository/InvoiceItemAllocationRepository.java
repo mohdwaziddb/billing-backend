@@ -69,6 +69,22 @@ public interface InvoiceItemAllocationRepository extends JpaRepository<InvoiceIt
                                      @Param("startDate") java.time.LocalDate startDate,
                                      @Param("endDate") java.time.LocalDate endDate);
 
+    // P&L chart: month-wise COGS [year, month, sum(costAmount)] ek query me (pehle har mahine alag query).
+    @Query("""
+            select year(a.invoice.invoiceDate), month(a.invoice.invoiceDate), coalesce(sum(a.costAmount), 0)
+            from InvoiceItemAllocation a
+            where (:startDate is null or a.invoice.invoiceDate >= :startDate)
+              and (:endDate is null or a.invoice.invoiceDate <= :endDate)
+              and (:customerId is null or a.invoice.customer.id = :customerId)
+              and (:invoiceId is null or a.invoice.id = :invoiceId)
+              and a.active = true
+            group by year(a.invoice.invoiceDate), month(a.invoice.invoiceDate)
+            """)
+    List<Object[]> sumActiveCostFilteredByMonth(@Param("customerId") Long customerId,
+                                                @Param("invoiceId") Long invoiceId,
+                                                @Param("startDate") java.time.LocalDate startDate,
+                                                @Param("endDate") java.time.LocalDate endDate);
+
     // Invoice edit: purane items delete karne se pehle released allocations ka item link hatao.
     @Modifying
     @Query("update InvoiceItemAllocation a set a.invoiceItem = null where a.invoiceItem in :items and a.active = false")

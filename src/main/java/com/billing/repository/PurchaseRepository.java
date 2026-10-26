@@ -15,6 +15,16 @@ import java.util.Optional;
 
 public interface PurchaseRepository extends JpaRepository<Purchase, Long> {
 
+    // DataPort opening stock duplicate guard: active purchases ki lines ek query me
+    // [purchaseDate, supplierName, productId, qty, purchaseRate, purchaseNo] (pehle har purchase ke items lazy = N+1).
+    @Query("""
+            select p.purchaseDate, p.supplierName, item.product.id, item.qty, item.purchaseRate, p.purchaseNo
+            from PurchaseItem item join item.purchase p
+            where p.active = true
+            order by p.purchaseDate desc, p.id desc, item.id asc
+            """)
+    List<Object[]> findActivePurchaseLineKeys();
+
     @EntityGraph(attributePaths = {"items", "items.product"})
     @Query("select p from Purchase p where (:company is null or 1=1) and p.purchaseNo = :purchaseNo")
     Optional<Purchase> findByCompanyAndPurchaseNo(@Param("company") Company company, @Param("purchaseNo") String purchaseNo);
@@ -45,6 +55,17 @@ public interface PurchaseRepository extends JpaRepository<Purchase, Long> {
                           @Param("startDate") LocalDate startDate,
                           @Param("endDate") LocalDate endDate,
                           Pageable pageable);
+
+    // Purchases page: ek page ki saari purchases ke items + product ek hi query me.
+    // Pehle har row par items (lazy) + har item ka product alag query = N+1.
+    @Query("""
+            select p from Purchase p
+            left join fetch p.items item
+            left join fetch item.product
+            where p.id in :purchaseIds
+            order by p.id asc, item.id asc
+            """)
+    List<Purchase> findAllWithItemsByIdIn(@Param("purchaseIds") java.util.Collection<Long> purchaseIds);
 
     // Number-length pehle, taaki 99999 ke baad 100000 bhi "max" mile.
     @Query("select p.purchaseNo from Purchase p where p.purchaseNo like concat(:prefix, '%') order by length(p.purchaseNo) desc, p.purchaseNo desc")

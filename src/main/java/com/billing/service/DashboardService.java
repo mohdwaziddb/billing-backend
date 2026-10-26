@@ -3,7 +3,6 @@ package com.billing.service;
 import com.billing.dto.dashboard.DashboardDetailResponse;
 import com.billing.dto.dashboard.DashboardSummaryResponse;
 import com.billing.dto.dashboard.DashboardTopCustomerResponse;
-import com.billing.entity.Company;
 import com.billing.entity.Expense;
 import com.billing.entity.Payment;
 import com.billing.entity.Customer;
@@ -12,6 +11,7 @@ import com.billing.entity.InvoiceItem;
 import com.billing.entity.User;
 import com.billing.repository.CustomerRepository;
 import com.billing.repository.ExpenseRepository;
+import com.billing.repository.InvoiceItemRepository;
 import com.billing.repository.InvoiceRepository;
 import com.billing.repository.PaymentRepository;
 import com.billing.repository.ProductRepository;
@@ -31,14 +31,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class DashboardService {
 
     private final InvoiceRepository invoiceRepository;
+    private final InvoiceItemRepository invoiceItemRepository;
     private final ProductRepository productRepository;
     private final PaymentRepository paymentRepository;
     private final CustomerRepository customerRepository;
@@ -49,40 +48,28 @@ public class DashboardService {
     @Transactional(readOnly = true)
     public DashboardSummaryResponse summary(String email, LocalDate startDate, LocalDate endDate) {
         User user = accessControlService.getCurrentUser(email);
-        Company company = accessControlService.requireCompany(user);
+        accessControlService.requireCompany(user);
         LocalDate safeStart = startDate;
         LocalDate safeEnd = endDate;
-        // History (outstanding as-of, first purchase) ke liye end date tak ke invoices
-        // bina items ke; items sirf selected range ke invoices ke saath. Pehle poori
-        // invoices table items samet har request par memory me aati thi.
-        List<Invoice> allInvoices = invoicesUpTo(safeEnd);
-        List<Payment> allPayments = paymentsUpTo(safeEnd);
-        List<Customer> allCustomers = customersFor(company);
-        BigDecimal totalExpense = expensesIn(safeStart, safeEnd).stream()
-                .map(com.billing.entity.Expense::getAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        // Perf: pehle end date tak ki POORI invoices + payments history aur saare customers
+        // entity bana kar memory me aate the (har dashboard load par). Ab sirf selected range
+        // ke invoices/payments (bina items) aate hain; history wale totals (pichhla period,
+        // outstanding as-of, first purchase) SQL aggregate se.
+        BigDecimal totalExpense = amountOf(expenseRepository.sumActiveAmountInRange(safeStart, safeEnd));
 
-        List<Invoice> filteredInvoices = invoicesWithItemsIn(safeStart, safeEnd);
-        List<Payment> filteredPayments = allPayments.stream()
-                .filter(payment -> isWithinRange(payment.getPaymentDate(), safeStart, safeEnd))
-                .toList();
+        List<Invoice> filteredInvoices = invoicesIn(safeStart, safeEnd);
+        List<Payment> filteredPayments = paymentsIn(safeStart, safeEnd);
         LocalDate previousStart = previousRangeStart(safeStart, safeEnd);
         LocalDate previousEnd = previousRangeEnd(safeStart);
-        List<Invoice> previousInvoices = allInvoices.stream()
-                .filter(invoice -> isWithinRange(invoice.getInvoiceDate(), previousStart, previousEnd))
-                .toList();
-        List<Payment> previousPayments = allPayments.stream()
-                .filter(payment -> isWithinRange(payment.getPaymentDate(), previousStart, previousEnd))
-                .toList();
-        Map<Long, LocalDate> firstPurchaseDates = firstPurchaseDates(allInvoices);
+        // Pehle pichhla period "end date tak ki history" me se filter hota tha, isliye upper bound dono me se pehla.
+        LocalDate previousUpperBound = earlierOf(previousEnd, safeEnd);
+        Object[] previousInvoiceSummary = firstRow(invoiceRepository.summarizeActiveInRange(previousStart, previousUpperBound), 3);
+        Map<Long, LocalDate> firstPurchaseDates = firstPurchaseDates(safeEnd);
         List<Long> periodCustomerIds = filteredInvoices.stream()
                 .map(invoice -> invoice.getCustomer().getId())
                 .distinct()
                 .toList();
-        List<Long> previousCustomerIds = previousInvoices.stream()
-                .map(invoice -> invoice.getCustomer().getId())
-                .distinct()
-                .toList();
+        long previousCustomerCount = countOf(previousInvoiceSummary[2]);
         long newCustomers = periodCustomerIds.stream()
                 .filter(customerId -> isWithinRange(firstPurchaseDates.get(customerId), safeStart, safeEnd))
                 .count();
@@ -93,36 +80,23 @@ public class DashboardService {
         BigDecimal totalSales = filteredInvoices.stream()
                 .map(Invoice::getTotalAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal previousSales = previousInvoices.stream()
-                .map(Invoice::getTotalAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal previousSales = amountOf(previousInvoiceSummary[0]);
 
         BigDecimal totalCollection = filteredPayments.stream()
                 .map(Payment::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal previousCollection = previousPayments.stream()
-                .map(Payment::getAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal totalGst = filteredInvoices.stream()
-                .map(invoice -> invoice.getTaxAmount().subtract(GstReportService.nonGstTaxTotal(invoice)))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal cgstCollected = filteredInvoices.stream()
-                .map(Invoice::getCgstTotal)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal sgstCollected = filteredInvoices.stream()
-                .map(Invoice::getSgstTotal)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal igstCollected = filteredInvoices.stream()
-                .map(GstReportService::gstIgstTotal)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal previousCollection = amountOf(paymentRepository.sumActiveAmountInRange(previousStart, previousUpperBound));
+        // GST totals bhi SQL me: VAT/non-GST (IGST slot me) ko GstReportService.nonGstTaxTotal jaisa hi ghatao.
+        Object[] taxTotals = firstRow(invoiceRepository.sumActiveTaxTotalsInRange(safeStart, safeEnd), 4);
+        BigDecimal nonGstTax = amountOf(invoiceItemRepository.sumActiveNonGstTaxInRange(safeStart, safeEnd));
+        BigDecimal totalGst = amountOf(taxTotals[0]).subtract(nonGstTax);
+        BigDecimal cgstCollected = amountOf(taxTotals[1]);
+        BigDecimal sgstCollected = amountOf(taxTotals[2]);
+        BigDecimal igstCollected = amountOf(taxTotals[3]).subtract(nonGstTax);
 
-        BigDecimal outstanding = calculateOutstandingAsOf(allCustomers, allInvoices, allPayments, safeEnd);
-        BigDecimal previousOutstanding = calculateOutstandingAsOf(allCustomers, allInvoices, allPayments, previousEnd);
-        long soldProducts = filteredInvoices.stream()
-                .flatMap(invoice -> invoice.getItems().stream())
-                .map(item -> item.getProduct().getId())
-                .distinct()
-                .count();
+        BigDecimal outstanding = calculateOutstandingAsOf(safeEnd, safeEnd);
+        BigDecimal previousOutstanding = calculateOutstandingAsOf(previousEnd, safeEnd);
+        long soldProducts = invoiceItemRepository.countActiveDistinctProductsInRange(safeStart, safeEnd);
 
         Map<Long, DashboardCustomerAggregate> customerAggregates = new HashMap<>();
         for (Invoice invoice : filteredInvoices) {
@@ -174,7 +148,7 @@ public class DashboardService {
                 .totalSalesTrendPercentage(calculateTrendPercentage(totalSales, previousSales))
                 .collectionTrendPercentage(calculateTrendPercentage(totalCollection, previousCollection))
                 .outstandingTrendPercentage(calculateTrendPercentage(outstanding, previousOutstanding))
-                .totalCustomersTrendPercentage(calculateTrendPercentage(BigDecimal.valueOf(periodCustomerIds.size()), BigDecimal.valueOf(previousCustomerIds.size())))
+                .totalCustomersTrendPercentage(calculateTrendPercentage(BigDecimal.valueOf(periodCustomerIds.size()), BigDecimal.valueOf(previousCustomerCount)))
                 .topCustomers(topCustomers)
                 .build();
     }
@@ -237,35 +211,24 @@ public class DashboardService {
                                            String sortDirection,
                                            String search) {
         User user = accessControlService.getCurrentUser(email);
-        Company company = accessControlService.requireCompany(user);
-        List<Invoice> allInvoices = invoicesUpTo(endDate);
-        List<Payment> allPayments = paymentsUpTo(endDate);
-        List<Customer> allCustomers = customersFor(company);
-        List<Expense> allExpenses = expensesIn(startDate, endDate);
-        Map<Long, Customer> customersById = allCustomers.stream()
-                .collect(Collectors.toMap(Customer::getId, Function.identity()));
-        Map<Long, LocalDate> firstPurchaseDates = firstPurchaseDates(allInvoices);
+        accessControlService.requireCompany(user);
         String normalizedCard = normalizeCard(card);
 
-        List<Invoice> filteredInvoices = invoicesWithItemsIn(startDate, endDate);
-        List<Payment> filteredPayments = allPayments.stream()
-                .filter(payment -> isWithinRange(payment.getPaymentDate(), startDate, endDate))
-                .toList();
-        List<Expense> filteredExpenses = allExpenses.stream()
-                .filter(expense -> isWithinRange(expense.getExpenseDate(), startDate, endDate))
-                .toList();
-
+        // Perf: pehle har card ke liye poori invoices/payments history + saare customers +
+        // range ke invoices items samet — sab load hota tha, chahe card ko chahiye ho ya nahi.
+        // Ab sirf wahi data jo us card ko chahiye (items sirf totalSales/products ke liye).
+        // Customer entity invoice ke saath fetch hoti hai, isliye alag customers map ki zaroorat nahi.
         List<Map<String, Object>> rows = switch (normalizedCard) {
-            case "totalSales" -> totalSalesRows(filteredInvoices);
-            case "collections" -> collectionRows(filteredPayments);
-            case "outstanding" -> outstandingRows(allInvoices, allPayments, endDate);
-            case "totalExpense" -> expenseRows(filteredExpenses);
-            case "netRevenue" -> netRevenueRows(filteredPayments, filteredExpenses);
-            case "newCustomers" -> customerRows(filteredInvoices, customersById, firstPurchaseDates, startDate, endDate, true);
-            case "existingCustomers" -> customerRows(filteredInvoices, customersById, firstPurchaseDates, startDate, endDate, false);
-            case "invoices" -> invoiceRows(filteredInvoices);
-            case "products" -> productSummary(filteredInvoices);
-            case "customers" -> totalCustomerRows(filteredInvoices, customersById);
+            case "totalSales" -> totalSalesRows(invoicesWithItemsIn(startDate, endDate));
+            case "collections" -> collectionRows(paymentsIn(startDate, endDate));
+            case "outstanding" -> outstandingRows(endDate);
+            case "totalExpense" -> expenseRows(expensesIn(startDate, endDate));
+            case "netRevenue" -> netRevenueRows(startDate, endDate);
+            case "newCustomers" -> customerRows(invoicesIn(startDate, endDate), firstPurchaseDates(endDate), startDate, endDate, true);
+            case "existingCustomers" -> customerRows(invoicesIn(startDate, endDate), firstPurchaseDates(endDate), startDate, endDate, false);
+            case "invoices" -> invoiceRows(invoicesIn(startDate, endDate));
+            case "products" -> productSummary(invoicesWithItemsIn(startDate, endDate));
+            case "customers" -> totalCustomerRows(invoicesIn(startDate, endDate));
             default -> throw new IllegalArgumentException("Unsupported dashboard card: " + card);
         };
 
@@ -300,20 +263,17 @@ public class DashboardService {
         return endDate == null || !value.isAfter(endDate);
     }
 
-    private List<Invoice> invoicesUpTo(LocalDate endDate) {
-        return invoiceRepository.findActiveInRange(null, endDate);
+    // Light: header + customer (items nahi).
+    private List<Invoice> invoicesIn(LocalDate startDate, LocalDate endDate) {
+        return invoiceRepository.findActiveInRange(startDate, endDate);
     }
 
     private List<Invoice> invoicesWithItemsIn(LocalDate startDate, LocalDate endDate) {
         return invoiceRepository.findActiveInRangeWithItems(startDate, endDate);
     }
 
-    private List<Payment> paymentsUpTo(LocalDate endDate) {
-        return paymentRepository.findActiveInRange(null, endDate);
-    }
-
-    private List<Customer> customersFor(Company company) {
-        return customerRepository.findAllByOrderByCreatedAtDesc();
+    private List<Payment> paymentsIn(LocalDate startDate, LocalDate endDate) {
+        return paymentRepository.findActiveInRange(startDate, endDate);
     }
 
     private List<Expense> expensesIn(LocalDate startDate, LocalDate endDate) {
@@ -324,17 +284,57 @@ public class DashboardService {
         return value != null && startDate != null && value.isBefore(startDate);
     }
 
-    private Map<Long, LocalDate> firstPurchaseDates(List<Invoice> invoices) {
+    // Har customer ki pehli purchase date (endDate tak) — SQL min() group by, poori history entities nahi.
+    private Map<Long, LocalDate> firstPurchaseDates(LocalDate endDate) {
         Map<Long, LocalDate> firstPurchaseDates = new HashMap<>();
-        for (Invoice invoice : invoices) {
-            Customer customer = invoice.getCustomer();
-            if (customer == null || invoice.getInvoiceDate() == null) {
+        for (Object[] row : invoiceRepository.findFirstPurchaseDatesUpTo(endDate)) {
+            Long customerId = DataTypeUtility.longValue(row[0]);
+            if (customerId == null || row[1] == null) {
                 continue;
             }
-            firstPurchaseDates.merge(customer.getId(), invoice.getInvoiceDate(),
-                    (current, incoming) -> incoming.isBefore(current) ? incoming : current);
+            firstPurchaseDates.put(customerId, (LocalDate) row[1]);
         }
         return firstPurchaseDates;
+    }
+
+    // Do upper bounds me se pehla (null = koi limit nahi).
+    private LocalDate earlierOf(LocalDate firstDate, LocalDate secondDate) {
+        if (firstDate == null) {
+            return secondDate;
+        }
+        if (secondDate == null) {
+            return firstDate;
+        }
+        return firstDate.isBefore(secondDate) ? firstDate : secondDate;
+    }
+
+    // Aggregate query ki pehli row; khali result par zero-filled row.
+    private Object[] firstRow(List<Object[]> rows, int columnCount) {
+        if (rows == null || rows.isEmpty() || rows.get(0) == null) {
+            return new Object[columnCount];
+        }
+        return rows.get(0);
+    }
+
+    private BigDecimal amountOf(Object value) {
+        BigDecimal amount = DataTypeUtility.bigDecimalObjectValue(value);
+        return amount == null ? BigDecimal.ZERO : amount;
+    }
+
+    private long countOf(Object value) {
+        Long count = DataTypeUtility.longValue(value);
+        return count == null ? 0L : count;
+    }
+
+    private Map<LocalDate, BigDecimal> amountByDate(List<Object[]> rows) {
+        Map<LocalDate, BigDecimal> amountByDate = new HashMap<>();
+        for (Object[] row : rows) {
+            if (row[0] == null) {
+                continue;
+            }
+            amountByDate.put((LocalDate) row[0], amountOf(row[1]));
+        }
+        return amountByDate;
     }
 
     private String normalizeCard(String card) {
@@ -414,15 +414,10 @@ public class DashboardService {
         }).toList();
     }
 
-    private List<Map<String, Object>> netRevenueRows(List<Payment> payments, List<Expense> expenses) {
-        Map<LocalDate, BigDecimal> collectionByDate = payments.stream()
-                .filter(payment -> payment.getPaymentDate() != null)
-                .collect(Collectors.groupingBy(Payment::getPaymentDate,
-                        Collectors.mapping(Payment::getAmount, Collectors.reducing(BigDecimal.ZERO, BigDecimal::add))));
-        Map<LocalDate, BigDecimal> expenseByDate = expenses.stream()
-                .filter(expense -> expense.getExpenseDate() != null)
-                .collect(Collectors.groupingBy(Expense::getExpenseDate,
-                        Collectors.mapping(Expense::getAmount, Collectors.reducing(BigDecimal.ZERO, BigDecimal::add))));
+    private List<Map<String, Object>> netRevenueRows(LocalDate startDate, LocalDate endDate) {
+        // Din-wise jod SQL me (pehle payments/expenses entities memory me group hoti thi).
+        Map<LocalDate, BigDecimal> collectionByDate = amountByDate(paymentRepository.sumActiveAmountByDate(startDate, endDate));
+        Map<LocalDate, BigDecimal> expenseByDate = amountByDate(expenseRepository.sumActiveAmountByDate(startDate, endDate));
 
         return java.util.stream.Stream.concat(collectionByDate.keySet().stream(), expenseByDate.keySet().stream())
                 .distinct()
@@ -438,13 +433,22 @@ public class DashboardService {
                 }).toList();
     }
 
-    private List<Map<String, Object>> outstandingRows(List<Invoice> invoices, List<Payment> payments, LocalDate endDate) {
-        Map<Long, BigDecimal> paymentsByInvoiceIdUntilEnd = payments.stream()
-                .filter(payment -> payment.getInvoice() != null)
-                .filter(payment -> endDate == null || (payment.getPaymentDate() != null && !payment.getPaymentDate().isAfter(endDate)))
-                .collect(Collectors.groupingBy(payment -> payment.getInvoice().getId(),
-                        Collectors.mapping(Payment::getAmount, Collectors.reducing(BigDecimal.ZERO, BigDecimal::add))));
+    private List<Map<String, Object>> outstandingRows(LocalDate endDate) {
         boolean useCurrentBalance = endDate == null || !endDate.isBefore(com.billing.core.AppDateTime.istToday());
+        // Aaj ka balance: sirf baaki-wale invoices DB se. Purani date: invoice-wise paid jod SQL me.
+        // Pehle dono case me end date tak ki poori invoices + payments history entities aati thi.
+        List<Invoice> invoices = useCurrentBalance
+                ? invoiceRepository.findActiveWithBalanceUpTo(endDate)
+                : invoicesIn(null, endDate);
+        Map<Long, BigDecimal> paymentsByInvoiceIdUntilEnd = new HashMap<>();
+        if (!useCurrentBalance) {
+            for (Object[] row : paymentRepository.sumActiveAmountByInvoiceUpTo(endDate)) {
+                Long invoiceId = DataTypeUtility.longValue(row[0]);
+                if (invoiceId != null) {
+                    paymentsByInvoiceIdUntilEnd.put(invoiceId, amountOf(row[1]));
+                }
+            }
+        }
 
         return invoices.stream()
                 .filter(invoice -> endDate == null || (invoice.getInvoiceDate() != null && !invoice.getInvoiceDate().isAfter(endDate)))
@@ -471,7 +475,6 @@ public class DashboardService {
     }
 
     private List<Map<String, Object>> customerRows(List<Invoice> invoices,
-                                                   Map<Long, Customer> customersById,
                                                    Map<Long, LocalDate> firstPurchaseDates,
                                                    LocalDate startDate,
                                                    LocalDate endDate,
@@ -495,7 +498,7 @@ public class DashboardService {
         }
 
         return aggregates.values().stream().map(aggregate -> {
-            Customer customer = customersById.getOrDefault(aggregate.customer.getId(), aggregate.customer);
+            Customer customer = aggregate.customer;
             LocalDate firstPurchaseDate = firstPurchaseDates.get(customer.getId());
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("customerName", customer.getName());
@@ -526,7 +529,7 @@ public class DashboardService {
         }).toList();
     }
 
-    private List<Map<String, Object>> totalCustomerRows(List<Invoice> invoices, Map<Long, Customer> customersById) {
+    private List<Map<String, Object>> totalCustomerRows(List<Invoice> invoices) {
         Map<Long, DashboardCustomerAggregate> aggregates = new HashMap<>();
         for (Invoice invoice : invoices) {
             Customer customer = invoice.getCustomer();
@@ -539,7 +542,7 @@ public class DashboardService {
         }
 
         return aggregates.values().stream().map(aggregate -> {
-            Customer customer = customersById.getOrDefault(aggregate.customer.getId(), aggregate.customer);
+            Customer customer = aggregate.customer;
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("customerName", customer.getName());
             row.put("mobile", customer.getMobile());
@@ -614,21 +617,15 @@ public class DashboardService {
         return com.billing.core.AppDateTime.toIstDate(value);
     }
 
-    private BigDecimal calculateOutstandingAsOf(List<Customer> customers, List<Invoice> invoices, List<Payment> payments, LocalDate endDate) {
+    // historyEndDate: pehle sirf us date tak ki history load hoti thi, isliye wahi cap (behaviour same).
+    private BigDecimal calculateOutstandingAsOf(LocalDate endDate, LocalDate historyEndDate) {
         if (endDate == null || !endDate.isBefore(com.billing.core.AppDateTime.istToday())) {
-            return customers.stream()
-                    .map(Customer::getCurrentBalance)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            return amountOf(customerRepository.sumCurrentBalance());
         }
 
-        BigDecimal salesUntilEnd = invoices.stream()
-                .filter(invoice -> invoice.getInvoiceDate() != null && !invoice.getInvoiceDate().isAfter(endDate))
-                .map(Invoice::getTotalAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal collectionsUntilEnd = payments.stream()
-                .filter(payment -> payment.getPaymentDate() != null && !payment.getPaymentDate().isAfter(endDate))
-                .map(Payment::getAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        LocalDate effectiveEndDate = earlierOf(endDate, historyEndDate);
+        BigDecimal salesUntilEnd = amountOf(firstRow(invoiceRepository.summarizeActiveInRange(null, effectiveEndDate), 3)[0]);
+        BigDecimal collectionsUntilEnd = amountOf(paymentRepository.sumActiveAmountInRange(null, effectiveEndDate));
 
         return scale(salesUntilEnd.subtract(collectionsUntilEnd));
     }

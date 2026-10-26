@@ -369,7 +369,8 @@ public class PlatformAdminService {
         return toCompanyResponse(companyRepository.save(company));
     }
 
-    @Transactional(readOnly = true)
+    // NOT transactional (NEVER-AGAIN RULE): outer @Transactional entry tenant par session khol deta tha,
+    // phir companyDetailsData usi session ko join karke galat DB padhta. Tx sirf inner method (self proxy) me.
     public PlatformAdminCompanyDetailsResponse companyDetails(String companyCode) {
         return withCompanyCodeDb(companyCode, () -> self.companyDetailsData(companyCode));
     }
@@ -428,6 +429,8 @@ public class PlatformAdminService {
             int rows = billingCommonJdbcTemplate.update(
                     "UPDATE billing_common.company_registry SET status=? WHERE database_name=?",
                     status, databaseName.trim());
+            // Interceptor ka registry cache turant chhodo: activate/deactivate bina 15s wait ke lage.
+            companyRegistryService.evictLookupCache();
             if (rows == 0) {
                 log.warn("[RegistrySync] UPDATE matched 0 rows for database_name={} (company_code={}, expected {}). Registry and tenant flags are DIVERGED — fix company_registry manually.",
                         databaseName, code, status);
@@ -591,32 +594,57 @@ public class PlatformAdminService {
         if (company == null) {
             return fallbackTenantRow(row);
         }
-        List<User> users = userRepository.findAllByOrderByCreatedAtDesc();
-        String ownerName = users.stream()
-                .filter(user -> user.getRole() == RoleName.OWNER)
-                .map(User::getFullName)
-                .distinct()
-                .sorted()
-                .reduce((left, right) -> left + ", " + right)
-                .orElse(null);
-        long ownerCount = users.stream().filter(user -> user.getRole() == RoleName.OWNER).count();
-        long adminCount = users.stream().filter(user -> user.getRole() == RoleName.ADMIN).count();
-        long userCount = users.stream().filter(user -> user.getRole() == RoleName.USER).count();
+        // Company list ka har row: pehle poori users table (entities) load karke Java me ginte the —
+        // ab ek GROUP BY count + sirf owner naam (har tenant par 2 halki queries).
+        TenantUserStats userStats = tenantUserStats();
         return PlatformAdminCompanyResponse.builder()
                 .id(company.getId())
                 .name(company.getName())
                 .code(company.getCode())
-                .ownerName(ownerName)
+                .ownerName(userStats.ownerName())
                 .email(company.getEmail())
                 .mobile(company.getPhone())
                 .active(company.isActive())
                 .chatbotEnabled(company.isChatbotEnabled())
                 .createdAt(company.getCreatedAt())
-                .ownerCount(ownerCount)
-                .adminCount(adminCount)
-                .userCount(userCount)
-                .totalUsers(users.size())
+                .ownerCount(userStats.ownerCount())
+                .adminCount(userStats.adminCount())
+                .userCount(userStats.userCount())
+                .totalUsers(userStats.totalUsers())
                 .build();
+    }
+
+    /** Current tenant ke users ka summary (role counts + owner naam) — sirf counts/naam, entities nahi. */
+    private record TenantUserStats(String ownerName, long ownerCount, long adminCount, long userCount, long totalUsers) {
+    }
+
+    private TenantUserStats tenantUserStats() {
+        long ownerCount = 0L;
+        long adminCount = 0L;
+        long userCount = 0L;
+        long totalUsers = 0L;
+        List<Object[]> roleCountRows = userRepository.countUsersGroupedByRole();
+        for (Object[] roleCountRow : roleCountRows) {
+            Long roleCountValue = DataTypeUtility.longValue(roleCountRow[1]);
+            long roleTotal = roleCountValue == null ? 0L : roleCountValue;
+            totalUsers += roleTotal;
+            if (roleCountRow[0] == RoleName.OWNER) {
+                ownerCount = roleTotal;
+            } else if (roleCountRow[0] == RoleName.ADMIN) {
+                adminCount = roleTotal;
+            } else if (roleCountRow[0] == RoleName.USER) {
+                userCount = roleTotal;
+            }
+        }
+        String ownerName = null;
+        if (ownerCount > 0) {
+            ownerName = userRepository.findFullNamesByRole(RoleName.OWNER).stream()
+                    .distinct()
+                    .sorted()
+                    .reduce((left, right) -> left + ", " + right)
+                    .orElse(null);
+        }
+        return new TenantUserStats(ownerName, ownerCount, adminCount, userCount, totalUsers);
     }
 
     private PlatformAdminCompanyResponse fallbackTenantRow(Map<String, Object> row) {
@@ -647,34 +675,24 @@ public class PlatformAdminService {
     /** JPA user counts — entered via self proxy after the tenant switch. */
     @Transactional(readOnly = true)
     public long[] countTenantUsersData() {
-        List<User> users = userRepository.findAllByOrderByCreatedAtDesc();
-        return new long[]{
-                users.stream().filter(user -> user.getRole() == RoleName.OWNER).count(),
-                users.stream().filter(user -> user.getRole() == RoleName.ADMIN).count(),
-                users.stream().filter(user -> user.getRole() == RoleName.USER).count()
-        };
+        // GROUP BY count — poori users table memory me load nahi.
+        TenantUserStats userStats = tenantUserStats();
+        return new long[]{userStats.ownerCount(), userStats.adminCount(), userStats.userCount()};
     }
 
     private PlatformAdminCompanyResponse toCompanyResponse(Company company) {
-        List<User> users = userRepository.findAllByOrderByCreatedAtDesc();
-        String ownerName = users.stream()
-                .filter(user -> user.getRole() == RoleName.OWNER)
-                .map(User::getFullName)
-                .distinct()
-                .sorted()
-                .reduce((left, right) -> left + ", " + right)
-                .orElse(null);
+        TenantUserStats userStats = tenantUserStats();
         return PlatformAdminCompanyResponse.builder()
                 .id(company.getId())
                 .name(company.getName())
                 .code(company.getCode())
-                .ownerName(ownerName)
+                .ownerName(userStats.ownerName())
                 .email(company.getEmail())
                 .mobile(company.getPhone())
                 .active(company.isActive())
                 .chatbotEnabled(company.isChatbotEnabled())
                 .createdAt(company.getCreatedAt())
-                .totalUsers(users.size())
+                .totalUsers(userStats.totalUsers())
                 .build();
     }
 

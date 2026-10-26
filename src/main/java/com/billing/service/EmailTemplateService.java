@@ -22,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.UnaryOperator;
 
 @Service
 @RequiredArgsConstructor
@@ -39,7 +40,7 @@ public class EmailTemplateService {
     public PageResponse<EmailTemplateResponse> page(String email, String search, Boolean active, int page, int size) {
         Company company = accessControlService.getCurrentCompany(email);
         return PageResponse.from(emailTemplateRepository.findPageByCompanyWithFilters(company, active, normalizeSearch(search), pageRequest(page, size))
-                .map(this::toResponse));
+                .map(memoizedResponse()));
     }
 
     @Transactional(readOnly = true)
@@ -68,7 +69,7 @@ public class EmailTemplateService {
     public List<EmailTemplateResponse> activeTemplates(String email) {
         Company company = accessControlService.getCurrentCompany(email);
         return emailTemplateRepository.findByCompanyAndActiveTrueOrderByTemplateNameAsc(company).stream()
-                .map(this::toResponse)
+                .map(memoizedResponse())
                 .toList();
     }
 
@@ -198,7 +199,7 @@ public class EmailTemplateService {
                 .map(emailService::toResponse));
     }
 
-    @Transactional(readOnly = true)
+    // Static map hai — DB transaction/connection kholne ki zaroorat nahi.
     public Map<String, String> variables() {
         return EmailTemplateVariableService.AVAILABLE_VARIABLES;
     }
@@ -256,13 +257,23 @@ public class EmailTemplateService {
     }
 
     private EmailTemplateResponse toResponse(EmailTemplate template) {
+        return toResponse(template, auditNameResolver::displayName);
+    }
+
+    /** List ke liye: createdBy naam ek hi baar DB se (har row par users SELECT nahi). */
+    private java.util.function.Function<EmailTemplate, EmailTemplateResponse> memoizedResponse() {
+        UnaryOperator<String> auditNames = auditNameResolver.memoized();
+        return template -> toResponse(template, auditNames);
+    }
+
+    private EmailTemplateResponse toResponse(EmailTemplate template, UnaryOperator<String> auditNames) {
         return EmailTemplateResponse.builder()
                 .id(template.getId())
                 .templateName(template.getTemplateName())
                 .subject(template.getSubject())
                 .emailBody(template.getEmailBody())
                 .active(template.isActive())
-                .createdBy(auditNameResolver.displayName(template.getCreatedBy()))
+                .createdBy(auditNames.apply(template.getCreatedBy()))
                 .createdAt(template.getCreatedAt())
                 .updatedAt(template.getUpdatedAt())
                 .build();

@@ -26,9 +26,11 @@ import org.springframework.data.domain.Sort;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
 @Service
 @RequiredArgsConstructor
@@ -81,6 +83,60 @@ public class PaymentService {
 
     @Transactional(readOnly = true)
     public PageResponse<PaymentResponse> page(Map<String, Object> param, String email) {
+        PaymentListFilter filter = parseListFilter(param);
+        int page = DataTypeUtility.integerValue(param.get("page"));
+        int size = DataTypeUtility.integerValue(param.get("size"));
+        if (size == 0) {
+            size = 20;
+        }
+        return page(email, filter.search(), filter.paymentStatus(), filter.startDate(), filter.endDate(), filter.minAmount(), filter.maxAmount(),
+                filter.mode(), filter.invoiceLinked(), filter.createdByRole(), filter.invoiceId(), filter.recordStatus(), page, size);
+    }
+
+    /**
+     * Payment list ke KPI cards: same filters par SQL aggregate (count + sum, mode-wise).
+     * Pehle frontend saare pages (1000 x 50 tak) laakar browser me jodta tha — page load bahut slow.
+     * Response: totalRecords, totalAmount, byMode {modeCode: amount}.
+     */
+    @Transactional(readOnly = true)
+    public Map<String, Object> summary(Map<String, Object> param, String email) {
+        accessControlService.requireCompany(accessControlService.getCurrentUser(email));
+        PaymentListFilter filter = parseListFilter(param);
+        long totalRecords = 0L;
+        BigDecimal totalAmount = BigDecimal.ZERO;
+        Map<String, BigDecimal> amountByMode = new LinkedHashMap<>();
+        if (!isUnsupportedPaymentStatus(filter.paymentStatus())) {
+            String normalizedMode = blankToNull(filter.mode()) == null ? null : blankToNull(filter.mode()).toUpperCase(java.util.Locale.ENGLISH);
+            List<Object[]> modeRows = paymentRepository.summarizePaymentsByMode(
+                    resolveDeletedFilter(filter.recordStatus()),
+                    blankToNull(filter.search()),
+                    filter.startDate(),
+                    filter.endDate(),
+                    filter.minAmount(),
+                    filter.maxAmount(),
+                    normalizedMode,
+                    filter.invoiceLinked(),
+                    filter.createdByRole(),
+                    filter.invoiceId());
+            for (Object[] modeRow : modeRows) {
+                String modeCode = DataTypeUtility.stringValue(modeRow[0]);
+                Long modeCount = DataTypeUtility.longValue(modeRow[1]);
+                BigDecimal modeAmount = scale(DataTypeUtility.bigDecimalObjectValue(modeRow[2]));
+                if (modeCount != null) {
+                    totalRecords += modeCount;
+                }
+                totalAmount = totalAmount.add(modeAmount);
+                amountByMode.merge(modeCode, modeAmount, BigDecimal::add);
+            }
+        }
+        Map<String, Object> summaryData = new LinkedHashMap<>();
+        summaryData.put("totalRecords", totalRecords);
+        summaryData.put("totalAmount", scale(totalAmount));
+        summaryData.put("byMode", amountByMode);
+        return summaryData;
+    }
+
+    private PaymentListFilter parseListFilter(Map<String, Object> param) {
         String search = DataTypeUtility.stringValue(param.get("search"));
         if (search.length() == 0) {
             search = null;
@@ -119,12 +175,7 @@ public class PaymentService {
         if (recordStatus.length() == 0) {
             recordStatus = "ACTIVE";
         }
-        int page = DataTypeUtility.integerValue(param.get("page"));
-        int size = DataTypeUtility.integerValue(param.get("size"));
-        if (size == 0) {
-            size = 20;
-        }
-        return page(email, search, paymentStatus, startDate, endDate, minAmount, maxAmount, mode, invoiceLinked, createdByRole, invoiceId, recordStatus, page, size);
+        return new PaymentListFilter(search, paymentStatus, startDate, endDate, minAmount, maxAmount, mode, invoiceLinked, createdByRole, invoiceId, recordStatus);
     }
 
     @Transactional(readOnly = true)
@@ -155,6 +206,8 @@ public class PaymentService {
                     .totalPages(0)
                     .build();
         }
+        // createdBy har row par user lookup karta tha; ek page me users gine-chune hote hain.
+        Function<String, String> createdByNames = createdByNameLookup();
         return PageResponse.from(paymentRepository.searchPayments(
                 company,
                 resolveDeletedFilter(recordStatus),
@@ -168,7 +221,7 @@ public class PaymentService {
                 createdByRole,
                 invoiceId,
                 pageable
-        ).map(this::toResponse));
+        ).map(payment -> toResponse(payment, createdByNames)));
     }
 
     @Transactional(readOnly = true)
@@ -347,6 +400,10 @@ public class PaymentService {
     }
 
     private PaymentResponse toResponse(Payment payment) {
+        return toResponse(payment, auditNameResolver::displayName);
+    }
+
+    private PaymentResponse toResponse(Payment payment, Function<String, String> createdByNames) {
         return PaymentResponse.builder()
                 .id(payment.getId())
                 .customerId(payment.getCustomer().getId())
@@ -365,8 +422,22 @@ public class PaymentService {
                 .gatewayType(payment.getPaymentTransaction() != null ? payment.getPaymentTransaction().getGatewayType().name() : null)
                 .deleted(payment.isDeleted())
                 .createdAt(payment.getCreatedAt())
-                .createdBy(auditNameResolver.displayName(payment.getCreatedBy()))
+                .createdBy(createdByNames.apply(payment.getCreatedBy()))
                 .build();
+    }
+
+    // Request-local memo: same createdBy (user id / email) ka naam ek hi baar resolve ho.
+    private Function<String, String> createdByNameLookup() {
+        Map<String, String> resolvedNames = new HashMap<>();
+        return createdBy -> {
+            if (createdBy == null) {
+                return null;
+            }
+            if (!resolvedNames.containsKey(createdBy)) {
+                resolvedNames.put(createdBy, auditNameResolver.displayName(createdBy));
+            }
+            return resolvedNames.get(createdBy);
+        };
     }
 
     private Map<String, Object> snapshot(Payment payment) {
@@ -456,5 +527,18 @@ public class PaymentService {
         }
         paymentRequest.setReferenceNo(referenceNo);
         return paymentRequest;
+    }
+
+    private record PaymentListFilter(String search,
+                                     String paymentStatus,
+                                     LocalDate startDate,
+                                     LocalDate endDate,
+                                     BigDecimal minAmount,
+                                     BigDecimal maxAmount,
+                                     String mode,
+                                     Boolean invoiceLinked,
+                                     RoleName createdByRole,
+                                     Long invoiceId,
+                                     String recordStatus) {
     }
 }

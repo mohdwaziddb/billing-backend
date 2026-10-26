@@ -401,6 +401,6 @@ public class TaxMasterService {
     }
 
     private PageRequest pageRequest(int page, int size) {
-        return PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 100)));
+        return PageRequest.of(Math.max(0, page), Math.max(1, Math.min(size, 1000)));
     }
 }

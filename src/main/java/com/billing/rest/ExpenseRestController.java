@@ -28,6 +28,14 @@ public class ExpenseRestController {
         return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", expenseService.page(param, authentication.getName())), HttpStatus.OK);
     }
 
+    // Expenses page ke KPI cards — SQL aggregate (UI ab 1000 rows nahi mangwata).
+    @GetMapping("/summary")
+    @com.billing.security.RequiresPermission(menu = "EXPENSES", action = "VIEW")
+    public ResponseEntity<?> summary(@RequestParam(required = false) Map<String, Object> param, Authentication authentication, HttpServletRequest req) {
+        param = SanitizeData.sanitizeMapObj(param);
+        return new ResponseEntity<>(new GeneralResponse<>(true, "Successfully", expenseService.summary(param, authentication.getName())), HttpStatus.OK);
+    }
+
     @GetMapping("/{expenseId}")
     @com.billing.security.RequiresPermission(menu = "EXPENSES", action = "VIEW")
     public ResponseEntity<?> get(Authentication authentication, @PathVariable Long expenseId, HttpServletRequest req) {

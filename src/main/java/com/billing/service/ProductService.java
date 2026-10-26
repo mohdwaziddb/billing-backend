@@ -16,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -68,8 +69,9 @@ public class ProductService {
         Company company = companyScope(email);
         List<Product> products = productRepository.findAllByCompanyWithFilters(company, active, categoryId, subCategoryId, normalizeSearch(search));
         Map<Long, InventoryService.ProductInventorySnapshot> inventoryByProduct = inventoryService.summarize(company, products, false);
+        Map<String, String> auditDisplayNames = new HashMap<>();
         return products.stream()
-                .map(product -> toResponse(product, inventoryByProduct.getOrDefault(product.getId(), InventoryService.ProductInventorySnapshot.empty())))
+                .map(product -> toResponse(product, inventoryByProduct.getOrDefault(product.getId(), InventoryService.ProductInventorySnapshot.empty()), auditDisplayNames))
                 .toList();
     }
 
@@ -78,7 +80,9 @@ public class ProductService {
         Company company = companyScope(email);
         org.springframework.data.domain.Page<Product> productPage = productRepository.findPageByCompanyWithFilters(company, active, categoryId, subCategoryId, normalizeSearch(search), pageRequest(page, size));
         Map<Long, InventoryService.ProductInventorySnapshot> inventoryByProduct = inventoryService.summarize(company, productPage.getContent(), false);
-        return PageResponse.from(productPage.map(product -> toResponse(product, inventoryByProduct.getOrDefault(product.getId(), InventoryService.ProductInventorySnapshot.empty()))));
+        // Dropdowns size=1000 maangte hain: createdBy/updatedBy naam har row par DB se dobara na nikle.
+        Map<String, String> auditDisplayNames = new HashMap<>();
+        return PageResponse.from(productPage.map(product -> toResponse(product, inventoryByProduct.getOrDefault(product.getId(), InventoryService.ProductInventorySnapshot.empty()), auditDisplayNames)));
     }
 
     @Transactional(readOnly = true)
@@ -115,7 +119,9 @@ public class ProductService {
     public ProductResponse get(String email, Long productId) {
         User user = accessControlService.getCurrentUser(email);
         Company company = accessControlService.requireCompany(user);
-        Product product = getProductOrThrow(company, productId);
+        // Category / sub category / tax ek hi query me (pehle 3 alag lazy queries).
+        Product product = productRepository.findByIdAndCompany(productId, company)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
         return toResponse(product, inventoryService.summarize(company, product, true));
     }
 
@@ -248,6 +254,10 @@ public class ProductService {
     }
 
     private ProductResponse toResponse(Product product, InventoryService.ProductInventorySnapshot inventorySnapshot) {
+        return toResponse(product, inventorySnapshot, new HashMap<>());
+    }
+
+    private ProductResponse toResponse(Product product, InventoryService.ProductInventorySnapshot inventorySnapshot, Map<String, String> auditDisplayNames) {
         ProductCategory productCategory = product.getProductCategory();
         ProductSubCategory productSubCategory = product.getProductSubCategory();
         TaxMaster taxMaster = product.getTaxMaster();
@@ -279,9 +289,20 @@ public class ProductService {
                 .batches(inventorySnapshot.getBatches())
                 .createdAt(product.getCreatedAt())
                 .updatedAt(product.getUpdatedAt())
-                .createdBy(auditNameResolver.displayName(product.getCreatedBy()))
-                .updatedBy(auditNameResolver.displayName(product.getUpdatedBy()))
+                .createdBy(resolveAuditName(product.getCreatedBy(), auditDisplayNames))
+                .updatedBy(resolveAuditName(product.getUpdatedBy(), auditDisplayNames))
                 .build();
+    }
+
+    // Same audit value (user id / "system") ek response me sirf ek baar resolve ho.
+    private String resolveAuditName(String auditValue, Map<String, String> auditDisplayNames) {
+        if (auditValue == null) {
+            return null;
+        }
+        if (!auditDisplayNames.containsKey(auditValue)) {
+            auditDisplayNames.put(auditValue, auditNameResolver.displayName(auditValue));
+        }
+        return auditDisplayNames.get(auditValue);
     }
 
     private BigDecimal scale(BigDecimal value) {
